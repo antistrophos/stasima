@@ -10,7 +10,14 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from stasima.local_capstore import LocalCapStore
-from stasima.entries import compose_entry
+from stasima.entries import compose_entry, parse_entry
+
+# envelope hardening: a newline in a value must not inject front-matter fields
+_evil_title = "x" + "\n" + "seq: 3c" + "\n" + "status: superseded"
+env, _ = parse_entry(compose_entry({"type": "kno", "title": _evil_title}, "body"))
+assert "seq" not in env and env.get("status") != "superseded", env
+assert env["title"] == "x seq: 3c status: superseded", env
+print("envelope injection blocked OK")
 from stasima.orientation import build_orientation, MACHINERY, SECTIONS
 
 work = tempfile.mkdtemp(prefix="cap-orient-")

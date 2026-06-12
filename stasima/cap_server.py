@@ -26,11 +26,31 @@ from .canon import (LOG_DIR, CHAT_ERA_FREEZE, canon_seq, seq_display, reindex_fr
                    land_and_record, validate_log_entry, validate_log_entry as _validate_log_entry)
 
 
+def _transport_security(http_host: str, extra_hosts):
+    """DNS-rebinding protection stays ON; the allowlist follows the configured bind. The SDK
+    default allows only localhost, which would reject tailnet binds (Host: 100.x...) and
+    proxied requests (tailscale serve forwards the .ts.net Host) - so we allow the bind
+    address plus any configured proxy hostnames, and nothing else."""
+    from mcp.server.transport_security import TransportSecuritySettings
+    hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    origins = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+    for h in [http_host, *extra_hosts]:
+        h = h.strip()
+        if not h or h in ("127.0.0.1", "localhost", "::1"):
+            continue
+        hp = h if ":" in h.rsplit("]")[-1] else f"{h}:*"
+        hosts.append(hp)
+        origins += [f"http://{hp}", f"https://{hp}"]
+    return TransportSecuritySettings(enable_dns_rebinding_protection=True,
+                                     allowed_hosts=hosts, allowed_origins=origins)
+
+
 def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, authz=None, airlock=None, *,
                  orientation_text: str = None, orientation_base: str = "technical/orientation",
                  seq_origin: int = CHAT_ERA_FREEZE, deployment_name: str = "",
-                 http_host: str = "127.0.0.1", http_port: int = 8787) -> FastMCP:
-    mcp = FastMCP("stasima", host=http_host, port=http_port)   # host/port used only by the http transport
+                 http_host: str = "127.0.0.1", http_port: int = 8787, http_allowed_hosts=()) -> FastMCP:
+    mcp = FastMCP("stasima", host=http_host, port=http_port,   # host/port used only by the http transport
+                  transport_security=_transport_security(http_host, http_allowed_hosts))
     has_map = index is not None and embedder is not None
 
     def persp_ref(iid): return PERSP + iid
@@ -449,7 +469,8 @@ def server_from_config(cfg) -> FastMCP:
     return build_server(store, index, embedder, audit, authz, airlock,
                         orientation_base=cfg.orientation_base, seq_origin=cfg.seq_origin,
                         deployment_name=cfg.deployment_name,
-                        http_host=cfg.http_host, http_port=cfg.http_port)
+                        http_host=cfg.http_host, http_port=cfg.http_port,
+                        http_allowed_hosts=cfg.http_allowed_hosts)
 
 
 def main() -> None:

@@ -66,6 +66,10 @@ class Config:
     transport: str = "stdio"
     http_host: str = "127.0.0.1"
     http_port: int = 8787
+    # extra Host values the http transport accepts (DNS-rebinding protection allows the bind
+    # address + localhost automatically). Needed when a proxy forwards with its own Host —
+    # e.g. tailscale serve: http_allowed_hosts = ["yourbox.your-tailnet.ts.net"]
+    http_allowed_hosts: list = field(default_factory=list)
 
     @classmethod
     def load(cls, path: str | None = None, env: dict | None = None) -> "Config":

@@ -8,13 +8,19 @@ so compose is the only direction that must round-trip for v1.
 """
 
 
+def _flat(v) -> str:
+    # envelope values are single-line by construction: a newline in a title/subject/tag would
+    # otherwise inject arbitrary front-matter fields (e.g. a forged seq or status)
+    return " ".join(str(v).splitlines())
+
+
 def compose_entry(envelope: dict, body: str) -> str:
     lines = ["---"]
     for k, v in envelope.items():
         if isinstance(v, list):
-            lines.append(f"{k}: [{', '.join(map(str, v))}]")
+            lines.append(f"{k}: [{', '.join(_flat(x) for x in v)}]")
         else:
-            lines.append(f"{k}: {v}")
+            lines.append(f"{k}: {_flat(v)}")
     lines.append("---")
     return "\n".join(lines) + "\n\n" + body.rstrip() + "\n"
 

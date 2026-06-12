@@ -43,3 +43,4 @@ airlock_ceiling_s   = 7200  # staged proposals auto-revert after this
 transport  = "stdio"
 http_host  = "127.0.0.1"
 http_port  = 8787
+# http_allowed_hosts = ["yourbox.your-tailnet.ts.net"]   # extra Host values (e.g. a tailscale serve proxy)

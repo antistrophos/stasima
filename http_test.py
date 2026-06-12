@@ -75,6 +75,13 @@ try:
                 print("announce over http  OK ->", "Welcome to Stasima, epode.")
 
     anyio.run(main)
+
+    # DNS-rebinding protection: a request whose Host isn't the bind/allowlist is refused
+    import httpx
+    r = httpx.post(f"http://127.0.0.1:{port}/mcp", headers={"Host": "evil.example.com"},
+                   json={"jsonrpc": "2.0", "method": "initialize", "id": 1}, timeout=10)
+    assert r.status_code in (400, 403, 421), r.status_code
+    print(f"host-spoof reject   OK (HTTP {r.status_code} for Host: evil.example.com)")
 finally:
     proc.terminate()
     proc.wait(timeout=10)
