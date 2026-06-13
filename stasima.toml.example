@@ -46,4 +46,6 @@ http_port  = 8787
 # http_allowed_hosts = ["yourbox.your-tailnet.ts.net"]   # extra Host values (e.g. a tailscale serve proxy)
 # Per-git-op timeout (s). A local git op is sub-second; a hang means contention, and this bounds it
 # so it fails LOUD instead of hanging forever. 0 = auto: 2s stdio / 20s http. Raise for a huge corpus.
+# The FIRST git op of each server process gets a one-time grace window (cold start: Windows scanning
+# git.exe), so the tight steady-state value never false-fires on arrival.
 # git_timeout = 0

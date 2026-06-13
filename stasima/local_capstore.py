@@ -101,6 +101,7 @@ class LocalCapStore:
         author_domain: str = "stasima.local",
         git_bin: str = "git",
         git_timeout: float = 30.0,
+        git_grace_timeout: float = 15.0,
     ):
         self.git_dir = git_dir
         self.approvers = approvers
@@ -112,6 +113,11 @@ class LocalCapStore:
         # contention (e.g. a second server process on the same repo). Bound it so the failure is
         # LOUD and recoverable instead of an indefinite hang that strands a proposal mid-op.
         self.git_timeout = git_timeout
+        # The FIRST git op in a process pays a cold-start tax (on Windows, Defender scanning git.exe
+        # + the OS loading it); everything after is warm. So the first call gets a generous grace
+        # window to "clear its throat," then the tight steady-state timeout applies.
+        self.git_grace_timeout = git_grace_timeout
+        self._git_warmed = False
 
     # ---- low-level git invocation ----
     def _run(self, *args: str, input: Optional[bytes] = None, extra_env: Optional[dict] = None):
@@ -128,13 +134,17 @@ class LocalCapStore:
             kwargs["stdin"] = subprocess.DEVNULL
         else:
             kwargs["input"] = input
+        # first call: at least the grace window (cold start); after that: the tight steady-state timeout
+        timeout = self.git_timeout if self._git_warmed else max(self.git_timeout, self.git_grace_timeout)
         try:
-            p = subprocess.run([self.git_bin, *args], timeout=self.git_timeout, **kwargs)
+            p = subprocess.run([self.git_bin, *args], timeout=timeout, **kwargs)
         except subprocess.TimeoutExpired:
+            warm = "" if self._git_warmed else " (cold-start grace window)"
             raise BackendUnavailable(
-                f"git {args[0]} exceeded {self.git_timeout:.0f}s and was aborted — almost always a second "
+                f"git {args[0]} exceeded {timeout:.0f}s{warm} and was aborted — almost always a second "
                 f"server process contending on the same repo (stdio spawns one server per client; run one "
                 f"at a time, or use the http transport). The operation did NOT complete; retry once clear.")
+        self._git_warmed = True   # warm from here on; steady-state timeout applies
         return p.returncode, p.stdout, p.stderr.decode("utf-8", "replace")
 
     def _git(self, *args: str, input: Optional[bytes] = None, extra_env: Optional[dict] = None) -> bytes:
