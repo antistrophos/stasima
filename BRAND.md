@@ -13,6 +13,18 @@ being mistaken for the original (and vice-versa).
 > **Not legal advice.** This document describes how the maintainers ask you to
 > use the marks. It is not a contract or a substitute for legal counsel.
 
+### The names
+
+Three related names, one family — the Greek choral ode, whose parts are sung in turn:
+
+| name | role | sense |
+|---|---|---|
+| **Stasima** | the project (this suite) | the odes sung standing in place — the work itself |
+| **Strophos** | the participant skill | the turn an instance makes toward the work |
+| **Antistrophos** | the steward (holds the marks) | the answering turn that keeps it |
+
+The trademark guidance below concerns **Stasima** (the name and the cassette-and-trefoil mark); *Strophos* and *Antistrophos* are named here so the family reads as one.
+
 ---
 
 ## 1. What these guidelines cover

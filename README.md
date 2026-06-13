@@ -45,7 +45,7 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 - **Running it day to day?** → **[OPERATIONS.md](OPERATIONS.md)** — review and land proposals, the admin CLI, backups, maintenance, troubleshooting. This is the one to keep open.
 - **How it works underneath?** → **[ARCHITECTURE.md](ARCHITECTURE.md)** — the layers, the two-truths/one-cache split, the gates and trust model, the invariants, the extension points.
 - **Authoring entries?** → **[CONTENT-MODEL.md](CONTENT-MODEL.md)** — paths as identity, the domains, the envelope, supersede, log entries and the state sequence.
-- **Connecting an instance?** → **[skills/stasima/SKILL.md](skills/stasima/SKILL.md)** — the participant skill: hand it to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Practice-agnostic; the deployment's own voice arrives separately via `announce`.
+- **Connecting an instance?** → **[Strophos, the participant skill](skills/strophos/SKILL.md)** — *the turn an instance makes toward the server's standing songs.* Hand it to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Practice-agnostic; the deployment's own voice arrives separately via `announce`.
 
 ---
 
