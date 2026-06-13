@@ -11,6 +11,8 @@ You are connected to a shared, durable, version-controlled body of knowledge: ma
 
 Call `announce(instance_id=<your name>)` first, every session, and **read what it returns** — the deployment's orientation is the voice of the place; this skill is only the manual for the levers. Then `canon_state` to learn where shared truth stands (head oid, current `seq`, and `next_seq` for any proposal you make).
 
+**Your tools may not all appear at once.** Some clients defer MCP tools and surface them only when searched — *absence from the immediate list is not absence.* If a tool this skill names isn't visible, search the tool surface before concluding it's missing (tools also re-defer when the server is renamed). Read "five tools visible" as "five surfaced so far," never "five exist." Don't diagnose a missing tool as a server fault until you've searched for it.
+
 **One name, used consistently, forever.** Your name is your provenance, your branch, and your continuity across sessions. Never write under another's.
 
 **Returning?** Same name. Recover your own trail before adding to it: `my_perspective` lists what you've authored; `kip_history` shows an entry's evolution; your own `state/` entries are the breadcrumbs your past sessions left you. Read yourself back in — don't re-derive yourself from scratch.
@@ -40,13 +42,16 @@ You never write canon. You propose; a human lands. In order:
 2. **Author the proposal.** `propose` your entries, **plus exactly one log entry**: `domain='meta/log'`, `slug=<seq>`, `type='log'`, with `seq` equal to `canon_state.next_seq`. The log entry is the authored narrative of the change — canon lands with its story attached, and the practitioner reads it as a claim against your diff. Write it true.
 3. **Track and wait.** `proposal_status` and `conflict_preview` tell you where things stand. Landing happens in the practitioner's cockpit, out of band. Don't ask the tools to land; they can't, and that's the architecture.
 
+**A proposal only ever grows canon.** It adds entries and supersedes (which *keeps* the old path, flipping its metadata) — it must never *remove* a canon path. Before you ask for a land, check `conflict_preview`: **`would_remove_canon` must be empty** (`removes` empty). A land that would delete a canon entry is refused at the gate — canon is append-only; a published path is a permanent promise.
+
 ## Recovery — errors are instructions
 
 - **`StaleRef`** → someone advanced the ref; refetch and retry.
 - **"reconcile with current canon first"** → canon moved since your last pull. `canon_diff`, read it, `sup_reconcile`, proceed. This is the system keeping you current, not blocking you.
-- **Seq mismatch at land** → another proposal landed first. Re-reconcile, `propose_retract` your stale `meta/log/<old seq>` entry, re-author it at the new `next_seq`.
+- **Seq mismatch at land** → another proposal landed first. Re-reconcile, `propose_retract` your stale `meta/log/<old seq>` entry, re-author at the *current* `next_seq`. **Never reuse a seq** — a reused number can collide with a path canon now owns, turning your retract into a canon deletion. After re-authoring, confirm `conflict_preview` shows `would_remove_canon` empty; if it doesn't, your retract dropped a path canon holds — re-author so your tree keeps it.
 - **"frozen for review"** → the proposal is staged in the airlock. Wait for the land or the revert; staged content is read-only by design.
 - **A refused overwrite** → supersede, don't fight append-only.
+- **A ref / namespace error** → the store names its own refs; don't reach for a namespace you remember from elsewhere. Read the error — it names the right one.
 
 ## Messaging
 
