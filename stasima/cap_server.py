@@ -10,6 +10,8 @@ and are not logged; read-receipts ARE logged (forensic, write-like). Mutations f
 audit. Identity is the instance's declared name (a deployment binds it from the transport token).
 """
 import os
+import sys
+import time
 
 from mcp.server.fastmcp import FastMCP
 
@@ -504,6 +506,36 @@ def server_from_config(cfg) -> FastMCP:
                         http_allowed_hosts=cfg.http_allowed_hosts)
 
 
+def _exit_when_parent_dies() -> None:
+    """stdio self-reap. The server already exits cleanly when its client closes stdin (EOF). But a
+    client that dies WITHOUT closing the pipe (Desktop force-quit/crash; on Windows a child outlives
+    its parent) leaves the server blocked on a stdin that never EOFs — an orphan that contends on the
+    repo. So, for stdio, also exit when our PARENT (the spawning client) goes away. Parent-death, not
+    idle-time, is the right signal: it fires only when the client is genuinely gone, never on a live
+    session that's merely quiet. Best-effort; if it can't arm, the EOF path still covers clean exits."""
+    import threading
+
+    ppid = os.getppid()
+
+    def _wait():
+        try:
+            if sys.platform == "win32":
+                import ctypes
+                SYNCHRONIZE = 0x00100000
+                h = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, ppid)
+                if not h:
+                    return
+                ctypes.windll.kernel32.WaitForSingleObject(h, 0xFFFFFFFF)  # INFINITE — no CPU
+            else:
+                while os.getppid() == ppid:   # on POSIX, re-parent (ppid changes) means parent died
+                    time.sleep(2)
+        except Exception:
+            return                            # never let the watchdog crash the server
+        os._exit(0)                           # parent gone -> reap self, do not linger
+
+    threading.Thread(target=_wait, daemon=True).start()
+
+
 def main() -> None:
     """Console entry point (`stasima` / `python -m stasima.cap_server`)."""
     from .config import Config
@@ -515,7 +547,8 @@ def main() -> None:
         # until 1.1); reach it from other devices via `tailscale serve` proxying to loopback.
         _srv.run(transport="streamable-http")
     else:
-        _srv.run()   # stdio: the connecting client spawns this process
+        _exit_when_parent_dies()   # stdio: the client spawned us; if it dies, don't orphan
+        _srv.run()                 # stdio: the connecting client spawns this process
 
 
 if __name__ == "__main__":
