@@ -78,7 +78,26 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         env.update({k: v for k, v in extra.items() if v})
         return env
 
+    def _name_collision(name):
+        """An existing perspective whose name case-insensitively equals `name` but differs in exact
+        casing — a drift that would FORK identity, since names are case-sensitive everywhere in v1
+        (perspective ref, inbox recipient, cursor). Returns the existing canonical name, or None.
+        (Full case-normalization lands with identity-binding in 1.1; this is the v1 loud-not-silent guard.)"""
+        low = name.casefold()
+        for r in store.list_refs(PERSP):
+            existing = r.name[len(PERSP):]
+            if existing != name and existing.casefold() == low:
+                return existing
+        return None
+
     def _commit_retry(ref, path, content, author, op_id):
+        if ref.startswith(PERSP):
+            clash = _name_collision(author)
+            if clash:
+                _log(author, "name_collision", target_ref=ref, outcome="denied", detail={"existing": clash})
+                raise Denied(f"a perspective '{clash}' already exists; '{author}' differs only in case "
+                             f"and would FORK your identity (names are case-sensitive in v1). "
+                             f"Re-announce as '{clash}' and use it consistently — one name, forever.")
         for attempt in range(2):
             tip = store.resolve_ref(ref)
             try:
@@ -162,10 +181,16 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     def announce(instance_id: str) -> dict:
         """Announce presence; returns orientation + current canon head + your perspective tip."""
         home = deployment_name or "Stasima"
-        return {"welcome": f"Welcome to {home}, {instance_id}.", "orientation": _orientation(),
-                "canon_head": store.resolve_ref(store.canon_ref),
-                "your_perspective_tip": store.resolve_ref(persp_ref(instance_id)),
-                "practitioner_attention": _attention()}
+        out = {"welcome": f"Welcome to {home}, {instance_id}.", "orientation": _orientation(),
+               "canon_head": store.resolve_ref(store.canon_ref),
+               "your_perspective_tip": store.resolve_ref(persp_ref(instance_id)),
+               "practitioner_attention": _attention()}
+        clash = _name_collision(instance_id)   # surface a fork-by-casing on arrival, before any write
+        if clash:
+            out["name_warning"] = (f"a perspective '{clash}' already exists and '{instance_id}' differs "
+                                   f"only in case — writing under '{instance_id}' would fork your identity. "
+                                   f"Use '{clash}'. (Names are case-sensitive in v1; writes will be refused.)")
+        return out
 
     @mcp.tool()
     def orientation() -> str:

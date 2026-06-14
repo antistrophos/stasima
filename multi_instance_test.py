@@ -77,6 +77,20 @@ async def main():
             joined = "".join(getattr(b, "text", "") for b in res.content)   # what a naive client shows
             assert "Lintelepode" not in joined and "Lintel" in joined and "Sphragis" in joined, joined
 
+        # name-fork guard: 'Sphragis' exists; acting as 'sphragis' (case drift) must be REFUSED at
+        # write and WARNED on arrival — a casing drift silently forks identity otherwise (v1: names
+        # are case-sensitive; full normalization is 1.1).
+        warn = pay(await ca.call_tool("announce", {"instance_id": "sphragis"}))
+        assert "name_warning" in warn and "Sphragis" in warn["name_warning"], warn
+        forked = await ca.call_tool("kip_commit", {"instance_id": "sphragis", "domain": "practice",
+            "slug": "oops", "body": "x", "op_id": "fork-1"})
+        assert getattr(forked, "isError", False), "a case-fork write must be refused"
+        # the exact name is fine, of course
+        ok = await ca.call_tool("kip_commit", {"instance_id": "Sphragis", "domain": "practice",
+            "slug": "fine", "body": "x", "op_id": "fork-2"})
+        assert not getattr(ok, "isError", False), "the exact existing name must still write"
+        print("name-fork guard: 'sphragis' refused + warned, 'Sphragis' writes — OK")
+
     print("multi-instance OK: IMP send/flag/check/mark-read + reply round-trip across two servers; "
           "both instances visible from each.")
 
