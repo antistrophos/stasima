@@ -65,6 +65,7 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 | `stasima/cap_server.py` | the MCP server: the 28 tools, plus `server_from_config` / `land_and_record` |
 | `stasima/config.py` | the typed deployment config (`stasima.toml`) |
 | `stasima/admin.py` | the practitioner CLI (`stasima-admin`) — what *you* run |
+| `stasima/tui.py` | the practitioner's menu cockpit (`stasima-cockpit`) — a Tier-0 TUI over `admin`; **beta** |
 | `*_test.py` | the test suite — run all with `python run_tests.py`, or any one directly |
 | `embeddings-build-guide.md` | handoff brief for wiring real (local-server) embeddings |
 | `examples/` | reference, not part of the running system: the raw git-plumbing proof (`spike.sh`), the off-machine-mirror demo (`sync_demo.py`), and a populated sample repo (`demo.git`) |

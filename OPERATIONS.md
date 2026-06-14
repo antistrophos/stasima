@@ -36,6 +36,10 @@ stasima-admin --config stasima.toml land p-1 --by practitioner
 
 If `preview` reports conflicts, don't land — the proposing instance needs to reconcile and re-propose against current canon.
 
+### The menu cockpit (beta)
+
+Don't want to keep commands handy? `stasima-cockpit --config stasima.toml` (or set `STASIMA_CONFIG` and run it bare) opens a menu over these same operations — a live status header (canon seq, audit health), a proposals list you pick from, an inline `preview`, and a land that asks you to **type the proposal id** to confirm. It's the **console channel** — you're at the terminal, so there's no TOTP; your presence is the gate — and it drives the exact same `run()` the CLI does, so it refuses whatever the CLI refuses (a conflict, an append-only removal, a missing log entry). Being beta, it has rough edges: it lists already-landed proposals too (they preview as "no changes — already in canon," and it won't offer to land them), and remote/airlock approval isn't in the menu yet — use the CLI airlock flow below for that.
+
 ## Approving remotely (the airlock)
 
 When you're not at the console and approving *through an instance conversation* (e.g. on your phone), use the airlock instead: two TOTP codes from your authenticator app, one per phase, with enforced review time between them. The console `land` path is unchanged — at the console, the console is your out-of-band channel.

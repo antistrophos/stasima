@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "stasima"
-version = "1.0.0"
+version = "1.0.1"
 description = "A server letting multiple AI instances share one durable, version-controlled body of knowledge, with a human practitioner as the gate to shared truth."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -27,7 +27,8 @@ qr = ["qrcode"]   # scannable QR during airlock TOTP provisioning
 
 [project.scripts]
 stasima = "stasima.cap_server:main"          # the MCP server (STASIMA_CONFIG points at the toml)
-stasima-admin = "stasima.admin:main"         # the practitioner's cockpit
+stasima-admin = "stasima.admin:main"         # the practitioner's CLI cockpit
+stasima-cockpit = "stasima.tui:main"         # the practitioner's menu cockpit (beta)
 
 [project.urls]
 Homepage = "https://github.com/antistrophos/stasima"
