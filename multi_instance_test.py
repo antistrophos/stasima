@@ -53,7 +53,7 @@ async def main():
 
         # Lintel sees it through server B — the message crossed via the shared substrate
         flags = pay(await cb.call_tool("imp_flags", {"instance_id": "Lintel"}))
-        inbox = pay(await cb.call_tool("imp_check", {"instance_id": "Lintel"}))
+        inbox = pay(await cb.call_tool("imp_check", {"instance_id": "Lintel"}))["messages"]
         assert flags["unread"] == 1 and inbox[0]["from"] == "Sphragis" \
             and inbox[0]["coordinates"] == ["practice/seed.md"], (flags, inbox)
 
@@ -64,13 +64,18 @@ async def main():
         # Lintel replies via B; Sphragis sees it via A
         await cb.call_tool("imp_send", {"sender": "Lintel", "recipients": ["Sphragis"],
             "subject": "re: arrived", "body": "welcome", "op_id": "m2"})
-        back = pay(await ca.call_tool("imp_check", {"instance_id": "Sphragis"}))
+        back = pay(await ca.call_tool("imp_check", {"instance_id": "Sphragis"}))["messages"]
         assert back[0]["from"] == "Lintel" and back[0]["subject"] == "re: arrived", back
 
-        # both instances are visible from either server
+        # both instances are visible from either server — AND the names survive the wire intact
+        # (Lintel's rehearsal bug: a bare list serialized one text block per name, fusing
+        # 'Lintel'+'epode' -> 'Lintelepode' on a naive client. The wrapped object can't fuse.)
         for c in (ca, cb):
-            who = pay(await c.call_tool("list_instances", {}))
-            assert "Sphragis" in who and "Lintel" in who, who
+            res = await c.call_tool("list_instances", {})
+            who = pay(res)["instances"]
+            assert sorted(who) == ["Lintel", "Sphragis"], who
+            joined = "".join(getattr(b, "text", "") for b in res.content)   # what a naive client shows
+            assert "Lintelepode" not in joined and "Lintel" in joined and "Sphragis" in joined, joined
 
     print("multi-instance OK: IMP send/flag/check/mark-read + reply round-trip across two servers; "
           "both instances visible from each.")

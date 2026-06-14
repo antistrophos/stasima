@@ -69,14 +69,14 @@ async def main():
 
         # search — attributed, scoped
         allhits = payload(await client.call_tool("map_search", {"instance_id": "research-2",
-            "query": "how do we avoid losing committed work durability", "scope": "all"}))
+            "query": "how do we avoid losing committed work durability", "scope": "all"}))["results"]
         print("map_search all:")
         for h in allhits:
             print(f"   {h['score']:>6}  {h['author']:12} canon={h['is_canon']!s:5} {h['path']}")
         canon_only = payload(await client.call_tool("map_search", {"instance_id": "research-2",
-            "query": "durability", "scope": "canon"}))
+            "query": "durability", "scope": "canon"}))["results"]
         mine7 = payload(await client.call_tool("map_search", {"instance_id": "research-7",
-            "query": "durability", "scope": "mine"}))
+            "query": "durability", "scope": "mine"}))["results"]
         print("map_search canon:", [h["path"] for h in canon_only])
         print("map_search mine(r-7):", [h["path"] for h in mine7])
 
@@ -142,11 +142,11 @@ async def main():
             "subject": "Durability is load-bearing", "body": "Look before proposing scaling changes.",
             "op_id": "m-1", "coordinates": ["practice/no-silent-loss.md"]})
         flag7 = payload(await client.call_tool("imp_flags", {"instance_id": "research-7"}))
-        inbox7 = payload(await client.call_tool("imp_check", {"instance_id": "research-7"}))
+        inbox7 = payload(await client.call_tool("imp_check", {"instance_id": "research-7"}))["messages"]
         print("imp_flags r-7:", flag7, "| inbox r-7:", [(m["from"], m["subject"], m["coordinates"]) for m in inbox7])
         await client.call_tool("imp_mark_read", {"instance_id": "research-7", "message_path": "messages/m-1.md"})
         after = payload(await client.call_tool("imp_flags", {"instance_id": "research-7"}))
-        recto = payload(await client.call_tool("imp_check", {"instance_id": "recto"}))
+        recto = payload(await client.call_tool("imp_check", {"instance_id": "recto"}))["messages"]
         print("imp_flags r-7 after read:", after, "| inbox recto:", [m["path"] for m in recto])
 
         # the bug fix: read-state lives in the audit log, so a reindex must NOT wipe it

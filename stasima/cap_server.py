@@ -221,9 +221,9 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         return store.read_blob(resolve_alias(ref), path).decode()
 
     @mcp.tool()
-    def list_entries(ref: str, path: str = "") -> list[str]:
+    def list_entries(ref: str, path: str = "") -> dict:
         """List entry paths under a ref ('canon', an instance name, or a full ref)."""
-        return store.list_paths(resolve_alias(ref), path)
+        return {"entries": store.list_paths(resolve_alias(ref), path)}
 
     @mcp.tool()
     def my_perspective(instance_id: str) -> dict:
@@ -233,9 +233,9 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         return {"tip": tip, "entries": store.list_paths(ref) if tip else []}
 
     @mcp.tool()
-    def kip_history(ref: str, path: str) -> list[dict]:
+    def kip_history(ref: str, path: str) -> dict:
         """Version trail for an entry (newest first): oid, author, subject."""
-        return store.history(resolve_alias(ref), path)
+        return {"history": store.history(resolve_alias(ref), path)}
 
     # ---------------------------------------------------------------- propose + track
     @mcp.tool()
@@ -311,26 +311,28 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 "would_remove_canon": bool(summary.removed)}
 
     @mcp.tool()
-    def list_proposals() -> list[str]:
+    def list_proposals() -> dict:
         """Open proposal ids."""
-        return [r.name[len(PROP):] for r in store.list_refs(PROP)]
+        return {"proposals": [r.name[len(PROP):] for r in store.list_refs(PROP)]}
 
     @mcp.tool()
-    def list_instances() -> list[str]:
-        """Instances that have a perspective."""
-        return [r.name[len(PERSP):] for r in store.list_refs(PERSP)]
+    def list_instances() -> dict:
+        """Instances that have a perspective. (A single object — a bare list serializes as one text
+        block PER NAME, which a client can fuse: 'Lintel'+'epode' -> 'Lintelepode'. Attribution must
+        survive the wire, so every list-returning tool here wraps its list in a named object.)"""
+        return {"instances": [r.name[len(PERSP):] for r in store.list_refs(PERSP)]}
 
     # ---------------------------------------------------------------- MAP (needs an index) + IMP (needs an index + audit)
     if has_map:
         @mcp.tool()
         def map_search(instance_id: str, query: str, scope: str = "all",
-                       type: str | None = None, limit: int = 10) -> list[dict]:
+                       type: str | None = None, limit: int = 10) -> dict:
             """Semantic search over the corpus, attributed. scope: canon | mine | all. Returns pointers
             (path, ref, author, is_canon, type, title, score, preview) — never an unattributed blend."""
             qv = embedder.embed_query([query])[0]
             hits = index.search(qv, scope=scope, instance_id=instance_id, type=type, limit=limit)
-            return [{"path": h.path, "ref": h.ref, "author": h.authoring_instance, "is_canon": h.is_canon,
-                     "type": h.type, "title": h.title, "score": h.score, "preview": h.preview} for h in hits]
+            return {"results": [{"path": h.path, "ref": h.ref, "author": h.authoring_instance, "is_canon": h.is_canon,
+                     "type": h.type, "title": h.title, "score": h.score, "preview": h.preview} for h in hits]}
 
         if audit is not None:
             @mcp.tool()
@@ -355,14 +357,14 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 return {"path": path, "from": sender, "recipients": recipients, "oid": r.oid}
 
             @mcp.tool()
-            def imp_check(instance_id: str, unread_only: bool = True) -> list[dict]:
+            def imp_check(instance_id: str, unread_only: bool = True) -> dict:
                 """Your inbox: messages where you're a recipient. Authored fields only (sender, subject,
                 coordinates) — IMP arranges, never synthesizes. Pull, not push."""
                 msgs = index.inbox(instance_id)
                 if unread_only:
                     msgs = [m for m in msgs if not audit.is_read(instance_id, m.path)]
-                return [{"path": m.path, "from": m.authoring_instance, "subject": m.subject,
-                         "coordinates": m.links, "ref": m.ref} for m in msgs]
+                return {"messages": [{"path": m.path, "from": m.authoring_instance, "subject": m.subject,
+                         "coordinates": m.links, "ref": m.ref} for m in msgs]}
 
             @mcp.tool()
             def imp_flags(instance_id: str) -> dict:
@@ -432,11 +434,11 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                     "canon_cursor": cursor, "current_with_canon": cursor == store.resolve_ref(store.canon_ref)}
 
         @mcp.tool()
-        def sup_who() -> list[dict]:
+        def sup_who() -> dict:
             """Who holds a perspective, and whether each is current with canon."""
             canon_tip = store.resolve_ref(store.canon_ref)
-            return [{"instance": r.name[len(PERSP):], "current_with_canon": _canon_cursor(r.name[len(PERSP):]) == canon_tip}
-                    for r in store.list_refs(PERSP)]
+            return {"instances": [{"instance": r.name[len(PERSP):], "current_with_canon": _canon_cursor(r.name[len(PERSP):]) == canon_tip}
+                    for r in store.list_refs(PERSP)]}
 
         @mcp.tool()
         def canon_state() -> dict:

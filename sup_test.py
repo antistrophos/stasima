@@ -115,7 +115,7 @@ async def main():
         # --- symmetry reads ---
         ss = payload(await call("sup_state", instance_id="r2"))
         assert ss["current_with_canon"] and any("reconciled-" in p for p in ss["state_entries"])
-        sw = payload(await call("sup_who"))
+        sw = payload(await call("sup_who"))["instances"]
         assert {"instance": "r2", "current_with_canon": True} in sw
         cs = payload(await call("canon_state"))
         assert cs["canon_tip"] == new_tip and len(cs["lands"]) >= 1
