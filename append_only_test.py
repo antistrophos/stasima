@@ -63,4 +63,33 @@ prep = store.prepare_merge("refs/cap/proposals/p-good")
 assert prep.summary.removed == [] and "practice/extra.md" in prep.summary.added
 print("3. additive proposal prepares fine: adds =", prep.summary.added, "removes =", prep.summary.removed)
 
-print("\nOK -- append-only guard: removals visible in preview, refused at prepare, adds unaffected.")
+# 4. INSTANCE-SIDE mirror: conflict_preview (the tool an instance actually calls) surfaces the
+# removal typed, so a naive arriving instance self-catches BEFORE involving the practitioner. This
+# is the property the rehearsal cares about most — confirmed here through the real tool, not just
+# the store primitive. (Lintel's point: the self-catch is what a stranger's instance depends on.)
+import json as _json
+import anyio
+from stasima.cap_server import build_server
+from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+
+def _payload(res):
+    sc = getattr(res, "structuredContent", None)
+    if isinstance(sc, dict):
+        return sc.get("result", sc)
+    return _json.loads("".join(getattr(c, "text", "") for c in res.content))
+
+
+async def _instance_side():
+    async with connect(build_server(store)) as client:
+        bad = _payload(await client.call_tool("conflict_preview", {"proposal_id": "p-bad"}))
+        assert bad["would_remove_canon"] and "practice/keep.md" in bad["removes"], bad
+        good = _payload(await client.call_tool("conflict_preview", {"proposal_id": "p-good"}))
+        assert not good["would_remove_canon"] and "practice/extra.md" in good["adds"], good
+    print("4. instance-side conflict_preview: would_remove_canon fires on the bad proposal, "
+          "empty on the additive one")
+
+
+anyio.run(_instance_side)
+
+print("\nOK -- append-only guard: removals visible (store + instance tool), refused at prepare, adds unaffected.")
