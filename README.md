@@ -74,7 +74,7 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 
 ## Further reading
 
-The build's design history lives with the original practitioner's working tree, not in this repository (it carries that practice's particulars; the in-repo docs are self-sufficient for running your own deployment). The one external reference that remains current is `stasima-v1-build-state.md` — the full state of what's built and what's deferred; everything else there (the spec-era artifacts and implementation briefs) is historical rationale.
+**[STATUS.md](STATUS.md)** — the full build state: what's built and verified, the hardening harvest, the design spine, what's deferred, and the roadmap. The spec-era design artifacts and implementation briefs live with the original practitioner's working tree (they carry that practice's particulars); the in-repo docs are self-sufficient for running your own deployment.
 
 ---
 
