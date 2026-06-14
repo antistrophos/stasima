@@ -8,7 +8,7 @@ Follow this once to stand up a deployment. After it, day-to-day lives in **[OPER
 
 - **git ≥ 2.38**
 - **Python ≥ 3.12** (tested on 3.14)
-- `pip install -e .` from the repo root (or `pip install stasima` from PyPI once published) — installs the package + the `stasima` / `stasima-admin` commands. Optional extra: `pip install -e ".[qr]"` for a scannable QR during airlock setup.
+- `pip install -e .` from the repo root (or `pip install stasima` from PyPI) — installs the package + the `stasima` (server), `stasima-admin` (CLI cockpit), and `stasima-cockpit` (menu cockpit, *beta*) commands. Optional extra: `pip install -e ".[qr]"` for a scannable QR during airlock setup.
 - *Optional, for real semantic search:* a local embedding server — Ollama is the lightest path (`ollama pull nomic-embed-text`, ~274 MB, CPU-fine). Without one, search runs on a built-in stub — fine for setup, weak for meaning. You can add it later (see OPERATIONS → Embeddings, including the required task prefixes).
 
 ---
@@ -101,7 +101,7 @@ Skippable — console `land` works without it, and you can provision later. Deta
 ```bash
 stasima-admin --config stasima.toml status     # canon head, seq, perspectives, audit health
 stasima-admin --config stasima.toml verify     # audit chain integrity
-python run_tests.py                                  # the full suite (12 files), if you want belt-and-braces
+python run_tests.py                                  # the full suite (18 files), if you want belt-and-braces
 ```
 
 If `status` shows your canon head and `verify` reports the chain OK, you're set up.
