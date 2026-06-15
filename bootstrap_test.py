@@ -52,14 +52,16 @@ except SystemExit:
     pass
 
 # git timeout: the first op gets the grace window; warm ops get the (here, impossibly tight) timeout.
-# A tiny steady-state timeout would trip any warm call, but a generous grace lets the FIRST call through.
+# The steady-state timeout must be smaller than any possible git subprocess so it trips DETERMINISTICALLY
+# regardless of runner speed — 1ms was flaky (a fast Linux CI runner completed the warm op under it);
+# a microsecond cannot be beaten by a fork+exec. The generous grace still lets the FIRST call through.
 from stasima.local_capstore import BackendUnavailable
-graced = LocalCapStore(gd, approvers={"x"}, git_timeout=0.001, git_grace_timeout=30.0)
-graced.resolve_ref("refs/heads/main")          # FIRST op -> grace (30s) -> succeeds though warm-timeout is 1ms
+graced = LocalCapStore(gd, approvers={"x"}, git_timeout=1e-6, git_grace_timeout=30.0)
+graced.resolve_ref("refs/heads/main")          # FIRST op -> grace (30s) -> succeeds though warm-timeout is 1us
 assert graced._git_warmed, "first op should mark the store warm"
 try:
-    graced.resolve_ref("refs/heads/main")      # warm op -> 1ms timeout -> must abort loud
-    assert False, "warm op under a 1ms timeout should time out"
+    graced.resolve_ref("refs/heads/main")      # warm op -> 1us timeout -> must abort loud
+    assert False, "warm op under a 1us timeout should time out"
 except BackendUnavailable as e:
     assert "did NOT complete" in str(e)
 print("grace window: first op lenient, warm ops strict OK")
