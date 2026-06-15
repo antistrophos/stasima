@@ -204,15 +204,17 @@ class SqliteMapIndex(MapIndex):
             CREATE INDEX IF NOT EXISTS ix_author ON map_entries(authoring_instance);
             CREATE INDEX IF NOT EXISTS ix_canon  ON map_entries(is_canon);
             CREATE INDEX IF NOT EXISTS ix_type   ON map_entries(type);
-            CREATE INDEX IF NOT EXISTS ix_cstate ON map_entries(canon_state);
             """
         )
-        # additive migration: an index built before VAP lacks these columns. The table is a rebuildable
-        # cache, but ALTER-add keeps an existing deployment usable without a forced delete + reindex.
+        # additive migration: an index built before VAP lacks these columns — CREATE TABLE IF NOT EXISTS
+        # leaves an existing table untouched, so ALTER-add them (the table is a rebuildable cache, but this
+        # keeps a live deployment usable without a forced delete + reindex). This MUST precede any index on
+        # the new columns, or the index creation hits 'no such column' on a pre-VAP db.
         have = {r["name"] for r in self.conn.execute("PRAGMA table_info(map_entries)")}
         for col in ("vantage", "canon_state"):
             if col not in have:
                 self.conn.execute(f"ALTER TABLE map_entries ADD COLUMN {col} TEXT")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_cstate ON map_entries(canon_state)")
         self.conn.commit()
 
     def upsert(self, row: MapRow) -> None:

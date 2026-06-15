@@ -106,3 +106,35 @@ async def main():
 
 
 anyio.run(main)
+
+
+# ---- migration: a pre-VAP index (old schema, no vantage/canon_state) must UPGRADE on open, not crash.
+# The full-DB tests all start fresh, so CREATE TABLE hands them the columns and they never exercise this;
+# the wrong index-ordering crashed a live server on its real map.sqlite. Lock the upgrade path.
+import sqlite3
+from stasima.map_index import SqliteMapIndex as _Idx, MapRow as _Row
+
+oldpath = os.path.join(work, "pre-vap-map.sqlite")
+_old = sqlite3.connect(oldpath)
+_old.executescript("""
+    CREATE TABLE map_entries (
+        ref TEXT NOT NULL, path TEXT NOT NULL, is_canon INTEGER NOT NULL,
+        authoring_instance TEXT, content_oid TEXT, type TEXT, title TEXT, status TEXT,
+        tags TEXT, refs TEXT, region_labels TEXT, links TEXT, salience REAL,
+        recipients TEXT, subject TEXT, body_text TEXT, embedding TEXT, model_id TEXT,
+        PRIMARY KEY (ref, path)
+    );
+""")
+_old.commit()
+_old.close()
+
+_idx = _Idx(oldpath)   # opens the pre-VAP db — must migrate, never raise 'no such column'
+_cols = {r["name"] for r in _idx.conn.execute("PRAGMA table_info(map_entries)")}
+assert {"vantage", "canon_state"} <= _cols, ("migration did not add the VAP columns", _cols)
+_idx.upsert(_Row(ref="refs/cap/perspectives/Q", path="vantages/m1.md", is_canon=False,
+                 authoring_instance="Q", type="vap", vantage="confirmed", canon_state="deadbeef",
+                 links=["practice/x.md"], body_text="post-migration horizon"))
+_got = _idx.vantages_for(entry="practice/x.md")
+assert len(_got) == 1 and _got[0].canon_state == "deadbeef", _got
+print("OK -- VAP migration: a pre-VAP index upgrades on open (columns added before their index), "
+      "and a vantage round-trips through the migrated db.")
