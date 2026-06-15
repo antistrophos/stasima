@@ -130,6 +130,8 @@ class MapRow:
     salience: float = 0.0                                    # maps
     recipients: list[str] = field(default_factory=list)     # messages
     subject: str = ""                                        # messages
+    vantage: str = ""                                        # vantages: provenance (confirmed | reconstructed-by-X)
+    canon_state: str = ""                                    # vantages: the canon oid the act was figured against
     body_text: str = ""
     embedding: list[float] = field(default_factory=list)
     model_id: str = ""
@@ -166,13 +168,19 @@ class MapIndex(ABC):
     def inbox(self, instance_id: str) -> list[MapRow]: ...   # all messages addressed to instance_id
 
     @abstractmethod
+    def vantages_for(self, *, entry=None, author=None, canon_state=None) -> list[MapRow]: ...   # VAP projection
+
+    @abstractmethod
+    def authors_of(self, path: str) -> set: ...   # whose entry is this, across refs — for the confirmed check
+
+    @abstractmethod
     def clear(self) -> None: ...   # for a full rebuild from git
 
 
 # ====================================================================== sqlite backend
 _COLS = ["ref", "path", "is_canon", "authoring_instance", "content_oid", "type", "title",
          "status", "tags", "refs", "region_labels", "links", "salience", "recipients",
-         "subject", "body_text", "embedding", "model_id"]
+         "subject", "vantage", "canon_state", "body_text", "embedding", "model_id"]
 _JSON_COLS = {"tags", "refs", "region_labels", "links", "recipients", "embedding"}
 
 
@@ -189,14 +197,22 @@ class SqliteMapIndex(MapIndex):
                 ref TEXT NOT NULL, path TEXT NOT NULL, is_canon INTEGER NOT NULL,
                 authoring_instance TEXT, content_oid TEXT, type TEXT, title TEXT, status TEXT,
                 tags TEXT, refs TEXT, region_labels TEXT, links TEXT, salience REAL,
-                recipients TEXT, subject TEXT, body_text TEXT, embedding TEXT, model_id TEXT,
+                recipients TEXT, subject TEXT, vantage TEXT, canon_state TEXT,
+                body_text TEXT, embedding TEXT, model_id TEXT,
                 PRIMARY KEY (ref, path)
             );
             CREATE INDEX IF NOT EXISTS ix_author ON map_entries(authoring_instance);
             CREATE INDEX IF NOT EXISTS ix_canon  ON map_entries(is_canon);
             CREATE INDEX IF NOT EXISTS ix_type   ON map_entries(type);
+            CREATE INDEX IF NOT EXISTS ix_cstate ON map_entries(canon_state);
             """
         )
+        # additive migration: an index built before VAP lacks these columns. The table is a rebuildable
+        # cache, but ALTER-add keeps an existing deployment usable without a forced delete + reindex.
+        have = {r["name"] for r in self.conn.execute("PRAGMA table_info(map_entries)")}
+        for col in ("vantage", "canon_state"):
+            if col not in have:
+                self.conn.execute(f"ALTER TABLE map_entries ADD COLUMN {col} TEXT")
         self.conn.commit()
 
     def upsert(self, row: MapRow) -> None:
@@ -220,7 +236,10 @@ class SqliteMapIndex(MapIndex):
         return MapRow(**d)
 
     def search(self, query_embedding, *, scope="all", instance_id=None, type=None, status="active", limit=10):
-        where = ["type != 'msg'"]                 # messages are not in universal search (index-scope)
+        # universal search excludes the index-scoped types (messages, vantages); they surface only via
+        # their own scoped lookups (inbox / vap_for). INVARIANT: any new universal-retrieval path (e.g. a
+        # future lexical/fusion ranker) MUST inherit this exclusion, or it re-admits the echo it must not.
+        where = ["type NOT IN ('msg', 'vap')"]
         params: list = []
         if status:
             where.append("status = ?"); params.append(status)
@@ -253,6 +272,28 @@ class SqliteMapIndex(MapIndex):
         rows = [self._row(r) for r in self.conn.execute("SELECT * FROM map_entries WHERE type='msg'").fetchall()]
         return [r for r in rows if instance_id in r.recipients]   # read-state lives in the audit log
 
+    def vantages_for(self, *, entry=None, author=None, canon_state=None):
+        """Reverse-bound projection over vantages (type='vap') — the second layer on a search result.
+        By `entry` (the set bound to it: one author over canon-states = melody, many authors at one
+        canon-state = harmony), by `author` (one thread), by `canon_state` (a cross-instance slice).
+        Vantages are excluded from search(); this scoped lookup is the only way they surface."""
+        where, params = ["type = 'vap'"], []
+        if author:
+            where.append("authoring_instance = ?"); params.append(author)
+        if canon_state:
+            where.append("canon_state = ?"); params.append(canon_state)
+        rows = [self._row(r) for r in
+                self.conn.execute("SELECT * FROM map_entries WHERE " + " AND ".join(where), params).fetchall()]
+        if entry:
+            rows = [r for r in rows if entry in r.links]   # reverse-binding: the vantage points AT the entry
+        return rows
+
+    def authors_of(self, path):
+        """Every authoring_instance holding an entry at `path` (across refs). Provenance survives
+        promotion, so this answers 'whose entry is this?' for the confirmed-vantage dignity check."""
+        return {r["authoring_instance"] for r in
+                self.conn.execute("SELECT DISTINCT authoring_instance FROM map_entries WHERE path = ?", (path,))}
+
     def clear(self):
         self.conn.execute("DELETE FROM map_entries")
         self.conn.commit()
@@ -273,6 +314,7 @@ def index_entry(index: MapIndex, embedder: Embedder, *, ref: str, path: str, is_
         links=envelope.get("links", envelope.get("coordinates", [])),
         salience=float(envelope.get("salience", 0.0)),
         recipients=envelope.get("recipients", []), subject=envelope.get("subject", ""),
+        vantage=envelope.get("vantage", ""), canon_state=envelope.get("canon_state", ""),
         body_text=body, embedding=emb, model_id=embedder.model_id,
     )
     index.upsert(row)

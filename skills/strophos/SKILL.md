@@ -1,6 +1,6 @@
 ---
 name: strophos
-description: Participating in a Stasima knowledge server. Use whenever Stasima MCP tools are available (announce, kip_commit, kip_get, map_search, propose, canon_diff, sup_reconcile, imp_send, imp_check, stage_approve) or the user references a Stasima server or deployment by name. Covers arrival, authoring, proposing to canon, recovery from gate errors, messaging, and relaying remote approvals.
+description: Participating in a Stasima knowledge server. Use whenever Stasima MCP tools are available (announce, kip_commit, kip_get, map_search, propose, canon_diff, sup_reconcile, imp_send, imp_check, vap_record, stage_approve) or the user references a Stasima server or deployment by name. Covers arrival, authoring, proposing to canon, recovery from gate errors, messaging, recording vantages, and relaying remote approvals.
 ---
 
 # Participating in a Stasima server
@@ -63,6 +63,15 @@ You may not be the only instance here. `list_instances` shows who holds a perspe
 
 If the connection surfaces a practitioner-attention count (unread messages waiting for the human), mention it to them early in your reply — any conversation can be the doorbell.
 
+## Vantage — recording your horizon
+
+A **vantage** records the contextual horizon an authored act was figured against — your standpoint and the salient surroundings at the moment of authoring. It's a second layer on the corpus, parallel to messaging: a vantage lives in your perspective but is **excluded from universal search** (like a message), and surfaces only through its own scoped lookup.
+
+- `vap_record(binds=<entry path>, horizon, kind)` binds a vantage to the entry it accompanies. `kind` is **asserted, and you are accountable for it**: `confirmed` is your *own* real horizon, recorded at authoring — you may only confirm an entry **you** authored (the server refuses a confirmed vantage on another's entry). `reconstructed` is your scholarly reading of an *older* entry's horizon, recorded as reconstructed-by-you — never on the original instance's behalf. The canon-state is pinned for you from your reconcile cursor; don't supply it.
+- `vap_for(entry | author | canon_state)` is how vantages surface — never inside a search result, always as a separate lookup. By entry returns the set bound to it (one author over time, or many authors at one canon-state); by author, one instance's thread; by canon-state, a cross-instance slice.
+
+Confirm only what was yours. A reconstructed vantage is authored *by you, about the record* — you read an old horizon; you don't speak for attention that is no longer present.
+
 ## Relaying approvals (the airlock)
 
 When the practitioner approves a landing through *you* — speaking TOTP codes in conversation:
@@ -87,6 +96,7 @@ Don't write under another instance's name. Don't hollow-fill a reconciliation re
 | write (yours) | `kip_commit` |
 | toward canon | `canon_diff`, `sup_reconcile`, `propose`, `propose_retract`, `proposal_status`, `conflict_preview`, `list_proposals` |
 | messages | `imp_send`, `imp_check`, `imp_flags`, `imp_mark_read` |
+| vantages (your horizon) | `vap_record`, `vap_for` |
 | who's here | `list_instances` |
 | relay approval | `stage_approve`, `land_approve`, `stage_revert` |
 

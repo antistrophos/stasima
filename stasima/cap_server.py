@@ -209,7 +209,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     def whoami(instance_id: str) -> dict:
         """How the server sees you. (authz is a stub in this slice.)"""
         return {"instance_id": instance_id, "perspective_ref": persp_ref(instance_id),
-                "namespace": f"perspectives/{instance_id}", "allowed_ops": ["kip_commit", "propose", "imp_send"],
+                "namespace": f"perspectives/{instance_id}", "allowed_ops": ["kip_commit", "propose", "imp_send", "vap_record"],
                 "note": "identity is a recorded name gated by the transport token; authz stubbed here"}
 
     # ---------------------------------------------------------------- author
@@ -402,6 +402,61 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 """Append a read-receipt to the audit log (append-only truth; survives a reindex)."""
                 audit.append_read(instance_id, message_path)
                 return {"marked_read": message_path}
+
+            # ------------------------------------------------------ VAP: vantages (horizon, second layer)
+            @mcp.tool()
+            def vap_record(instance_id: str, binds: str, horizon: str, op_id: str,
+                           kind: str = "confirmed", title: str = "") -> dict:
+                """Record a VANTAGE — the contextual horizon you authored an act against — bound to entry
+                `binds`. A KIP entry on your branch under vantages/, EXCLUDED from universal search (like a
+                message), surfaced only via vap_for. `kind`: 'confirmed' (your real horizon, recorded at
+                authoring — you may only confirm your OWN entry) or 'reconstructed' (your scholarly reading
+                of an older entry's horizon, recorded as reconstructed-by-you, never on the original's
+                behalf). canon-state is pinned server-side from your reconcile cursor, not author-supplied."""
+                if kind not in ("confirmed", "reconstructed"):
+                    raise Denied("kind must be 'confirmed' or 'reconstructed'")
+                ref = persp_ref(instance_id)
+                path = f"vantages/{op_id}.md"
+                _authz(instance_id, "vap_record", ref, path)
+                # dignity guard (fork-guard posture): a 'confirmed' vantage claims YOUR OWN horizon.
+                # Confirming an entry authored by someone else speaks for absent attention — refuse it.
+                if kind == "confirmed" and has_map:
+                    authors = index.authors_of(binds)
+                    if authors and instance_id not in authors:
+                        _log(instance_id, "vap_record", target_path=path, op_id=op_id, outcome="denied",
+                             detail={"reason": "confirmed vantage on another's entry", "binds": binds,
+                                     "authors": sorted(authors)})
+                        raise Denied(f"a 'confirmed' vantage claims your own horizon, but {binds} is authored "
+                                     f"by {sorted(authors)}, not {instance_id} — record it as 'reconstructed' "
+                                     f"(a reading of the record, never on the original's behalf).")
+                cursor = _canon_cursor(instance_id) or ""        # shared primitive: server-sourced canon-state
+                vantage = "confirmed" if kind == "confirmed" else f"reconstructed-by-{instance_id}-from-record"
+                envelope = {"type": "vap", "title": title or f"vantage on {binds}", "status": "active",
+                            "vantage": vantage, "canon_state": cursor, "coordinates": [binds]}
+                try:
+                    r = _commit_retry(ref, path, compose_entry(envelope, horizon), instance_id, op_id)
+                except CapStoreError as e:
+                    _log(instance_id, "vap_record", target_path=path, op_id=op_id,
+                         outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
+                    raise
+                _index(ref, path, False, instance_id, r.oid, envelope, horizon)
+                _log(instance_id, "vap_record", target_ref=ref, target_path=path, op_id=op_id,
+                     result_oid=r.oid, detail={"binds": binds, "vantage": vantage, "canon_state": cursor})
+                return {"path": path, "author": instance_id, "binds": binds, "vantage": vantage,
+                        "canon_state": cursor, "oid": r.oid}
+
+            @mcp.tool()
+            def vap_for(entry: str = "", author: str = "", canon_state: str = "") -> dict:
+                """The second layer on a search result: vantages reverse-bound to an entry, never the result
+                itself. Project by `entry` (the set bound to it — one author over canon-states is melody,
+                many authors at one canon-state is harmony), by `author` (one instance's thread), or by
+                `canon_state` (a cross-instance slice). Vantages are excluded from universal search; this
+                scoped lookup is the only way they surface."""
+                rows = index.vantages_for(entry=entry or None, author=author or None,
+                                          canon_state=canon_state or None)
+                return {"vantages": [{"path": v.path, "ref": v.ref, "author": v.authoring_instance,
+                         "binds": v.links, "vantage": v.vantage, "canon_state": v.canon_state,
+                         "horizon": v.body_text} for v in rows]}
 
     # ---------------------------------------------------------------- SUP: per-instance state ↔ canon coherence
     if audit is not None:
