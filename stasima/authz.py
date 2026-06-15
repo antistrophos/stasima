@@ -17,7 +17,7 @@ from typing import Optional
 
 CANON_REF = "refs/heads/main"
 PERSP_PREFIX = "refs/cap/perspectives/"
-WRITE_OPS = {"kip_commit", "propose", "imp_send"}
+WRITE_OPS = {"kip_commit", "propose", "imp_send", "vap_record"}
 
 
 class Denied(Exception):
@@ -46,6 +46,8 @@ class DefaultPolicy(Authz):
             raise Denied("canon is human-gated — propose instead of writing it directly")
         if op == "kip_commit" and (target_path or "").startswith("messages/"):
             raise Denied("messages must be sent via imp_send (so they get recipients + inbox indexing)")
+        if op == "kip_commit" and (target_path or "").startswith("vantages/"):
+            raise Denied("vantages must be recorded via vap_record (so they get canon-state pinning + index-exclusion)")
         if (target_ref and target_ref.startswith(self.persp_prefix)
                 and target_ref != self.persp_prefix + identity):
             raise Denied(f"{identity} may write only its own perspective, not {target_ref}")

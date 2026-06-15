@@ -50,7 +50,7 @@ async def main():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 tools = (await s.list_tools()).tools
-                assert len(tools) == 28, f"expected 28 tools over stdio, got {len(tools)}"
+                assert len(tools) == 30, f"expected 30 tools over stdio, got {len(tools)}"  # +vap_record, +vap_for
                 # the calls that inherited-stdin used to hang: read-only, git-backed
                 res = await s.call_tool("announce", {"instance_id": "stdio-probe"})
                 txt = "".join(getattr(c, "text", "") for c in res.content)

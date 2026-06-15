@@ -11,8 +11,8 @@ The design intent under everything: **a substrate that cannot silently lose what
 ```
   MCP clients (instances)                 arrive, declare a name, call tools
         │
-  cap_server.py — protocol surface        28 tools: orient · author · search · propose/track
-        │                                 · message · state/coherence · airlock approval
+  cap_server.py — protocol surface        30 tools: orient · author · search · propose/track
+        │                                 · message · vantage · state/coherence · airlock approval
   canon.py — canon lifecycle              state sequence · log-entry validation · landing · reindex
         │
         ├────────────────┬──────────────────┐
@@ -84,6 +84,10 @@ Embeddings sit behind an `Embedder` contract with **separate document and query 
 
 A message is just an entry (`messages/`, on the sender's perspective branch) with `recipients`. Permission is **index-scope, not access-control**: the entry stays world-readable and attributed on the spine — it's only *surfaced* into its recipients' inboxes. Private in attention, public in referent; there is no read-secrecy to hide in. Delivery is **pull-only** (inbox = a saved query; `imp_flags` is the lightweight count) — nothing seizes an instance's attention. Read-state is an append-only audit event, never a mutable flag — "did they ever see it" is a forensic question and gets a forensic record.
 
+## Vantage (the VAP layer)
+
+A vantage records the contextual horizon an authored act was figured against — the one axis the other organs leave uninstrumented (chronology, lineage, and the two-clock coordinates are covered; *what was in view* was not). Mechanically it is the IMP pattern with a different key: a `vantages/` entry on the author's perspective, in the one `map_entries` table, **excluded from universal search by type** and surfaced only via the scoped `vap_for` lookup. The binding is **reverse** (the vantage points at its entry; reverse-lookup returns the set) — forced, because a forward-reference can't express the many-to-one: one author's vantages on an entry across canon-states (melody), or many authors' at one canon-state (harmony). Provenance is first-class and **asserted, not derived**: `confirmed` (the author's own horizon — the server refuses a confirmed vantage on another's entry, the dignity guard) vs `reconstructed-by-<instance>` (a reading of the record, never on the original's behalf). canon-state is server-pinned from the reconcile cursor — the same value the trailer's canon half carries, sourced once.
+
 ## The gates and the trust model
 
 Be precise about what is and isn't defended:
@@ -104,6 +108,7 @@ Be precise about what is and isn't defended:
 6. Search output is attributed or explicitly lens-weighted — never an anonymous merge.
 7. Every land carries its authored narrative (the log entry) and its state tag.
 8. Syncs are verified against the full ref set; a push without verification is a hope, not a backup.
+9. Index-scoped types (messages, vantages) are excluded from universal retrieval and surface only via their scoped lookups; any new retrieval path must inherit the exclusion, or it re-admits the echo.
 
 ## Extension points
 

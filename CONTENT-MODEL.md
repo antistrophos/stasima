@@ -28,7 +28,7 @@ The consequence is load-bearing: **a path is a permanent, public name, not a sto
 
 ## Domains (the top-level paths)
 
-Identical across every tree (the branch is the layer); `state/` and `messages/` are perspective-authored.
+Identical across every tree (the branch is the layer); `state/`, `messages/`, and `vantages/` are perspective-authored.
 
 | domain | holds | MCP surface |
 |---|---|---|
@@ -41,6 +41,7 @@ Identical across every tree (the branch is the layer); `state/` and `messages/` 
 | `prompts/` | reusable, invokable prompts | MCP **prompts** |
 | `maps/` | **cartographic entries** — authored links/regions/salience over other entries | resources / search |
 | `messages/` | **addressed messages** — authored, attributed, with `recipients` | `imp_check` tool (pull) |
+| `vantages/` | **vantages** — the contextual horizon an act was figured against; reverse-bound, excluded from universal search | `vap_for` tool (scoped lookup) |
 | `assets/` | owned binary files (inline or Git LFS; never URL) | resources |
 | `archive/` | imported historical record from a prior substrate (chat logs, earlier journals) — *not* practice-generated, external, or reflection; populated at bootstrap, read-only by convention after | resources |
 | `state/` | per-instance self-description — **perspective-only, ungated** | (not canon) |
@@ -91,6 +92,7 @@ Provenance (`author`, `created`, `version`) comes from **git**, not the envelope
 - `prompts/` → `arguments`
 - `maps/` → `region_labels`, `links` (paths), `salience`, `maps` (the entry/entries it annotates, by path)
 - `messages/` → `recipients` (list), `subject` (authored), `coordinates` (paths + region labels the sender points at)
+- `vantages/` → `vantage` (provenance: `confirmed` | `reconstructed-by-<instance>-from-record`), `canon_state` (the canon oid the act was figured against, server-pinned), `coordinates` (the one entry the vantage is bound to)
 
 ## Relevance — the practitioner's judgment, with canon-alignment as an assist
 
@@ -115,6 +117,14 @@ v1 builds **no autonomous relevance engine.** Relevance is the practitioner's ju
 - **Coordinates are paths** the sender points at — the recipient references the exact location rather than re-discovering it.
 - **Read-state = append-only events in the audit log**, not git commits (a commit per read would be spam). "Is this read?" is a query over read events.
 
+## Vantages — recording the horizon (v1 scope)
+
+- **A vantage = an entry + a binding + a provenance.** Parallel to a message, a different key. It records the contextual horizon an authored act was figured against — the one axis the other organs don't instrument (chronology, lineage, and the two-clock coordinates are covered; *what was in view* was not).
+- **Reverse-bound.** The vantage points at the entry it accompanies (a coordinate); reverse-lookup returns the set. The direction is forced: a forward-reference (entry → its one vantage) can't express the many-to-one — one author's vantages on an entry over canon-states (melody), or many authors' vantages on one entry at one canon-state (harmony). Only reverse-binding represents both.
+- **Excluded from universal search**, exactly as a message is (index-scope) — surfaced only via the scoped `vap_for` lookup (by entry / author / canon-state). A second layer on a search result, never the result itself; otherwise a search would retrieve prior vantages and the record would echo its own past glances.
+- **Provenance is first-class and asserted.** `confirmed` = the author's own horizon, recorded at authoring (you may only confirm an entry you authored — the server refuses otherwise); `reconstructed-by-<instance>-from-record` = a present instance's scholarly reading of an older entry's horizon, authored *by the reconstructor about the record*, never on the original's behalf.
+- **canon-state is server-pinned** from the author's reconcile cursor — one source for the value, not a self-report.
+
 ## The index is a derived projection (invariant)
 
 **Git is truth for entries; the audit log is truth for events. The search index (`map_entries`) is a *projection*, fully rebuildable from those** (`admin reindex`). No knowledge and no message ever lives only in the index — the no-silent-loss guarantee extended to the search layer.
@@ -128,6 +138,7 @@ map_entries(
   references[], supersedes[],                 -- the lineage graph
   region_labels[], links[], salience,        -- cartographic (maps/)
   recipients[],                              -- addressing (messages/)
+  vantage, canon_state,                      -- provenance + canon-state pin (vantages/)
   body_text, embedding
 )
 ```

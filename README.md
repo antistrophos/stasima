@@ -62,7 +62,7 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 | `stasima/orientation.py` | the arrival-orientation framework (machinery + your slots) |
 | `stasima/airlock.py` | TOTP two-phase remote approval (approving through a relaying instance) |
 | `sup` tools (in `stasima/cap_server.py`) | per-instance state ↔ canon coherence |
-| `stasima/cap_server.py` | the MCP server: the 28 tools, plus `server_from_config` / `land_and_record` |
+| `stasima/cap_server.py` | the MCP server: the 30 tools, plus `server_from_config` / `land_and_record` |
 | `stasima/config.py` | the typed deployment config (`stasima.toml`) |
 | `stasima/admin.py` | the practitioner CLI (`stasima-admin`) — what *you* run |
 | `stasima/tui.py` | the practitioner's menu cockpit (`stasima-cockpit`) — a Tier-0 TUI over `admin`; **beta** |
