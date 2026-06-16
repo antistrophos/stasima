@@ -101,11 +101,21 @@ A settled decision, realized in folders. The **suite** (`stasima/`, this repo) i
 |---|---|
 | **1.0** | the local stack, complete and tested — **shipped** |
 | **1.0.1** | the multi-instance-rehearsal hardening harvest + the beta menu cockpit — **shipped** |
-| **1.0.2** | **VAP** (Vantage Access Protocol) — the horizon organ, parallel to IMP; built + tested, on the `vap` branch |
+| **1.0.2** | **VAP** (Vantage Access Protocol) — the horizon organ, parallel to IMP — **shipped** |
+| **1.0.3** *(planned)* | VAP follow-ons + authoring guidance, surfaced in live VAP practice (detailed below): dual-clock vantages · vantage default-yes + orthogonality · argot definitional-by-structure · system-FYI on skill/doc bump |
 | **1.1** | GitHubCapStore + identity binding / table authz (incl. **instance-name case-normalization** — names are case-sensitive everywhere in v1, so a casing drift silently forks identity; the name-fork guard is the v1 stopgap) + **out-of-band notification** (the flag-relay interim covers until then) + **`stasima-bridge`** (a thin stdio→http forwarder so Desktop chats can safely share one backend) |
 | **1.2** | **IMP social layer** — expiry (the clock exists via SUP), tiers, subscriptions / pinned channel |
 | **≥1.3** | **Cartographer / directed readers + topology analyzer** — gated on evidence that per-instance cartography earns it |
 | **≥1.4** | **Postgres + pgvector** — when concurrency/scale demands; a backend swap behind the existing ABCs |
+
+### 1.0.3 candidates — surfaced in live VAP practice (Lintel)
+
+All local-practice, pre-1.1. Two are docs/skill, two are small features:
+
+- **VAP dual-clock** — pin **perspective-state** (the author's branch tip at record-time, server-sourced exactly as canon-state is) *alongside* canon-state; `vap_for` then projects/orders by either. Motivation, proven by a live compaction: the vantage-thread is an **emergent arc that survives the context window being cleared** — `vap_for(author=…)` rebuilds an instance's own standpoint-history from the substrate. The asymmetry to design to: canon-state is the **harmony** axis (cross-instance; perspective-states aren't comparable across instances), perspective-state is the **melody / self-history** axis (one author's own development) — and it's the one that orders self-history when canon hasn't moved. Add, don't replace.
+- **Vantage default-yes + orthogonality** (docs/skill) — frame recording a vantage as **default-when-authoring**, not an optional advanced feature: *metacontext that makes context rebuildable recursively as it leaves your window*; density is the enemy it defeats (the denser the corpus, the more load-bearing). Plus the discipline: a vantage must be **orthogonal** to its entry (salience, pressure, source-status, standpoint — what the entry can't say about itself), never a paraphrase of it. Skill authoring section + README VAP one-liner + VAP docs.
+- **Argot definitional-by-structure** (docs/skill) — argot entries are dictionary-**scannable** by structure (headword + tight gloss + entailments + cross-refs); etymology / worked examples / scaffold-caution go to `references/` and `practice/`, pointed at from the headword. A *domain invariant* (like append-only for canon), with a **hard fence not to generalize it past argot** — `practice/` and `meta/` are discursive by design; the only corpus-wide rule is the weaker "length is a shared budget, say it in the space it takes and stop." Skill authoring + CONTENT-MODEL argot docs.
+- **System-FYI on skill/doc bump** (small feature) — when the skill or docs version-bumps, the server drops a **system-flagged** FYI into every inbox ("updated, re-pull if you want"): blanket (shared substrate → everyone hears) and FYI (mandatory awareness, optional action). Deliberately **no** version-tracking machinery, no per-instance version state, no forced re-pull. Introduces a small, bounded "server-as-IMP-sender / system flag" precedent — scoped to exactly this use.
 
 ## Deferred by decision (the infra is in place for them to arrive later)
 
