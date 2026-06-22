@@ -75,6 +75,11 @@ class Config:
     # (one client, no queuing) / 20s for http (concurrent clients can briefly queue). Raise it if a
     # land/reindex on a very large corpus legitimately approaches the limit.
     git_timeout: float = 0.0
+    # Timeout (seconds) for NETWORK/batch git ops — push/fetch/ls-remote, i.e. backup, mirror, sync.
+    # These legitimately take seconds-to-minutes (slow hardware, slow link, large transfer), so they
+    # are NOT bound by the tight steady-state git_timeout above. Raise it for a huge corpus over a slow
+    # link; lower it to fail a stuck remote faster.
+    git_network_timeout: float = 300.0
 
     @classmethod
     def load(cls, path: str | None = None, env: dict | None = None) -> "Config":
@@ -98,11 +103,12 @@ class Config:
                     data[intf] = int(data[intf])
                 except (TypeError, ValueError):
                     raise ConfigError(f"{intf} must be an integer, got {data[intf]!r}")
-        if "git_timeout" in data:
-            try:
-                data["git_timeout"] = float(data["git_timeout"])
-            except (TypeError, ValueError):
-                raise ConfigError(f"git_timeout must be a number, got {data['git_timeout']!r}")
+        for _fl in ("git_timeout", "git_network_timeout"):
+            if _fl in data:
+                try:
+                    data[_fl] = float(data[_fl])
+                except (TypeError, ValueError):
+                    raise ConfigError(f"{_fl} must be a number, got {data[_fl]!r}")
         known = {f.name for f in fields(cls)}
         unknown = set(data) - known
         if unknown:
@@ -132,6 +138,8 @@ class Config:
             self._check_bind_address(self.http_host)
         if self.git_timeout < 0:
             raise ConfigError("git_timeout must be >= 0 (0 = auto by transport: 2s stdio / 20s http)")
+        if self.git_network_timeout <= 0:
+            raise ConfigError("git_network_timeout must be > 0 (seconds; the bound for backup/mirror/sync git ops)")
 
     def resolved_git_timeout(self) -> float:
         if self.git_timeout > 0:

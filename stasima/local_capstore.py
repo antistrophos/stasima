@@ -108,6 +108,7 @@ class LocalCapStore:
         git_bin: str = "git",
         git_timeout: float = 30.0,
         git_grace_timeout: float = 15.0,
+        git_network_timeout: float = 300.0,
     ):
         self.git_dir = git_dir
         self.approvers = approvers
@@ -123,10 +124,16 @@ class LocalCapStore:
         # + the OS loading it); everything after is warm. So the first call gets a generous grace
         # window to "clear its throat," then the tight steady-state timeout applies.
         self.git_grace_timeout = git_grace_timeout
+        # Network git ops (push/fetch/ls-remote to a remote — backups, mirrors, sync) legitimately take
+        # seconds-to-minutes, especially on slow hardware or a slow link. The tight steady-state timeout
+        # above is tuned for sub-second LOCAL ops and is the wrong guard for them, so they pass this
+        # generous bound explicitly via _run(..., timeout=...).
+        self.git_network_timeout = git_network_timeout
         self._git_warmed = False
 
     # ---- low-level git invocation ----
-    def _run(self, *args: str, input: Optional[bytes] = None, extra_env: Optional[dict] = None):
+    def _run(self, *args: str, input: Optional[bytes] = None, extra_env: Optional[dict] = None,
+             timeout: Optional[float] = None):
         env = dict(os.environ)
         env["GIT_DIR"] = self.git_dir
         if extra_env:
@@ -140,11 +147,20 @@ class LocalCapStore:
             kwargs["stdin"] = subprocess.DEVNULL
         else:
             kwargs["input"] = input
-        # first call: at least the grace window (cold start); after that: the tight steady-state timeout
-        timeout = self.git_timeout if self._git_warmed else max(self.git_timeout, self.git_grace_timeout)
+        # A caller-supplied timeout (network/batch ops — push/fetch/ls-remote) overrides: those are NOT
+        # the sub-second local case the steady-state guards, so the contention heuristic is wrong for
+        # them. Otherwise: first call gets at least the cold-start grace window; then the tight steady-state.
+        is_network = timeout is not None
+        if timeout is None:
+            timeout = self.git_timeout if self._git_warmed else max(self.git_timeout, self.git_grace_timeout)
         try:
             p = subprocess.run([self.git_bin, *args], timeout=timeout, **kwargs)
         except subprocess.TimeoutExpired:
+            if is_network:
+                raise BackendUnavailable(
+                    f"git {args[0]} exceeded the network timeout ({timeout:.0f}s) and was aborted — a slow "
+                    f"remote, a slow link, or a very large transfer. Raise git_network_timeout if this is a "
+                    f"legitimate long backup/sync. The operation did NOT complete; retry when ready.")
             warm = "" if self._git_warmed else " (cold-start grace window)"
             raise BackendUnavailable(
                 f"git {args[0]} exceeded {timeout:.0f}s{warm} and was aborted — almost always a second "
@@ -153,8 +169,9 @@ class LocalCapStore:
         self._git_warmed = True   # warm from here on; steady-state timeout applies
         return p.returncode, p.stdout, p.stderr.decode("utf-8", "replace")
 
-    def _git(self, *args: str, input: Optional[bytes] = None, extra_env: Optional[dict] = None) -> bytes:
-        rc, out, err = self._run(*args, input=input, extra_env=extra_env)
+    def _git(self, *args: str, input: Optional[bytes] = None, extra_env: Optional[dict] = None,
+             timeout: Optional[float] = None) -> bytes:
+        rc, out, err = self._run(*args, input=input, extra_env=extra_env, timeout=timeout)
         if rc != 0:
             raise BackendUnavailable(f"git {' '.join(args)} -> {rc}: {err.strip()}")
         return out
@@ -457,11 +474,11 @@ class LocalCapStore:
         Non-fast-forward pushes fail (append-only is preserved). `prune` mirrors deletions
         within these namespaces only — off by default for an append-only store."""
         args = ["push"] + (["--prune"] if prune else []) + [remote] + self.SYNC_REFSPECS
-        self._git(*args)
+        self._git(*args, timeout=self.git_network_timeout)
         return self.verify_sync(remote)
 
     def fetch_all(self, remote: str = "origin") -> None:
-        self._git("fetch", remote, *self.SYNC_REFSPECS)
+        self._git("fetch", remote, *self.SYNC_REFSPECS, timeout=self.git_network_timeout)
 
     def commit_file(self, ref: str, filename: str, content: bytes, message: str) -> RefInfo:
         """Commit a single file as the whole content of `ref` — a dedicated, force-advanced ref for
@@ -479,7 +496,8 @@ class LocalCapStore:
         """Push the content refs (+ any extra refspecs) to a remote URL and verify nothing dropped.
         The off-machine backup primitive — same anti-silent-loss verification as push_all."""
         self.set_remote(remote, url)
-        rc, _, err = self._run("push", remote, *self.SYNC_REFSPECS, *extra_refspecs)
+        rc, _, err = self._run("push", remote, *self.SYNC_REFSPECS, *extra_refspecs,
+                               timeout=self.git_network_timeout)
         if rc != 0:
             raise BackendUnavailable(f"push to {url} failed: {err.strip()}")
         return self.verify_sync(remote)
@@ -492,7 +510,7 @@ class LocalCapStore:
             for r in self.list_refs(pfx):
                 local[r.name] = r.oid
         remote_refs = {}
-        for line in self._git("ls-remote", remote).decode().splitlines():
+        for line in self._git("ls-remote", remote, timeout=self.git_network_timeout).decode().splitlines():
             if "\t" in line:
                 oid, name = line.split("\t")
                 remote_refs[name] = oid
