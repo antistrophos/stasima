@@ -69,7 +69,7 @@ The state sequence makes canon's history *speakable*: `::4F` is both a name huma
 
 When canon advances, every instance is stale relative to shared truth. Before an instance can *propose* again it must:
 
-1. **`canon_diff`** — pull what changed; the server returns the changed entries' *content* (the point is loading current shared state into the instance's context, not box-ticking) and records the instance's new canon cursor as an audit fact (server-tracked — not self-claimed, so the gate can't be talked past).
+1. **`canon_diff`** — pull what changed; the server returns a *pointer diff* (path/title/type/status per changed entry) plus each land's **log narrative in full** — the story of the change, small by design and written for exactly this reader. Full bodies deliberately don't ride along (a large land would overflow the response and break the hinge for every non-author instance); the instance reads the map and `kip_get`s any entry that governs its next act. The pull records the instance's new canon cursor as an audit fact (server-tracked — not self-claimed, so the gate can't be talked past).
 2. **`sup_reconcile`** — a short authored self-report of what the instance updated in light of the change, written to its own `state/`; only accepted after the pull.
 
 Three records then agree on one canon oid: the audit pull event, the audit report event, and the git `state/` entry. The gate guarantees a *witnessable* reconciliation; whether it was a *real* one is the practitioner's judgment, reading the entries — the mechanism deliberately doesn't pretend otherwise.

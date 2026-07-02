@@ -79,6 +79,11 @@ async def main():
 
         cd = payload(await call("canon_diff", instance_id="r2"))
         assert any(c["path"] == "practice/seed.md" for c in cd["changed"]), "first pull loads all canon"
+        # pointer diff: full bodies must NOT ride along (a large land would overflow the response and
+        # break the reconcile hinge for every non-author seat) — titles/status do, so the map is triageable
+        assert all("content" not in c for c in cd["changed"]), "diff returns pointers, never full bodies"
+        assert all("title" in c for c in cd["changed"] if not c.get("removed")), "pointers carry the envelope"
+        assert cd["changed_count"] == len(cd["changed"])
         sr = payload(await call("sup_reconcile", instance_id="r2", body="I've read current canon."))
         old_tip = sr["canon_cursor"]
         assert not err(await call("propose", instance_id="r2", proposal_id="p-1", domain="practice",
@@ -99,6 +104,10 @@ async def main():
                               slug="principle2", body="another", op_id="pr2")), "stale again after a land"
         cd2 = payload(await call("canon_diff", instance_id="r2"))
         assert any(c["path"] == "practice/principle.md" for c in cd2["changed"]), "pull loads the landed change"
+        # the land's log narrative rides in FULL (small by design; the story exists for the reconciling seat)
+        assert any(l["path"] == "meta/log/3c.md" and "::3C" in l["body"] for l in cd2["logs"]), \
+            "the log narrative rides the diff in full"
+        assert all("content" not in c for c in cd2["changed"]), "incremental diff is pointers too"
         payload(await call("sup_reconcile", instance_id="r2", body="Read the new principle; adjusting."))
         assert not err(await call("propose", instance_id="r2", proposal_id="p-2", domain="practice",
                                   slug="principle2", body="another", op_id="pr2")), "propose allowed after re-reconcile"

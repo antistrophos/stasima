@@ -462,9 +462,12 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     if audit is not None:
         @mcp.tool()
         def canon_diff(instance_id: str) -> dict:
-            """Pull what changed in canon since you last reconciled — this LOADS the diff into your context
-            so you can respond coherently. Advances your canon cursor (a server-tracked fact). You must then
-            sup_reconcile before you can propose again."""
+            """Pull what changed in canon since you last reconciled — a POINTER diff: path/title/type/status
+            per changed entry, plus each land's log narrative in full (the story of the change, written for
+            exactly this reader). Read the map, then kip_get(ref='canon', path=...) any entry that governs
+            your next act — full bodies deliberately do NOT ride along (a large land would overflow the
+            response, breaking the reconcile hinge for every non-author seat). Advances your canon cursor
+            (a server-tracked fact). You must then sup_reconcile before you can propose again."""
             tip = store.resolve_ref(store.canon_ref)
             prev = _canon_cursor(instance_id)
             if tip is None:
@@ -473,15 +476,20 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 paths = store.list_paths(store.canon_ref)        # first pull: all of current canon
             else:
                 paths = store.changed_paths(prev, tip)
-            changed = []
+            changed, logs = [], []
             for p in paths:
                 try:
-                    changed.append({"path": p, "content": store.read_blob(store.canon_ref, p).decode("utf-8", "replace")})
+                    envelope, body = parse_entry(store.read_blob(store.canon_ref, p).decode("utf-8", "replace"))
                 except (PathNotFound, RefNotFound):
-                    changed.append({"path": p, "content": None})  # removed in canon
+                    changed.append({"path": p, "removed": True})  # gone in canon (append-only guards should make this unreachable)
+                    continue
+                changed.append({"path": p, "title": envelope.get("title", ""), "type": envelope.get("type", ""),
+                                "status": envelope.get("status", "")})
+                if envelope.get("type") == "log":
+                    logs.append({"path": p, "body": body})       # small by design; the narrative IS for the reconciling seat
             _log(instance_id, "canon_pull", target_ref=store.canon_ref, result_oid=tip,
                  detail={"from": prev, "changed": paths})
-            return {"canon_tip": tip, "from": prev, "changed": changed}
+            return {"canon_tip": tip, "from": prev, "changed_count": len(changed), "changed": changed, "logs": logs}
 
         @mcp.tool()
         def sup_reconcile(instance_id: str, body: str) -> dict:
