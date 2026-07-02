@@ -174,6 +174,9 @@ class MapIndex(ABC):
     def authors_of(self, path: str) -> set: ...   # whose entry is this, across refs — for the confirmed check
 
     @abstractmethod
+    def envelopes_for(self, ref: str) -> dict: ...   # {path: {title,status,type}} — listing enrichment, one query
+
+    @abstractmethod
     def clear(self) -> None: ...   # for a full rebuild from git
 
 
@@ -295,6 +298,14 @@ class SqliteMapIndex(MapIndex):
         promotion, so this answers 'whose entry is this?' for the confirmed-vantage dignity check."""
         return {r["authoring_instance"] for r in
                 self.conn.execute("SELECT DISTINCT authoring_instance FROM map_entries WHERE path = ?", (path,))}
+
+    def envelopes_for(self, ref):
+        """Envelope pointers (title/status/type) for every indexed entry under `ref` — ONE query, so
+        listings can be enriched without N per-path git reads. The index is a derived cache: a path it
+        doesn't know simply gets empty fields; git remains the truth of WHICH paths exist."""
+        return {r["path"]: {"title": r["title"] or "", "status": r["status"] or "", "type": r["type"] or ""}
+                for r in self.conn.execute(
+                    "SELECT path, title, status, type FROM map_entries WHERE ref = ?", (ref,))}
 
     def clear(self):
         self.conn.execute("DELETE FROM map_entries")

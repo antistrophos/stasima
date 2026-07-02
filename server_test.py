@@ -82,7 +82,12 @@ async def main():
 
         mp = payload(await client.call_tool("my_perspective", {"instance_id": "research-2"}))
         got = payload(await client.call_tool("kip_get", {"ref": "research-2", "path": "practice/durability-notes.md"}))
-        print("my_perspective:", mp["entries"])
+        # listings are triageable pointers, not bare paths — title/status/type ride along from the index
+        assert all("path" in e and "status" in e and "title" in e for e in mp["entries"]), \
+            "my_perspective entries are enriched pointers"
+        le = payload(await client.call_tool("list_entries", {"ref": "canon"}))
+        assert all("path" in e and "status" in e for e in le["entries"]), "list_entries entries are enriched pointers"
+        print("my_perspective:", [e["path"] for e in mp["entries"]])
 
         # reconcile with canon before proposing (the coherence gate now requires it)
         await client.call_tool("canon_diff", {"instance_id": "research-2"})
@@ -169,7 +174,8 @@ async def main():
         assert paths.index("practice/durability-notes.md") < paths.index("practice/scaling-notes.md")
         assert [h["path"] for h in canon_only] == ["practice/no-silent-loss.md"]
         assert all(h["author"] == "research-7" for h in mine7)
-        assert mp["entries"] == ["practice/durability-notes.md"]
+        assert [e["path"] for e in mp["entries"]] == ["practice/durability-notes.md"]
+        assert mp["entries"][0]["title"], "the listing pointer carries the entry's title from the index"
         assert "Notes on durability" in got
         assert cp["conflicts"] is False and ps["status"] == "pending"
         assert flag7["unread"] == 1 and after["unread"] == 0

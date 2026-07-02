@@ -245,17 +245,29 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         """Read an entry's full text (envelope + body). `ref` may be 'canon', an instance name, or a full ref."""
         return store.read_blob(resolve_alias(ref), path).decode()
 
+    def _listing(full_ref: str, paths: list) -> list:
+        """Enrich bare paths into triageable pointers ({path, title, status, type}) from the index —
+        ONE query, not N per-path git reads. Git remains the truth of WHICH paths exist; a path the
+        index doesn't know (e.g. a proposal ref, or a stale index) keeps empty fields rather than lying."""
+        env = index.envelopes_for(full_ref) if index is not None else {}
+        blank = {"title": "", "status": "", "type": ""}
+        return [{"path": p, **env.get(p, blank)} for p in paths]
+
     @mcp.tool()
     def list_entries(ref: str, path: str = "") -> dict:
-        """List entry paths under a ref ('canon', an instance name, or a full ref)."""
-        return {"entries": store.list_paths(resolve_alias(ref), path)}
+        """List entries under a ref ('canon', an instance name, or a full ref) as triageable pointers —
+        each carries path, title, status, and type, so live-vs-dead and what's-what are apparent
+        BEFORE you pull a body."""
+        full = resolve_alias(ref)
+        return {"entries": _listing(full, store.list_paths(full, path))}
 
     @mcp.tool()
     def my_perspective(instance_id: str) -> dict:
-        """Your perspective tip + your entry paths — your own state trail."""
+        """Your perspective tip + your entries as triageable pointers (path, title, status, type) —
+        your own state trail, scannable without fetching bodies."""
         ref = persp_ref(instance_id)
         tip = store.resolve_ref(ref)
-        return {"tip": tip, "entries": store.list_paths(ref) if tip else []}
+        return {"tip": tip, "entries": _listing(ref, store.list_paths(ref)) if tip else []}
 
     @mcp.tool()
     def kip_history(ref: str, path: str) -> dict:
