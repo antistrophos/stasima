@@ -241,9 +241,51 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     # ---------------------------------------------------------------- read
     @mcp.tool()
-    def kip_get(ref: str, path: str) -> str:
-        """Read an entry's full text (envelope + body). `ref` may be 'canon', an instance name, or a full ref."""
-        return store.read_blob(resolve_alias(ref), path).decode()
+    def kip_get(ref: str, path: str, resolve: str = "live") -> dict:
+        """Read an entry (envelope + body in `text`). `ref` may be 'canon', an instance name, or a full ref.
+        resolve='live' (default): if the entry at `path` is superseded, follow superseded_by to the LIVING
+        edition and return that, with the redirect chain in `resolved_from` — a base-path fetch can no
+        longer silently hand back a retired body. resolve='exact': return exactly the edition at `path`
+        (deliberately reading a retired body). A missing '.md' is normalized; a miss on the asked ref
+        names where the path actually lives, so the re-fetch stays deliberate and attributed."""
+        full = resolve_alias(ref)
+        p = path if path.endswith(".md") else path + ".md"
+        try:
+            text = store.read_blob(full, p).decode()
+        except (PathNotFound, RefNotFound):
+            # tolerant miss: say where it DOES resolve rather than a blind not-found — the error is
+            # the instruction; content never silently crosses refs (attribution stays deliberate)
+            found = []
+            for cand in [store.canon_ref] + [r.name for r in store.list_refs(PERSP)]:
+                if cand == full:
+                    continue
+                try:
+                    store.read_blob(cand, p)
+                    found.append("canon" if cand == store.canon_ref else cand[len(PERSP):])
+                except (PathNotFound, RefNotFound):
+                    pass
+            hint = f" — but it exists on ref(s) {found}; fetch it there explicitly" if found else ""
+            raise PathNotFound(f"{p} not found at {ref}{hint}")
+        chain = []
+        while resolve != "exact" and len(chain) < 10:
+            envelope, _body = parse_entry(text)
+            succ = envelope.get("superseded_by") or []
+            if envelope.get("status") != "superseded" or not succ:
+                break
+            nxt = succ[0] if succ[0].endswith(".md") else succ[0] + ".md"
+            if nxt == p or nxt in chain:
+                break                                    # cycle guard: stop, chain stays visible
+            try:
+                text2 = store.read_blob(full, nxt).decode()
+            except (PathNotFound, RefNotFound):
+                break                                    # follow failed: return the last edition that resolves
+            chain.append(p)
+            p, text = nxt, text2
+        envelope, _body = parse_entry(text)
+        out = {"text": text, "path": p, "status": envelope.get("status", ""), "title": envelope.get("title", "")}
+        if chain:
+            out["resolved_from"] = chain
+        return out
 
     def _listing(full_ref: str, paths: list) -> list:
         """Enrich bare paths into triageable pointers ({path, title, status, type}) from the index —
@@ -427,6 +469,8 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 behalf). canon-state is pinned server-side from your reconcile cursor, not author-supplied."""
                 if kind not in ("confirmed", "reconstructed"):
                     raise Denied("kind must be 'confirmed' or 'reconstructed'")
+                if binds and not binds.endswith(".md"):
+                    binds = binds + ".md"    # normalize at write — a bare coordinate is unresolvable later
                 ref = persp_ref(instance_id)
                 path = f"vantages/{op_id}.md"
                 _authz(instance_id, "vap_record", ref, path)

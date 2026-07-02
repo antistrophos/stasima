@@ -100,6 +100,13 @@ async def main():
         vf3 = pay(await c.call_tool("vap_for", {"entry": "practice/tide-note.md"}))["vantages"]
         assert len(vf3) == 2, ("the refused confirmed vantage must not have been recorded", vf3)
 
+        # binds normalization: a bare coordinate (missing .md) is normalized at write, never stored
+        # unresolvable (the mis-bound-coordinate finding from the live vantage audit). Last so the
+        # projection counts above stay undisturbed.
+        rec_b = pay(await c.call_tool("vap_record", {"instance_id": "Aria", "binds": "practice/tide-note",
+                                                     "horizon": HORIZON, "op_id": "v1b", "kind": "confirmed"}))
+        assert rec_b["binds"] == "practice/tide-note.md", rec_b
+
     print("OK -- VAP: index-excluded like IMP (horizon never in universal search, retrievable via vap_for); "
           "reverse-bound projection (melody + harmony); authored-vs-reconstructed first-class; "
           "confirmed-on-another's-entry refused, no trace.")

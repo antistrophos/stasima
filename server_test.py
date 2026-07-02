@@ -126,7 +126,7 @@ async def main():
             "title": "Durability v2", "references": ["practice/no-silent-loss.md"],
             "supersedes": ["practice/durability-notes.md"]})
         env2, _ = parse_entry(payload(await client.call_tool("kip_get",
-            {"ref": "research-2", "path": "practice/durability-v2.md"})))
+            {"ref": "research-2", "path": "practice/durability-v2.md"}))["text"])
         assert env2.get("supersedes") == ["practice/durability-notes.md"] \
             and env2.get("references") == ["practice/no-silent-loss.md"], env2
         # retire the old entry: metadata-only re-commit (same body) flips status — immutability still holds
@@ -136,6 +136,16 @@ async def main():
             "superseded_by": ["practice/durability-v2.md"]})
         env1, _ = parse_entry(store.read_blob("refs/cap/perspectives/research-2", "practice/durability-notes.md").decode())
         assert env1["status"] == "superseded" and env1["superseded_by"] == ["practice/durability-v2.md"], env1
+        # live-resolution: a base-path fetch now follows the tombstone to the LIVING edition, chain visible
+        live = payload(await client.call_tool("kip_get", {"ref": "research-2", "path": "practice/durability-notes.md"}))
+        assert live["path"] == "practice/durability-v2.md" and live["resolved_from"] == ["practice/durability-notes.md"], live
+        # resolve='exact' still reads the retired edition deliberately; a missing '.md' is normalized on the way in
+        corpse = payload(await client.call_tool("kip_get",
+            {"ref": "research-2", "path": "practice/durability-notes", "resolve": "exact"}))
+        assert corpse["path"] == "practice/durability-notes.md" and corpse["status"] == "superseded", corpse
+        # a miss on the asked ref NAMES where the path actually lives — the error is the instruction
+        miss = await client.call_tool("kip_get", {"ref": "research-7", "path": "practice/durability-v2.md"})
+        assert getattr(miss, "isError", False) and "research-2" in str(miss.content), miss.content
         # and a different body on the same path is still refused (the guard the flip rode through)
         bad = await client.call_tool("kip_commit", {"instance_id": "research-2", "domain": "practice",
             "slug": "durability-notes", "body": "secretly rewritten", "op_id": "sup-3"})
@@ -176,7 +186,7 @@ async def main():
         assert all(h["author"] == "research-7" for h in mine7)
         assert [e["path"] for e in mp["entries"]] == ["practice/durability-notes.md"]
         assert mp["entries"][0]["title"], "the listing pointer carries the entry's title from the index"
-        assert "Notes on durability" in got
+        assert "Notes on durability" in got["text"]
         assert cp["conflicts"] is False and ps["status"] == "pending"
         assert flag7["unread"] == 1 and after["unread"] == 0
         assert len(recto) == 1
