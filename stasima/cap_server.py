@@ -457,25 +457,35 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     if has_map:
         @mcp.tool()
         def map_search(instance_id: str, query: str, scope: str = "all",
-                       type: str | None = None, limit: int = 10) -> dict:
+                       type: str | None = None, limit: int = 10,
+                       include_superseded: bool = False) -> dict:
             """Semantic search over the corpus, attributed. scope: canon | mine | all. Returns pointers
-            (path, ref, author, is_canon, type, title, score, preview) — never an unattributed blend."""
+            (path, ref, author, is_canon, type, title, status, score, preview) — never an unattributed
+            blend. Live-only by default: superseded editions are excluded; `include_superseded=true` is
+            the deliberate opt-in, and every hit carries its `status` so a retired edition is apparent."""
             qv = embedder.embed_query([query])[0]
-            hits = index.search(qv, scope=scope, instance_id=instance_id, type=type, limit=limit)
+            hits = index.search(qv, scope=scope, instance_id=instance_id, type=type, limit=limit,
+                                status=None if include_superseded else "active")
             return {"results": [{"path": h.path, "ref": h.ref, "author": h.authoring_instance, "is_canon": h.is_canon,
-                     "type": h.type, "title": h.title, "score": h.score, "preview": h.preview} for h in hits]}
+                     "type": h.type, "title": h.title, "status": h.status, "score": h.score,
+                     "preview": h.preview} for h in hits]}
 
         if audit is not None:
             @mcp.tool()
             def imp_send(sender: str, recipients: list[str], subject: str, body: str, op_id: str,
-                         coordinates: list[str] | None = None) -> dict:
+                         coordinates: list[str] | None = None,
+                         supersedes: list[str] | None = None) -> dict:
                 """Author an addressed message — a KIP entry on your branch under messages/. World-readable and
-                attributed on the spine; indexed into each recipient's inbox. `coordinates` are paths to jump to."""
+                attributed on the spine; indexed into each recipient's inbox. `coordinates` are paths to jump to.
+                `supersedes` marks earlier message(s) this one replaces (sender-declared, the same lineage
+                field entries use) — the recipient's inbox then shows the old message WITH its tombstone."""
                 ref = persp_ref(sender)
                 path = f"messages/{op_id}.md"
                 _authz(sender, "imp_send", ref, path)
                 envelope = {"type": "msg", "subject": subject, "status": "active",
                             "recipients": recipients, "coordinates": coordinates or []}
+                if supersedes:
+                    envelope["supersedes"] = [p if p.endswith(".md") else p + ".md" for p in supersedes]
                 _pin(envelope, sender, ref)
                 try:
                     r = _commit_retry(ref, path, compose_entry(envelope, body), sender, op_id)
@@ -491,12 +501,21 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             @mcp.tool()
             def imp_check(instance_id: str, unread_only: bool = True) -> dict:
                 """Your inbox: messages where you're a recipient. Authored fields only (sender, subject,
-                coordinates) — IMP arranges, never synthesizes. Pull, not push."""
+                coordinates) — IMP arranges, never synthesizes. Pull, not push. Supersession is resolved
+                across the WHOLE inbox before anything surfaces: a message another inbox message declares
+                `supersedes` carries its tombstone in `superseded_by` — FLAT, nothing hidden (visibility,
+                not refusal; read the frontier first, reply to no corpse). Declared edges only — the
+                unmarked stays author-discipline."""
                 msgs = index.inbox(instance_id)
+                superseded_by = {}   # resolved over the full inbox, before any unread filtering
+                for m in msgs:
+                    for old in (m.supersedes or []):
+                        superseded_by[old] = m.path
                 if unread_only:
                     msgs = [m for m in msgs if not audit.is_read(instance_id, m.path)]
                 return {"messages": [{"path": m.path, "from": m.authoring_instance, "subject": m.subject,
-                         "coordinates": m.links, "ref": m.ref} for m in msgs]}
+                         "coordinates": m.links, "ref": m.ref, "supersedes": m.supersedes,
+                         "superseded_by": superseded_by.get(m.path, "")} for m in msgs]}
 
             @mcp.tool()
             def imp_flags(instance_id: str) -> dict:

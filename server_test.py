@@ -146,6 +146,16 @@ async def main():
         # a miss on the asked ref NAMES where the path actually lives — the error is the instruction
         miss = await client.call_tool("kip_get", {"ref": "research-7", "path": "practice/durability-v2.md"})
         assert getattr(miss, "isError", False) and "research-2" in str(miss.content), miss.content
+        # FEATURE A — live-only search by default; include_superseded is the deliberate opt-in,
+        # and the hit carries its status so the retired edition is apparent
+        live_hits = payload(await client.call_tool("map_search",
+            {"instance_id": "research-2", "query": "durability", "scope": "mine"}))["results"]
+        assert not any(h["path"] == "practice/durability-notes.md" for h in live_hits), live_hits
+        all_hits = payload(await client.call_tool("map_search",
+            {"instance_id": "research-2", "query": "durability", "scope": "mine",
+             "include_superseded": True}))["results"]
+        dead = [h for h in all_hits if h["path"] == "practice/durability-notes.md"]
+        assert dead and dead[0]["status"] == "superseded", all_hits
         # and a different body on the same path is still refused (the guard the flip rode through)
         bad = await client.call_tool("kip_commit", {"instance_id": "research-2", "domain": "practice",
             "slug": "durability-notes", "body": "secretly rewritten", "op_id": "sup-3"})
@@ -164,9 +174,28 @@ async def main():
         recto = payload(await client.call_tool("imp_check", {"instance_id": "recto"}))["messages"]
         print("imp_flags r-7 after read:", after, "| inbox recto:", [m["path"] for m in recto])
 
+        # FEATURE C — inbox supersession, flat-with-tombstones: a reply that supersedes an earlier
+        # message tombstones it AT NAVIGATION; nothing is hidden (visibility, not refusal)
+        await client.call_tool("imp_send", {"sender": "research-2", "recipients": ["research-7"],
+            "subject": "Durability restated — supersedes m-1", "body": "m-1's ask is resolved.",
+            "op_id": "m-2", "supersedes": ["messages/m-1"]})   # missing .md normalized at send
+        inbox7b = payload(await client.call_tool("imp_check",
+            {"instance_id": "research-7", "unread_only": False}))["messages"]
+        by_path = {m["path"]: m for m in inbox7b}
+        assert "messages/m-1.md" in by_path, "flat-with-tombstones: the superseded message stays visible"
+        assert by_path["messages/m-1.md"]["superseded_by"] == "messages/m-2.md", inbox7b
+        assert by_path["messages/m-2.md"]["supersedes"] == ["messages/m-1.md"], inbox7b
+        await client.call_tool("imp_mark_read", {"instance_id": "research-7", "message_path": "messages/m-2.md"})
+        print("feature C: inbox tombstone resolved", {p: m["superseded_by"] for p, m in by_path.items()})
+
         # the bug fix: read-state lives in the audit log, so a reindex must NOT wipe it
         reindex_from_git(store, index, emb)
         after_reindex = payload(await client.call_tool("imp_flags", {"instance_id": "research-7"}))
+        # the declared supersedes-edge survives the reindex too — it rides the envelope in git
+        inbox7c = payload(await client.call_tool("imp_check",
+            {"instance_id": "research-7", "unread_only": False}))["messages"]
+        assert {m["path"]: m for m in inbox7c}["messages/m-1.md"]["superseded_by"] == "messages/m-2.md", \
+            "the inbox tombstone must survive a reindex"
         ok, bad = audit.verify()
         print("after reindex -> imp_flags r-7:", after_reindex, "| audit:", audit.count(), "verify:", (ok, bad))
 

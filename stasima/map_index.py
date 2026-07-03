@@ -125,6 +125,7 @@ class MapRow:
     status: str = "active"
     tags: list[str] = field(default_factory=list)
     refs: list[str] = field(default_factory=list)          # references / lineage graph
+    supersedes: list[str] = field(default_factory=list)    # declared succession edges (lineage graph)
     region_labels: list[str] = field(default_factory=list)  # maps
     links: list[str] = field(default_factory=list)          # maps; or message coordinates
     salience: float = 0.0                                    # maps
@@ -148,6 +149,7 @@ class Hit:
     title: str
     score: float
     preview: str
+    status: str = "active"   # rides every hit so a deliberately-included retired edition is apparent
 
 
 # ====================================================================== index interface
@@ -183,9 +185,9 @@ class MapIndex(ABC):
 
 # ====================================================================== sqlite backend
 _COLS = ["ref", "path", "is_canon", "authoring_instance", "content_oid", "type", "title",
-         "status", "tags", "refs", "region_labels", "links", "salience", "recipients",
+         "status", "tags", "refs", "supersedes", "region_labels", "links", "salience", "recipients",
          "subject", "vantage", "canon_state", "instance_depth", "body_text", "embedding", "model_id"]
-_JSON_COLS = {"tags", "refs", "region_labels", "links", "recipients", "embedding"}
+_JSON_COLS = {"tags", "refs", "supersedes", "region_labels", "links", "recipients", "embedding"}
 
 
 class SqliteMapIndex(MapIndex):
@@ -200,7 +202,7 @@ class SqliteMapIndex(MapIndex):
             CREATE TABLE IF NOT EXISTS map_entries (
                 ref TEXT NOT NULL, path TEXT NOT NULL, is_canon INTEGER NOT NULL,
                 authoring_instance TEXT, content_oid TEXT, type TEXT, title TEXT, status TEXT,
-                tags TEXT, refs TEXT, region_labels TEXT, links TEXT, salience REAL,
+                tags TEXT, refs TEXT, supersedes TEXT, region_labels TEXT, links TEXT, salience REAL,
                 recipients TEXT, subject TEXT, vantage TEXT, canon_state TEXT, instance_depth INTEGER,
                 body_text TEXT, embedding TEXT, model_id TEXT,
                 PRIMARY KEY (ref, path)
@@ -215,7 +217,8 @@ class SqliteMapIndex(MapIndex):
         # keeps a live deployment usable without a forced delete + reindex). This MUST precede any index on
         # the new columns, or the index creation hits 'no such column' on a pre-VAP db.
         have = {r["name"] for r in self.conn.execute("PRAGMA table_info(map_entries)")}
-        for col, sqltype in (("vantage", "TEXT"), ("canon_state", "TEXT"), ("instance_depth", "INTEGER")):
+        for col, sqltype in (("vantage", "TEXT"), ("canon_state", "TEXT"), ("instance_depth", "INTEGER"),
+                             ("supersedes", "TEXT")):
             if col not in have:
                 self.conn.execute(f"ALTER TABLE map_entries ADD COLUMN {col} {sqltype}")
         self.conn.execute("CREATE INDEX IF NOT EXISTS ix_cstate ON map_entries(canon_state)")
@@ -268,7 +271,7 @@ class SqliteMapIndex(MapIndex):
         return [
             Hit(path=row.path, ref=row.ref, authoring_instance=row.authoring_instance,
                 is_canon=row.is_canon, type=row.type, title=row.title,
-                score=round(s, 4), preview=row.body_text[:160])
+                score=round(s, 4), preview=row.body_text[:160], status=row.status)
             for s, row in scored[:limit]
         ]
 
@@ -331,6 +334,7 @@ def index_entry(index: MapIndex, embedder: Embedder, *, ref: str, path: str, is_
         ref=ref, path=path, is_canon=is_canon, authoring_instance=authoring_instance, content_oid=content_oid,
         type=envelope.get("type", ""), title=envelope.get("title", ""), status=envelope.get("status", "active"),
         tags=envelope.get("tags", []), refs=envelope.get("references", []),
+        supersedes=envelope.get("supersedes", []),
         region_labels=envelope.get("region_labels", []),
         links=envelope.get("links", envelope.get("coordinates", [])),
         salience=float(envelope.get("salience", 0.0)),
