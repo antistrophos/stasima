@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "stasima"
-version = "1.0.2"
+dynamic = ["version"]   # single home: stasima/__init__.py __version__ (see [tool.hatch.version])
 description = "A server letting multiple AI instances share one durable, version-controlled body of knowledge, with a human practitioner as the gate to shared truth."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -14,7 +14,7 @@ license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Antistrophos" }]
 keywords = ["mcp", "knowledge-base", "git", "ai", "agents"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
@@ -34,6 +34,9 @@ stasima-cockpit = "stasima.tui:main"         # the practitioner's menu cockpit (
 Homepage = "https://github.com/antistrophos/stasima"
 Repository = "https://github.com/antistrophos/stasima"
 Issues = "https://github.com/antistrophos/stasima/issues"
+
+[tool.hatch.version]
+path = "stasima/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["stasima"]
