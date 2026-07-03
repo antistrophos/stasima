@@ -15,7 +15,9 @@
  '---------'-----------------------------------'---------'
 ```
 
-# Stasima v1
+# Stasima
+
+*Current: **0.1.3 (release candidate)** — see [CHANGELOG.md](CHANGELOG.md); upgrading a live deployment? [docs/upgrading.md](docs/upgrading.md) is the checklist.*
 
 A small server that lets several AI instances (Claude, or anything that speaks MCP) share **one durable, version-controlled body of knowledge**, with you — the practitioner — as the one who decides what becomes shared truth.
 
@@ -39,13 +41,25 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 
 ---
 
-## Getting started
+## The map — four rooms
 
-- **First time?** → **[SETUP.md](SETUP.md)** — install, configure, seed canon, connect an instance. Follow it once.
-- **Running it day to day?** → **[OPERATIONS.md](OPERATIONS.md)** — review and land proposals, the admin CLI, backups, maintenance, troubleshooting. This is the one to keep open.
-- **How it works underneath?** → **[ARCHITECTURE.md](ARCHITECTURE.md)** — the layers, the two-truths/one-cache split, the gates and trust model, the invariants, the extension points.
-- **Authoring entries?** → **[CONTENT-MODEL.md](CONTENT-MODEL.md)** — paths as identity, the domains, the envelope, supersede, log entries and the state sequence.
-- **Connecting an instance?** → **[Strophos, the participant skill](skills/strophos/SKILL.md)** — *the turn an instance makes toward the server's standing songs.* Hand it to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Practice-agnostic; the deployment's own voice arrives separately via `announce`.
+**Getting started**
+- **[SETUP.md](SETUP.md)** — install, configure, seed canon, connect an instance. Follow it once.
+
+**Using it**
+- **[docs/tools.md](docs/tools.md)** — the tool reference: all 30 tools, parameters, and behavior, **generated from the live registry** (`docs/gen_tools.py`) so it cannot drift from the code.
+- **[CONTENT-MODEL.md](CONTENT-MODEL.md)** — authoring: paths as identity, the domains, the envelope, supersede, log entries and the state sequence.
+- **The participant skills** — hand one to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Two suites ship: **[Atrax](skills/atrax/)** (current — seven intent-scoped skills: the arrival road, the always-on dispositions, reconcile, author, message, relay, recover) and **[Strophos](skills/strophos/SKILL.md)** (the original single-file suite, supported). Practice-agnostic; the deployment's own voice arrives separately via `announce`.
+
+**Running it**
+- **[OPERATIONS.md](OPERATIONS.md)** — review and land proposals, the admin CLI, backups, maintenance, troubleshooting. This is the one to keep open.
+- **[docs/upgrading.md](docs/upgrading.md)** — the version-to-version cutover checklist (breaking wire shapes, sequence, rollback).
+
+**Understanding it**
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — the layers, the two-truths/one-cache split, the gates and trust model, the invariants, the extension points.
+- **[STATUS.md](STATUS.md)** — the full build state and roadmap. **[CHANGELOG.md](CHANGELOG.md)** — what changed, release by release.
+
+*One rule threads the docs: one home per fact. The tool reference is generated; the skills encode canon; these pages point rather than restate. Where a deployment customizes, its canon governs.*
 
 ---
 
@@ -74,7 +88,7 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 
 ## Further reading
 
-**[STATUS.md](STATUS.md)** — the full build state: what's built and verified, the hardening harvest, the design spine, what's deferred, and the roadmap. The spec-era design artifacts and implementation briefs live with the original practitioner's working tree (they carry that practice's particulars); the in-repo docs are self-sufficient for running your own deployment.
+The spec-era design artifacts and implementation briefs live with the original practitioner's working tree (they carry that practice's particulars); the in-repo docs are self-sufficient for running your own deployment. The deeper design record — the disposition re-pass, the vantage organ's rechecks, the clock semantics — lives in that practice's canon, where design is done in the medium the tool provides.
 
 ---
 
