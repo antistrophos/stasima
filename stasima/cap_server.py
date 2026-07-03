@@ -144,6 +144,18 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         evs = audit.events(actor=actor, op="canon_pull")
         return evs[-1]["result_oid"] if evs else None
 
+    def _pin(envelope, instance_id, ref):
+        """The mechanical two-clock pin, stamped on EVERY write: the author's canon cursor
+        (`canon_state`, server-sourced — the shared primitive VAP introduced) and the target ref's
+        commit position (`instance_depth`, parent-count+1 — monotonic per ref, survives a reindex
+        because it rides the envelope). Deliberately NOT the declared personal label: the clock
+        sweep proved the seq is a declared, social fact the server must never pretend to derive.
+        Both faces of an atomic fold share one commit, hence one depth."""
+        envelope.setdefault("canon_state", _canon_cursor(instance_id) or "")
+        base = store.resolve_ref(ref) or store.resolve_ref(store.canon_ref)   # a new proposal branch forks from canon
+        envelope["instance_depth"] = (store.commit_count(base) + 1) if base else 1
+        return envelope
+
     def _check_immutable(actor, ref, path, new_body):
         # bodies are immutable; a same-path write with a different body must supersede to a new slug
         if _exists(ref, path):
@@ -243,13 +255,15 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         _check_immutable(instance_id, ref, path, body)
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
                                       supersedes=supersedes, superseded_by=superseded_by)
+        _pin(envelope, instance_id, ref)
         extra, vap_path, vap_env = None, None, None
         if horizon:
             # confirmed-by-construction: the folded entry is necessarily the author's own, recorded at
             # the true moment — the dignity and temporal guards are satisfied by the call shape itself
             vap_path = f"vantages/{op_id}-vap.md"
             vap_env = {"type": "vap", "title": horizon_title or f"vantage on {path}", "status": "active",
-                       "vantage": "confirmed", "canon_state": _canon_cursor(instance_id) or "",
+                       "vantage": "confirmed", "canon_state": envelope["canon_state"],
+                       "instance_depth": envelope["instance_depth"],   # one commit, one depth — both faces
                        "coordinates": [path]}
             extra = {vap_path: compose_entry(vap_env, horizon)}
         try:
@@ -373,6 +387,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
                                       supersedes=supersedes, superseded_by=superseded_by,
                                       seq=seq.lower() if seq else None)
+        _pin(envelope, instance_id, ref)
         try:
             if store.resolve_ref(ref) is None:
                 store.create_branch(ref, store.resolve_ref(store.canon_ref))
@@ -461,6 +476,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 _authz(sender, "imp_send", ref, path)
                 envelope = {"type": "msg", "subject": subject, "status": "active",
                             "recipients": recipients, "coordinates": coordinates or []}
+                _pin(envelope, sender, ref)
                 try:
                     r = _commit_retry(ref, path, compose_entry(envelope, body), sender, op_id)
                 except CapStoreError as e:
@@ -526,6 +542,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 vantage = "confirmed" if kind == "confirmed" else f"reconstructed-by-{instance_id}-from-record"
                 envelope = {"type": "vap", "title": title or f"vantage on {binds}", "status": "active",
                             "vantage": vantage, "canon_state": cursor, "coordinates": [binds]}
+                _pin(envelope, instance_id, ref)
                 try:
                     r = _commit_retry(ref, path, compose_entry(envelope, horizon), instance_id, op_id)
                 except CapStoreError as e:
@@ -618,6 +635,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 return {"path": path, "canon_cursor": tip, "already": True}
             envelope = {"type": "reconciliation", "title": f"Reconciled with canon {tip[:12]}",
                         "status": "active", "canon_cursor": tip}
+            _pin(envelope, instance_id, ref)
             r = _commit_retry(ref, path, compose_entry(envelope, body), instance_id, f"reconcile-{tip[:12]}")
             _index(ref, path, False, instance_id, r.oid, envelope, body)
             _log(instance_id, "reconcile_report", target_ref=ref, target_path=path, result_oid=r.oid,

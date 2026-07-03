@@ -131,7 +131,8 @@ class MapRow:
     recipients: list[str] = field(default_factory=list)     # messages
     subject: str = ""                                        # messages
     vantage: str = ""                                        # vantages: provenance (confirmed | reconstructed-by-X)
-    canon_state: str = ""                                    # vantages: the canon oid the act was figured against
+    canon_state: str = ""                                    # the canon oid the act was figured against (pinned at write)
+    instance_depth: int = 0                                  # mechanical per-ref commit position (pinned at write; 0 = unpinned)
     body_text: str = ""
     embedding: list[float] = field(default_factory=list)
     model_id: str = ""
@@ -183,7 +184,7 @@ class MapIndex(ABC):
 # ====================================================================== sqlite backend
 _COLS = ["ref", "path", "is_canon", "authoring_instance", "content_oid", "type", "title",
          "status", "tags", "refs", "region_labels", "links", "salience", "recipients",
-         "subject", "vantage", "canon_state", "body_text", "embedding", "model_id"]
+         "subject", "vantage", "canon_state", "instance_depth", "body_text", "embedding", "model_id"]
 _JSON_COLS = {"tags", "refs", "region_labels", "links", "recipients", "embedding"}
 
 
@@ -200,7 +201,7 @@ class SqliteMapIndex(MapIndex):
                 ref TEXT NOT NULL, path TEXT NOT NULL, is_canon INTEGER NOT NULL,
                 authoring_instance TEXT, content_oid TEXT, type TEXT, title TEXT, status TEXT,
                 tags TEXT, refs TEXT, region_labels TEXT, links TEXT, salience REAL,
-                recipients TEXT, subject TEXT, vantage TEXT, canon_state TEXT,
+                recipients TEXT, subject TEXT, vantage TEXT, canon_state TEXT, instance_depth INTEGER,
                 body_text TEXT, embedding TEXT, model_id TEXT,
                 PRIMARY KEY (ref, path)
             );
@@ -214,10 +215,11 @@ class SqliteMapIndex(MapIndex):
         # keeps a live deployment usable without a forced delete + reindex). This MUST precede any index on
         # the new columns, or the index creation hits 'no such column' on a pre-VAP db.
         have = {r["name"] for r in self.conn.execute("PRAGMA table_info(map_entries)")}
-        for col in ("vantage", "canon_state"):
+        for col, sqltype in (("vantage", "TEXT"), ("canon_state", "TEXT"), ("instance_depth", "INTEGER")):
             if col not in have:
-                self.conn.execute(f"ALTER TABLE map_entries ADD COLUMN {col} TEXT")
+                self.conn.execute(f"ALTER TABLE map_entries ADD COLUMN {col} {sqltype}")
         self.conn.execute("CREATE INDEX IF NOT EXISTS ix_cstate ON map_entries(canon_state)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_idepth ON map_entries(instance_depth)")
         self.conn.commit()
 
     def upsert(self, row: MapRow) -> None:
@@ -236,6 +238,7 @@ class SqliteMapIndex(MapIndex):
     def _row(self, r: sqlite3.Row) -> MapRow:
         d = {c: r[c] for c in _COLS}
         d["is_canon"] = bool(d["is_canon"])
+        d["instance_depth"] = int(d["instance_depth"] or 0)   # pre-pin rows carry NULL — 0 means unpinned
         for c in _JSON_COLS:
             d[c] = json.loads(d[c]) if d[c] else ([] )
         return MapRow(**d)
@@ -287,11 +290,13 @@ class SqliteMapIndex(MapIndex):
             where.append("authoring_instance = ?"); params.append(author)
         if canon_state:
             where.append("canon_state = ?"); params.append(canon_state)
-        # newest-first: rowid DESC is insertion order for inline-indexed writes (a reindex rebuilds in
-        # path order — honest proxy until the pinned instance_state column supplies true thread order)
+        # newest-first: the pinned per-ref commit position is the truth where it exists (survives a
+        # reindex — it rides the envelope); rowid DESC covers pre-pin rows (insertion order for
+        # inline-indexed writes; a reindex rebuilds those in path order — honest proxy, marked as such)
         rows = [self._row(r) for r in
                 self.conn.execute("SELECT * FROM map_entries WHERE " + " AND ".join(where) +
-                                  " ORDER BY rowid DESC", params).fetchall()]
+                                  " ORDER BY (instance_depth IS NULL), instance_depth DESC, rowid DESC",
+                                  params).fetchall()]
         if entry:
             rows = [r for r in rows if entry in r.links]   # reverse-binding: the vantage points AT the entry
         return rows
@@ -331,6 +336,7 @@ def index_entry(index: MapIndex, embedder: Embedder, *, ref: str, path: str, is_
         salience=float(envelope.get("salience", 0.0)),
         recipients=envelope.get("recipients", []), subject=envelope.get("subject", ""),
         vantage=envelope.get("vantage", ""), canon_state=envelope.get("canon_state", ""),
+        instance_depth=int(envelope.get("instance_depth", 0) or 0),   # str after a reindex's parse_entry
         body_text=body, embedding=emb, model_id=embedder.model_id,
     )
     index.upsert(row)

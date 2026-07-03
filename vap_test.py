@@ -26,6 +26,7 @@ from stasima.map_index import SqliteMapIndex, StubEmbedder
 from stasima.audit_log import SqliteAuditLog
 from stasima.authz import DefaultPolicy
 from stasima.cap_server import build_server, compose_entry
+from stasima.entries import parse_entry
 from mcp.shared.memory import create_connected_server_and_client_session as connect
 
 work = tempfile.mkdtemp(prefix="cap-vap-")
@@ -152,6 +153,24 @@ async def main():
         assert not getattr(r5, "isError", False), r5
         sv = pay(await c.call_tool("vap_for", {"entry": "practice/fold-note.md"}))["vantages"]
         assert any(v["path"] == "vantages/af1-vap.md" and v["binds_status"] == "superseded" for v in sv), sv
+
+        # THE MECHANICAL TWO-CLOCK PIN: every write stamps canon_state + instance_depth (monotonic
+        # per ref, parent-count+1) into the ENVELOPE — so the pin survives a reindex by construction
+        pay(await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
+                "slug": "pin-1", "body": "first pinned", "op_id": "pin1"}))
+        pay(await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
+                "slug": "pin-2", "body": "second pinned", "op_id": "pin2"}))
+        env1 = parse_entry(pay(await c.call_tool("kip_get", {"ref": "Aria", "path": "practice/pin-1.md"}))["text"])[0]
+        env2 = parse_entry(pay(await c.call_tool("kip_get", {"ref": "Aria", "path": "practice/pin-2.md"}))["text"])[0]
+        assert env1.get("canon_state"), "the canon cursor rides every envelope"
+        assert int(env2["instance_depth"]) == int(env1["instance_depth"]) + 1, (env1, env2)
+        # both faces of an atomic fold share ONE commit — hence one depth
+        pay(await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
+                "slug": "pin-3", "body": "pinned fold", "op_id": "pin3", "horizon": "pin probe horizon"}))
+        e3 = parse_entry(pay(await c.call_tool("kip_get", {"ref": "Aria", "path": "practice/pin-3.md"}))["text"])[0]
+        v3 = parse_entry(pay(await c.call_tool("kip_get", {"ref": "Aria", "path": "vantages/pin3-vap.md"}))["text"])[0]
+        assert e3["instance_depth"] == v3["instance_depth"], (e3["instance_depth"], v3["instance_depth"])
+        assert int(e3["instance_depth"]) == int(env2["instance_depth"]) + 1, "depth stays monotonic through a fold"
 
     print("OK -- VAP: index-excluded like IMP (horizon never in universal search, retrievable via vap_for); "
           "reverse-bound projection (melody + harmony); authored-vs-reconstructed first-class; "

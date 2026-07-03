@@ -185,6 +185,11 @@ class LocalCapStore:
         }
 
     # ---- reads ----
+    def commit_count(self, oid: str) -> int:
+        """Commits reachable from `oid` — the mechanical per-ref position (depth) of that commit.
+        Monotonic per ref; the write path stamps parent-count+1 as the new commit's position."""
+        return int(self._git("rev-list", "--count", oid).decode().strip())
+
     def resolve_ref(self, ref: str) -> Optional[Oid]:
         rc, out, _ = self._run("rev-parse", "--verify", "--quiet", ref)
         oid = out.decode().strip()
