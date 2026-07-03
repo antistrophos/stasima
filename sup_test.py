@@ -22,6 +22,8 @@ from stasima.map_index import SqliteMapIndex, StubEmbedder, index_entry
 from stasima.audit_log import SqliteAuditLog
 from stasima.authz import DefaultPolicy
 from stasima.cap_server import build_server, compose_entry, land_and_record
+from stasima.canon import reindex_from_git
+from stasima.entries import parse_entry
 from mcp.shared.memory import create_connected_server_and_client_session as connect
 
 CANON = "refs/heads/main"
@@ -102,6 +104,26 @@ async def main():
         land_and_record(store, index, emb, audit, prepared, Approval(prepared.candidate_oid, "practitioner", "cli"))
         new_tip = store.resolve_ref(CANON)
         assert new_tip != old_tip
+
+        # D-prime (the pin-leak fix): canon ROWS carry canon's OWN clock — the first-parent spine
+        # position of the introducing commit — while the landed entry's ENVELOPE keeps its authoring
+        # coordinates (proposal-branch depth), true and resolvable through the merge ancestry forever.
+        def row_depth(path):
+            r = index.conn.execute("SELECT instance_depth FROM map_entries WHERE ref=? AND path=?",
+                                   (CANON, path)).fetchone()
+            return r["instance_depth"] if r else None
+        assert row_depth("practice/seed.md") == 1, "bootstrap entry sits at canon position 1"
+        assert row_depth("practice/principle.md") == 2, "landed entry sits at canon position 2 (the merge)"
+        assert row_depth("meta/log/3c.md") == 2, "the land's log entry shares the land's position"
+        log_env = parse_entry(store.read_blob(CANON, "meta/log/3c.md").decode())[0]
+        assert int(log_env["instance_depth"]) == 3, \
+            "the envelope keeps the AUTHORING coordinate (3rd commit on the proposal branch)"
+        assert int(log_env["instance_depth"]) != row_depth("meta/log/3c.md"), \
+            "two coordinate systems, never conflated in one column"
+        # the derivation is deterministic: a fresh reindex reproduces the same canon positions
+        reindex_from_git(store, index, emb)
+        assert row_depth("practice/principle.md") == 2 and row_depth("practice/seed.md") == 1
+        print("canon positions      OK (derived, envelope untouched)")
 
         assert err(await call("propose", instance_id="r2", proposal_id="p-2", domain="practice",
                               slug="principle2", body="another", op_id="pr2")), "stale again after a land"

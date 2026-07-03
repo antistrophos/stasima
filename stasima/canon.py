@@ -24,6 +24,25 @@ def _instance_from_ref(ref: str):
     return ref[len(PERSP_PREFIX):] if ref.startswith(PERSP_PREFIX) else None
 
 
+def _canon_positions(store: LocalCapStore, canon_tip) -> dict:
+    """{path: position} — each path's position on CANON'S OWN clock: the first-parent spine index
+    (oldest commit = 1) of the last canon commit that touched it. Canon entries are authored
+    elsewhere (a proposal branch) and arrive through the gate, so their ENVELOPE pins describe the
+    authoring coordinates — true, immutable, resolvable through the merge ancestry forever. The
+    row's position on canon itself is this derived value; the two coordinate systems must never be
+    conflated in one column (the pin-leak the 0.1.3 release review's critic caught)."""
+    commits = store.rev_list(canon_tip)                       # first-parent spine, newest first
+    total = len(commits)
+    positions = {}
+    for i, oid in enumerate(commits):
+        pos = total - i                                       # oldest = 1, tip = total
+        parent = commits[i + 1] if i + 1 < len(commits) else None
+        touched = store.changed_paths(parent, oid) if parent else store.list_paths(oid)
+        for p in touched:
+            positions.setdefault(p, pos)                      # newest touch wins (walk is newest-first)
+    return positions
+
+
 def reindex_from_git(store: LocalCapStore, index, embedder, *, clear: bool = True) -> int:
     """Rebuild the MAP index from git — the derived-projection invariant, in code. Walks canon +
     every perspective, reads each entry, re-embeds, upserts. Also the canon-indexing-after-landing
@@ -31,7 +50,9 @@ def reindex_from_git(store: LocalCapStore, index, embedder, *, clear: bool = Tru
     if clear:
         index.clear()
     canon = store.canon_ref
-    refs = ([canon] if store.resolve_ref(canon) else []) + [r.name for r in store.list_refs(PERSP_PREFIX)]
+    canon_tip = store.resolve_ref(canon)
+    refs = ([canon] if canon_tip else []) + [r.name for r in store.list_refs(PERSP_PREFIX)]
+    canon_pos = _canon_positions(store, canon_tip) if canon_tip else {}
     n = 0
     for ref in refs:
         for path in store.list_paths(ref):
@@ -42,6 +63,9 @@ def reindex_from_git(store: LocalCapStore, index, embedder, *, clear: bool = Tru
             if author is None:                       # canon: originator of the path's history
                 hist = store.history(ref, path)
                 author = hist[-1]["author"] if hist else ""
+                # canon rows carry canon's own coordinates — the envelope keeps the authoring ones
+                envelope = dict(envelope)
+                envelope["instance_depth"] = canon_pos.get(path, 0)
             index_entry(index, embedder, ref=ref, path=path, is_canon=(ref == canon),
                         authoring_instance=author, content_oid=store.blob_oid(ref, path),
                         envelope=envelope, body=body)

@@ -191,6 +191,13 @@ class LocalCapStore:
         Monotonic per ref; the write path stamps parent-count+1 as the new commit's position."""
         return int(self._git("rev-list", "--count", oid).decode().strip())
 
+    def rev_list(self, oid: str, first_parent: bool = True) -> list:
+        """Commit oids reachable from `oid`, newest first. `first_parent` walks the ref's own spine
+        (a landed merge counts as ONE position on canon; the proposal-side ancestry stays reachable
+        but does not number canon's clock)."""
+        args = ["rev-list"] + (["--first-parent"] if first_parent else []) + [oid]
+        return self._git(*args).decode().split()
+
     def resolve_ref(self, ref: str) -> Optional[Oid]:
         rc, out, _ = self._run("rev-parse", "--verify", "--quiet", ref)
         oid = out.decode().strip()
