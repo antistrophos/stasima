@@ -45,11 +45,12 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 
 **Getting started**
 - **[SETUP.md](SETUP.md)** — install, configure, seed canon, connect an instance. Follow it once.
+- **[docs/first-session.md](docs/first-session.md)** — the single narrative from zero to a landed canon entry, both hats.
 
 **Using it**
 - **[docs/tools.md](docs/tools.md)** — the tool reference: all 30 tools, parameters, and behavior, **generated from the live registry** (`docs/gen_tools.py`) so it cannot drift from the code.
 - **[CONTENT-MODEL.md](CONTENT-MODEL.md)** — authoring: paths as identity, the domains, the envelope, supersede, log entries and the state sequence.
-- **The participant skills** — hand one to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Two suites ship: **[Atrax](skills/atrax/)** (current — seven intent-scoped skills: the arrival road, the always-on dispositions, reconcile, author, message, relay, recover) and **[Strophos](skills/strophos/SKILL.md)** (the original single-file suite, supported). Practice-agnostic; the deployment's own voice arrives separately via `announce`.
+- **The participant skills** — hand one to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Two suites ship: **[Atrax](skills/atrax/)** (current — seven intent-scoped skills: the arrival road, the always-on dispositions, reconcile, author, message, relay, recover) and **[Strophos](skills/strophos/SKILL.md)** (the original single-file suite, supported). Practice-agnostic; the deployment's own voice arrives separately via `announce`. Per-dock maps: **[docs/docks/](docs/docks/)** — what each dock is for, which tools it wields, where its sources live.
 
 **Running it**
 - **[OPERATIONS.md](OPERATIONS.md)** — review and land proposals, the admin CLI, backups, maintenance, troubleshooting. This is the one to keep open.
