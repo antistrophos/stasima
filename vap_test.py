@@ -176,6 +176,34 @@ async def main():
         sv = pay(await c.call_tool("vap_for", {"entry": "practice/fold-note.md"}))["vantages"]
         assert any(v["path"] == "vantages/af1-vap.md" and v["binds_status"] == "superseded" for v in sv), sv
 
+        # CROSS-REF binds_status (review finding 5): Bram records a reconstructed vantage on ARIA's
+        # entry; Aria supersedes it; Bram's vantage must still show binds_status=superseded even though
+        # the bound entry lives on Aria's ref, not Bram's. Aria also confirms her own vantage on it, so
+        # xref carries a two-author HARMONY (2 vantages) — the material the paging assertion needs.
+        await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice", "slug": "xref",
+                "body": "cross-ref target", "op_id": "xr1"})
+        pay(await c.call_tool("vap_record", {"instance_id": "Aria", "binds": "practice/xref.md",
+                "horizon": "Aria's own horizon on xref", "op_id": "xrva", "kind": "confirmed"}))
+        await c.call_tool("canon_diff", {"instance_id": "Bram"})
+        pay(await c.call_tool("vap_record", {"instance_id": "Bram", "binds": "practice/xref.md",
+                "horizon": "my scholarly reading of Aria's xref", "op_id": "xrv", "kind": "reconstructed"}))
+        await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice", "slug": "xref-v2",
+                "body": "restated", "op_id": "xr2", "supersedes": ["practice/xref.md"]})
+        await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice", "slug": "xref",
+                "body": "cross-ref target", "op_id": "xr3", "status": "superseded",
+                "superseded_by": ["practice/xref-v2.md"]})
+        xrv = pay(await c.call_tool("vap_for", {"entry": "practice/xref.md"}))["vantages"]
+        assert len(xrv) == 2, ("two-author harmony on xref", xrv)
+        bram_v = [v for v in xrv if v["author"] == "Bram"]
+        assert bram_v and bram_v[0]["binds_status"] == "superseded", ("cross-ref binds_status blank", xrv)
+
+        # OFFSET paging (review finding 6): limit 1 + offset walks the full harmony without loss
+        pg0 = pay(await c.call_tool("vap_for", {"entry": "practice/xref.md", "limit": 1}))
+        assert pg0["truncated"] and pg0["count"] == 1 and pg0["total"] == 2 and pg0["offset"] == 0, pg0
+        pg1 = pay(await c.call_tool("vap_for", {"entry": "practice/xref.md", "limit": 1, "offset": 1}))
+        assert pg1["count"] == 1 and not pg1["truncated"], pg1
+        assert {pg0["vantages"][0]["path"], pg1["vantages"][0]["path"]} == {v["path"] for v in xrv}, (pg0, pg1)
+
         # THE MECHANICAL TWO-CLOCK PIN: every write stamps canon_state + instance_depth (monotonic
         # per ref, parent-count+1) into the ENVELOPE — so the pin survives a reindex by construction
         pay(await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",

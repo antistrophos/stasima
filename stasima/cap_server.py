@@ -560,9 +560,14 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 unmarked stays author-discipline."""
                 msgs = index.inbox(instance_id)
                 superseded_by = {}   # resolved over the full inbox, before any unread filtering
+                by_author = {m.path: m.authoring_instance for m in msgs}
                 for m in msgs:
                     for old in (m.supersedes or []):
-                        superseded_by[old] = m.path
+                        # a sender may retire only their OWN earlier messages — an edge naming another
+                        # author's path is ignored (else any sender could tombstone a rival's live ask,
+                        # and op_id path collisions would cross-retire strangers' mail)
+                        if by_author.get(old) == m.authoring_instance:
+                            superseded_by[old] = m.path
                 if unread_only:
                     msgs = [m for m in msgs if not audit.is_read(instance_id, m.path)]
                 return {"messages": [{"path": m.path, "from": m.authoring_instance, "subject": m.subject,
@@ -632,7 +637,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
             @mcp.tool()
             def vap_for(entry: str = "", author: str = "", canon_state: str = "",
-                        detail: str = "pointer", limit: int = 16) -> dict:
+                        detail: str = "pointer", limit: int = 16, offset: int = 0) -> dict:
                 """The second layer on a search result: vantages reverse-bound to an entry, never the result
                 itself. Project by `entry` (the set bound to it — one author over canon-states is melody,
                 many authors at one canon-state is harmony), by `author` (one instance's thread), or by
@@ -647,21 +652,34 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 rows = index.vantages_for(entry=entry or None, author=author or None,
                                           canon_state=canon_state or None)
                 total = len(rows)
-                rows = rows[:max(1, limit)]
+                start = max(0, offset)
+                rows = rows[start:start + max(1, limit)]
                 env_by_ref = {}   # bound-entry status: the fourth supersession-visibility surface
+
+                def binds_status(binds, vref):
+                    # resolved where the bound entry LIVES: the vantage author's own ref, then canon,
+                    # then any ref holding the path — a reconstructed vantage binds ANOTHER's entry,
+                    # and a blank status on exactly that class would defeat the staleness field
+                    for r in (vref, store.canon_ref):
+                        if r not in env_by_ref:
+                            env_by_ref[r] = index.envelopes_for(r)
+                        st = env_by_ref[r].get(binds, {}).get("status", "")
+                        if st:
+                            return st
+                    return index.status_of(binds)
+
                 out = []
                 for v in rows:
                     binds = v.links[0] if v.links else ""
-                    if v.ref not in env_by_ref:
-                        env_by_ref[v.ref] = index.envelopes_for(v.ref)
                     p = {"path": v.path, "ref": v.ref, "author": v.authoring_instance,
                          "binds": v.links, "vantage": v.vantage, "canon_state": v.canon_state,
                          "title": v.title, "preview": v.body_text[:240],
-                         "binds_status": env_by_ref[v.ref].get(binds, {}).get("status", "")}
+                         "binds_status": binds_status(binds, v.ref) if binds else ""}
                     if detail == "full":
                         p["horizon"] = v.body_text
                     out.append(p)
-                return {"vantages": out, "count": len(out), "total": total, "truncated": total > len(out)}
+                return {"vantages": out, "count": len(out), "total": total,
+                        "truncated": start + len(out) < total, "offset": start}
 
     # ---------------------------------------------------------------- SUP: per-instance state ↔ canon coherence
     if audit is not None:

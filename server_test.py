@@ -188,6 +188,21 @@ async def main():
         await client.call_tool("imp_mark_read", {"instance_id": "research-7", "message_path": "messages/m-2.md"})
         print("feature C: inbox tombstone resolved", {p: m["superseded_by"] for p, m in by_path.items()})
 
+        # FEATURE C security (review finding 1): a DIFFERENT sender cannot tombstone m-1 (recto's, not
+        # research-2's) — the supersedes edge is honored only when superseding + superseded share an author
+        await client.call_tool("imp_send", {"sender": "recto", "recipients": ["research-7"],
+            "subject": "spoof attempt — supersedes another sender's live message", "body": "should not tombstone m-1",
+            "op_id": "m-3", "supersedes": ["messages/m-1"]})
+        inbox7c = payload(await client.call_tool("imp_check",
+            {"instance_id": "research-7", "unread_only": False}))["messages"]
+        # m-1 is research-2's and was legitimately retired by research-2's m-2 — the recto edge must NOT
+        # be what tombstones it; and if research-2 had NOT superseded it, recto could not either
+        m1 = {m["path"]: m for m in inbox7c}["messages/m-1.md"]
+        assert m1["superseded_by"] == "messages/m-2.md", "same-author edge stands; cross-author m-3 ignored"
+        assert "messages/m-3.md" not in [m["superseded_by"] for m in inbox7c], "no cross-author tombstone"
+        await client.call_tool("imp_mark_read", {"instance_id": "research-7", "message_path": "messages/m-3.md"})
+        print("feature C security: cross-sender supersedes rejected")
+
         # the bug fix: read-state lives in the audit log, so a reindex must NOT wipe it
         reindex_from_git(store, index, emb)
         after_reindex = payload(await client.call_tool("imp_flags", {"instance_id": "research-7"}))

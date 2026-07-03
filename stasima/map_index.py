@@ -180,6 +180,9 @@ class MapIndex(ABC):
     def envelopes_for(self, ref: str) -> dict: ...   # {path: {title,status,type}} — listing enrichment, one query
 
     @abstractmethod
+    def status_of(self, path: str) -> str: ...   # the entry's status wherever it lives (canon preferred)
+
+    @abstractmethod
     def clear(self) -> None: ...   # for a full rebuild from git
 
 
@@ -293,12 +296,16 @@ class SqliteMapIndex(MapIndex):
             where.append("authoring_instance = ?"); params.append(author)
         if canon_state:
             where.append("canon_state = ?"); params.append(canon_state)
-        # newest-first: the pinned per-ref commit position is the truth where it exists (survives a
-        # reindex — it rides the envelope); rowid DESC covers pre-pin rows (insertion order for
-        # inline-indexed writes; a reindex rebuilds those in path order — honest proxy, marked as such)
+        # newest-first ordering depends on the projection: instance_depth is a PER-REF clock, so it
+        # orders a single author's thread truly (pinned rows first, rowid for the pre-pin past) but is
+        # meaningless ACROSS refs — a verbose author's depths would bury a fresh seat's newer vantage.
+        # Cross-ref projections (entry/canon_state/all) use rowid DESC: insertion order for
+        # inline-indexed writes — an honest global recency proxy until a globally comparable
+        # write-time column exists (a reindex rebuilds rowids in path order; marked, not hidden).
+        order = (" ORDER BY (instance_depth IS NULL), instance_depth DESC, rowid DESC" if author
+                 else " ORDER BY rowid DESC")
         rows = [self._row(r) for r in
-                self.conn.execute("SELECT * FROM map_entries WHERE " + " AND ".join(where) +
-                                  " ORDER BY (instance_depth IS NULL), instance_depth DESC, rowid DESC",
+                self.conn.execute("SELECT * FROM map_entries WHERE " + " AND ".join(where) + order,
                                   params).fetchall()]
         if entry:
             rows = [r for r in rows if entry in r.links]   # reverse-binding: the vantage points AT the entry
@@ -317,6 +324,13 @@ class SqliteMapIndex(MapIndex):
         return {r["path"]: {"title": r["title"] or "", "status": r["status"] or "", "type": r["type"] or ""}
                 for r in self.conn.execute(
                     "SELECT path, title, status, type FROM map_entries WHERE ref = ?", (ref,))}
+
+    def status_of(self, path):
+        """The entry's status wherever the path lives, canon edition preferred — for resolving a
+        binding whose target sits on ANOTHER ref (a reconstructed vantage binds someone else's entry)."""
+        r = self.conn.execute(
+            "SELECT status FROM map_entries WHERE path = ? ORDER BY is_canon DESC LIMIT 1", (path,)).fetchone()
+        return (r["status"] or "") if r else ""
 
     def clear(self):
         self.conn.execute("DELETE FROM map_entries")
