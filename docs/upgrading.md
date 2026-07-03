@@ -41,7 +41,10 @@ New optional parameters (non-breaking): `kip_commit(horizon=, horizon_title=)`,
 4. **Let the index migrate, then rebuild it.** New columns are added automatically on first open
    (additive `ALTER TABLE`, no data touched). Then run `stasima-admin reindex` once: canon rows
    gain their derived positions, listings gain their enrichment, and every envelope-pinned field
-   flows to its column. The index is a throwaway cache — a reindex is always safe.
+   flows to its column. The index is a throwaway cache — a reindex is always safe. It prints
+   nothing until it finishes — budget ~1.5 minutes per ~600 entries on modest hardware (measured);
+   and reads stay serviceable in the window between the upgrade and the reindex (unmigrated rows
+   simply read as unpinned until the rebuild fills them).
 5. **Redeploy the skills.** Skill files are encodings of canon; regenerate/copy the current
    editions so instances aren't taught the pre-0.1.3 contract (the Atrax encodings regenerate from
    the ::E dock sources; Strophos's update ships with the suite). An instance running an old skill
