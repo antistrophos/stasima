@@ -90,9 +90,12 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 return existing
         return None
 
-    def _commit_retry(ref, path, content, author, op_id, extra=None):
-        # `extra` ({path: content-str}) rides in the SAME commit — the atomic-fold carrier: entry and
-        # vantage land together or not at all (one commit, one op_id; no orphaned half on any failure)
+    def _commit_retry(ref, path, build, author, op_id):
+        # `build(tip)` -> {path: content-str}, composed FRESH per CAS attempt so all per-tip work —
+        # the mechanical pins, the immutability guard, the fold's reuse guard — is keyed to the very
+        # oid passed as expected_parent. A StaleRef retry therefore re-runs guards and re-pins against
+        # the new tip; nothing stamped or checked against a superseded tip can survive into the commit.
+        # A multi-file build is the atomic-fold carrier: entry and vantage land together or not at all.
         if ref.startswith(PERSP):
             clash = _name_collision(author)
             if clash:
@@ -100,11 +103,9 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 raise Denied(f"a perspective '{clash}' already exists; '{author}' differs only in case "
                              f"and would FORK your identity (names are case-sensitive in v1). "
                              f"Re-announce as '{clash}' and use it consistently — one name, forever.")
-        changes = {path: content.encode()}
-        if extra:
-            changes.update({p: c.encode() for p, c in extra.items()})
         for attempt in range(2):
             tip = store.resolve_ref(ref)
+            changes = {p: c.encode() for p, c in build(tip).items()}
             try:
                 return store.commit(ref, changes, f"KIP {path}",
                                     Identity(author), expected_parent=tip, op_id=op_id)
@@ -144,24 +145,39 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         evs = audit.events(actor=actor, op="canon_pull")
         return evs[-1]["result_oid"] if evs else None
 
-    def _pin(envelope, instance_id, ref):
+    def _pin(envelope, instance_id, tip):
         """The mechanical two-clock pin, stamped on EVERY write: the author's canon cursor
         (`canon_state`, server-sourced — the shared primitive VAP introduced) and the target ref's
         commit position (`instance_depth`, parent-count+1 — monotonic per ref, survives a reindex
         because it rides the envelope). Deliberately NOT the declared personal label: the clock
         sweep proved the seq is a declared, social fact the server must never pretend to derive.
+        `tip` is the CAS attempt's expected_parent — pin and precondition share one oid, so a retry
+        re-pins. A parentless first commit is depth 1 (no fallback: a fresh perspective is BORN at 1;
+        a proposal branch is created from canon before its first commit, so its tip already exists).
         Both faces of an atomic fold share one commit, hence one depth."""
         envelope.setdefault("canon_state", _canon_cursor(instance_id) or "")
-        base = store.resolve_ref(ref) or store.resolve_ref(store.canon_ref)   # a new proposal branch forks from canon
-        envelope["instance_depth"] = (store.commit_count(base) + 1) if base else 1
+        envelope["instance_depth"] = (store.commit_count(tip) + 1) if tip else 1
         return envelope
 
-    def _check_immutable(actor, ref, path, new_body):
-        # bodies are immutable; a same-path write with a different body must supersede to a new slug
-        if _exists(ref, path):
-            old_body = parse_entry(store.read_blob(ref, path).decode("utf-8", "replace"))[1]
+    def _blob_at(tip, path):
+        # the blob at `path` in commit `tip`'s tree, or None — the tip-keyed read the guards use
+        if tip is None:
+            return None
+        try:
+            return store.read_blob_at(tip, path)
+        except (PathNotFound, RefNotFound):
+            return None
+
+    def _check_immutable(actor, tip, path, new_body):
+        # bodies are immutable; a same-path write with a different body must supersede to a new slug.
+        # Keyed to the CAS attempt's tip (not the live ref): the guard's conclusion and the commit's
+        # precondition hold on the SAME oid, so a concurrent commit cannot slip a body change between
+        # the check and the write — the CAS fails instead, and the retry re-runs this guard.
+        old = _blob_at(tip, path)
+        if old is not None:
+            old_body = parse_entry(old.decode("utf-8", "replace"))[1]
             if old_body.strip() != new_body.strip():
-                _log(actor, "kip_commit", target_ref=ref, target_path=path, outcome="denied",
+                _log(actor, "kip_commit", target_path=path, outcome="denied",
                      detail={"reason": "body immutable; supersede to a new slug"})
                 raise Denied(f"{path} exists and an entry's body is immutable — supersede to a new slug")
 
@@ -252,32 +268,61 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         ref = persp_ref(instance_id)
         path = f"{domain}/{slug}.md"
         _authz(instance_id, "kip_commit", ref, path)
-        _check_immutable(instance_id, ref, path, body)
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
                                       supersedes=supersedes, superseded_by=superseded_by)
-        _pin(envelope, instance_id, ref)
-        extra, vap_path, vap_env = None, None, None
-        if horizon:
-            # confirmed-by-construction: the folded entry is necessarily the author's own, recorded at
-            # the true moment — the dignity and temporal guards are satisfied by the call shape itself
-            vap_path = f"vantages/{op_id}-vap.md"
-            vap_env = {"type": "vap", "title": horizon_title or f"vantage on {path}", "status": "active",
-                       "vantage": "confirmed", "canon_state": envelope["canon_state"],
-                       "instance_depth": envelope["instance_depth"],   # one commit, one depth — both faces
-                       "coordinates": [path]}
-            extra = {vap_path: compose_entry(vap_env, horizon)}
+        vap_path = f"vantages/{op_id}-vap.md" if horizon else None
+        vap_holder = {}
+
+        def build(btip):
+            # per-tip work, re-run on a CAS retry: guard + pins + composition all keyed to `btip`
+            _check_immutable(instance_id, btip, path, body)
+            _pin(envelope, instance_id, btip)
+            changes = {path: compose_entry(envelope, body)}
+            if horizon:
+                # confirmed-by-construction: the folded entry is necessarily the author's own, recorded
+                # at the true moment — dignity and temporal guards are satisfied by the call shape.
+                # The vantage path derives from op_id; reusing an op_id after the ref moved on would
+                # silently REWRITE the recorded standpoint — refuse it (a replay of the same op is
+                # fine: the tip's own op-id matches and the store returns the prior commit unwritten).
+                if _blob_at(btip, vap_path) is not None and store.commit_op_id(btip) != op_id:
+                    _log(instance_id, "kip_commit", target_path=vap_path, op_id=op_id, outcome="denied",
+                         detail={"reason": "op_id reuse would rewrite a recorded vantage"})
+                    raise Denied(f"{vap_path} already records a vantage under op_id '{op_id}' — an op_id "
+                                 f"names one act; use a new op_id (the standpoint record is append-only)")
+                vap_env = {"type": "vap", "title": horizon_title or f"vantage on {path}", "status": "active",
+                           "vantage": "confirmed", "canon_state": envelope["canon_state"],
+                           "instance_depth": envelope["instance_depth"],   # one commit, one depth — both faces
+                           "coordinates": [path]}
+                vap_holder["env"] = vap_env
+                changes[vap_path] = compose_entry(vap_env, horizon)
+            return changes
+
         try:
-            r = _commit_retry(ref, path, compose_entry(envelope, body), instance_id, op_id, extra=extra)
+            r = _commit_retry(ref, path, build, instance_id, op_id)
         except CapStoreError as e:
             _log(instance_id, "kip_commit", target_ref=ref, target_path=path, op_id=op_id,
                  outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
             raise
+        out = {"oid": r.oid, "ref": r.ref, "path": path, "op_id": r.op_id, "author": instance_id}
+        if r.replayed:
+            # tip-local idempotency fired: git holds the PRIOR commit, nothing was written this call.
+            # Do not index and do not report content this call composed — report what git actually holds.
+            _log(instance_id, "kip_commit", target_ref=ref, target_path=path, op_id=op_id,
+                 result_oid=r.oid, detail={"replayed": True})
+            out["replayed"] = True
+            if vap_path:
+                if _exists(ref, vap_path):
+                    out["folded"] = {"path": vap_path, "vantage": "confirmed", "replayed": True}
+                else:
+                    out["note"] = ("replayed the prior commit for this op_id — it carried no vantage; "
+                                   "to fold, author under a new op_id")
+            return out
         _index(ref, path, False, instance_id, r.oid, envelope, body)            # git-first ...
         detail = {"folded": vap_path} if vap_path else None
         _log(instance_id, "kip_commit", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid,
              detail=detail)                                                     # ... then audit
-        out = {"oid": r.oid, "ref": r.ref, "path": path, "op_id": r.op_id, "author": instance_id}
         if vap_path:
+            vap_env = vap_holder["env"]
             _index(ref, vap_path, False, instance_id, r.oid, vap_env, horizon)
             out["folded"] = {"path": vap_path, "vantage": "confirmed", "canon_state": vap_env["canon_state"]}
         return out
@@ -387,11 +432,14 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
                                       supersedes=supersedes, superseded_by=superseded_by,
                                       seq=seq.lower() if seq else None)
-        _pin(envelope, instance_id, ref)
+
+        def build(btip):
+            _pin(envelope, instance_id, btip)
+            return {path: compose_entry(envelope, body)}
         try:
             if store.resolve_ref(ref) is None:
                 store.create_branch(ref, store.resolve_ref(store.canon_ref))
-            r = _commit_retry(ref, path, compose_entry(envelope, body), instance_id, op_id)
+            r = _commit_retry(ref, path, build, instance_id, op_id)
         except CapStoreError as e:
             _log(instance_id, "propose", target_ref=ref, target_path=path, op_id=op_id,
                  outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
@@ -486,14 +534,18 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                             "recipients": recipients, "coordinates": coordinates or []}
                 if supersedes:
                     envelope["supersedes"] = [p if p.endswith(".md") else p + ".md" for p in supersedes]
-                _pin(envelope, sender, ref)
+
+                def build(btip):
+                    _pin(envelope, sender, btip)
+                    return {path: compose_entry(envelope, body)}
                 try:
-                    r = _commit_retry(ref, path, compose_entry(envelope, body), sender, op_id)
+                    r = _commit_retry(ref, path, build, sender, op_id)
                 except CapStoreError as e:
                     _log(sender, "imp_send", target_path=path, op_id=op_id,
                          outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
                     raise
-                _index(ref, path, False, sender, r.oid, envelope, body)
+                if not r.replayed:   # a replayed op wrote nothing — the index row already exists
+                    _index(ref, path, False, sender, r.oid, envelope, body)
                 _log(sender, "imp_send", target_ref=ref, target_path=path, op_id=op_id,
                      result_oid=r.oid, detail={"recipients": recipients})
                 return {"path": path, "from": sender, "recipients": recipients, "oid": r.oid}
@@ -561,14 +613,18 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 vantage = "confirmed" if kind == "confirmed" else f"reconstructed-by-{instance_id}-from-record"
                 envelope = {"type": "vap", "title": title or f"vantage on {binds}", "status": "active",
                             "vantage": vantage, "canon_state": cursor, "coordinates": [binds]}
-                _pin(envelope, instance_id, ref)
+
+                def build(btip):
+                    _pin(envelope, instance_id, btip)
+                    return {path: compose_entry(envelope, horizon)}
                 try:
-                    r = _commit_retry(ref, path, compose_entry(envelope, horizon), instance_id, op_id)
+                    r = _commit_retry(ref, path, build, instance_id, op_id)
                 except CapStoreError as e:
                     _log(instance_id, "vap_record", target_path=path, op_id=op_id,
                          outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
                     raise
-                _index(ref, path, False, instance_id, r.oid, envelope, horizon)
+                if not r.replayed:   # a replayed op wrote nothing — the index row already exists
+                    _index(ref, path, False, instance_id, r.oid, envelope, horizon)
                 _log(instance_id, "vap_record", target_ref=ref, target_path=path, op_id=op_id,
                      result_oid=r.oid, detail={"binds": binds, "vantage": vantage, "canon_state": cursor})
                 return {"path": path, "author": instance_id, "binds": binds, "vantage": vantage,
@@ -654,9 +710,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 return {"path": path, "canon_cursor": tip, "already": True}
             envelope = {"type": "reconciliation", "title": f"Reconciled with canon {tip[:12]}",
                         "status": "active", "canon_cursor": tip}
-            _pin(envelope, instance_id, ref)
-            r = _commit_retry(ref, path, compose_entry(envelope, body), instance_id, f"reconcile-{tip[:12]}")
-            _index(ref, path, False, instance_id, r.oid, envelope, body)
+
+            def build(btip):
+                _pin(envelope, instance_id, btip)
+                return {path: compose_entry(envelope, body)}
+            r = _commit_retry(ref, path, build, instance_id, f"reconcile-{tip[:12]}")
+            if not r.replayed:
+                _index(ref, path, False, instance_id, r.oid, envelope, body)
             _log(instance_id, "reconcile_report", target_ref=ref, target_path=path, result_oid=r.oid,
                  detail={"canon_cursor": tip})
             return {"path": path, "canon_cursor": tip, "oid": r.oid}

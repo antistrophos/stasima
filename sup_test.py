@@ -69,6 +69,9 @@ async def main():
             "overwriting an existing body must be denied"
         assert not err(await call("kip_commit", instance_id="r2", domain="practice", slug="notes2", body="Body C", op_id="k3")), \
             "a new slug is fine"
+        # a fresh perspective is BORN at depth 1 — no canon fallback on a parentless first commit
+        first = store.read_blob(persp("r2"), "practice/notes.md").decode()
+        assert "instance_depth: 1" in first, "fresh perspective's first commit must pin depth 1"
         print("body-immutability   OK")
 
         # --- reconcile-before-propose ---

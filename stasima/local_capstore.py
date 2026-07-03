@@ -50,6 +50,7 @@ class CommitResult:
     parents: list[Oid]
     op_id: str
     author: Identity
+    replayed: bool = False   # tip-local idempotency fired: nothing was written; this is the PRIOR commit
 
 
 @dataclass(frozen=True)
@@ -320,11 +321,15 @@ class LocalCapStore:
                 return line.split(":", 1)[1].strip()
         return None
 
-    def _commit_result(self, oid: Oid, ref: str) -> CommitResult:
+    def _commit_result(self, oid: Oid, ref: str, replayed: bool = False) -> CommitResult:
         parents = self._git("rev-list", "--parents", "-n", "1", oid).decode().split()[1:]
         inst = self._trailer(oid, "instance-id") or self._git("show", "-s", "--format=%an", oid).decode().strip()
         return CommitResult(oid=oid, ref=ref, parents=parents,
-                            op_id=self._trailer(oid, "op-id") or "", author=Identity(inst))
+                            op_id=self._trailer(oid, "op-id") or "", author=Identity(inst), replayed=replayed)
+
+    def commit_op_id(self, oid: Oid) -> Optional[str]:
+        """The op-id trailer a commit was written under — the idempotency key (None if absent)."""
+        return self._trailer(oid, "op-id")
 
     # ---- tree building (temp index, no working tree) ----
     def _build_tree(self, base: Optional[Oid], changes: Mapping[str, Optional[bytes]]) -> Oid:
@@ -374,9 +379,11 @@ class LocalCapStore:
 
         tip = self.resolve_ref(ref)
 
-        # tip-local idempotency: the op that produced the current tip is being retried (OQ4)
+        # tip-local idempotency: the op that produced the current tip is being retried (OQ4).
+        # Marked `replayed` so the caller knows NOTHING was written — it must not index or report
+        # content (e.g. a folded vantage) that this call composed but git never received.
         if tip is not None and self._trailer(tip, "op-id") == op_id:
-            return self._commit_result(tip, ref)
+            return self._commit_result(tip, ref, replayed=True)
 
         # compare-and-swap precondition
         if expected_parent is None:

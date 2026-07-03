@@ -134,6 +134,28 @@ async def main():
                 "slug": "plain-note", "body": "no fold", "op_id": "af3"}))
         assert "folded" not in plain, plain
 
+        # REPLAY IS MARKED AND WRITES NOTHING: retrying the tip's own op returns the prior commit
+        rep = pay(await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
+                "slug": "plain-note", "body": "no fold", "op_id": "af3"}))
+        assert rep.get("replayed") is True and rep["oid"] == plain["oid"], rep
+        # PHANTOM GUARD: replaying that op WITH a horizon must not conjure a vantage git never held
+        rep2 = pay(await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
+                "slug": "plain-note", "body": "no fold", "op_id": "af3", "horizon": "phantom horizon"}))
+        assert rep2.get("replayed") is True and "folded" not in rep2 and "note" in rep2, rep2
+        ph = await c.call_tool("kip_get", {"ref": "Aria", "path": "vantages/af3-vap.md"})
+        assert getattr(ph, "isError", False), "no phantom vantage blob in git"
+        fvp = pay(await c.call_tool("vap_for", {"entry": "practice/plain-note.md"}))["vantages"]
+        assert not any(v["path"] == "vantages/af3-vap.md" for v in fvp), "no phantom vantage in the index"
+
+        # OP_ID REUSE MUST NOT REWRITE A RECORDED VANTAGE: af1's fold exists; a later fold under af1
+        # (tip has moved on) is refused, and the original horizon stays intact — append-only standpoints
+        reuse = await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
+                "slug": "reuse-note", "body": "a different entry", "op_id": "af1",
+                "horizon": "would silently overwrite af1's recorded horizon"})
+        assert getattr(reuse, "isError", False), "op_id reuse with a fold must be refused"
+        v_orig = pay(await c.call_tool("kip_get", {"ref": "Aria", "path": "vantages/af1-vap.md"}))
+        assert "standpoint the note cannot carry" in v_orig["text"], "original horizon intact"
+
         # COMBINED READ: kip_get(with_vantages=true) — the entry PLUS its bound vantages, one call,
         # full attribution/kind/canon_state per vantage; the search-exclusion is untouched by this flag
         cr = pay(await c.call_tool("kip_get", {"ref": "Aria", "path": "practice/fold-note.md",
