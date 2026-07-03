@@ -90,7 +90,9 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 return existing
         return None
 
-    def _commit_retry(ref, path, content, author, op_id):
+    def _commit_retry(ref, path, content, author, op_id, extra=None):
+        # `extra` ({path: content-str}) rides in the SAME commit — the atomic-fold carrier: entry and
+        # vantage land together or not at all (one commit, one op_id; no orphaned half on any failure)
         if ref.startswith(PERSP):
             clash = _name_collision(author)
             if clash:
@@ -98,10 +100,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 raise Denied(f"a perspective '{clash}' already exists; '{author}' differs only in case "
                              f"and would FORK your identity (names are case-sensitive in v1). "
                              f"Re-announce as '{clash}' and use it consistently — one name, forever.")
+        changes = {path: content.encode()}
+        if extra:
+            changes.update({p: c.encode() for p, c in extra.items()})
         for attempt in range(2):
             tip = store.resolve_ref(ref)
             try:
-                return store.commit(ref, {path: content.encode()}, f"KIP {path}",
+                return store.commit(ref, changes, f"KIP {path}",
                                     Identity(author), expected_parent=tip, op_id=op_id)
             except StaleRef:
                 if attempt == 1:
@@ -218,26 +223,50 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                    title: str = "", type: str = "kno",
                    tags: list[str] | None = None, references: list[str] | None = None,
                    supersedes: list[str] | None = None, status: str = "active",
-                   superseded_by: list[str] | None = None) -> dict:
+                   superseded_by: list[str] | None = None,
+                   horizon: str = "", horizon_title: str = "") -> dict:
         """Author an entry to your append-only perspective at <domain>/<slug>.md (YAML envelope + body).
         Revision is supersede-not-edit: the NEW entry carries supersedes=[<old path>]; to retire the old
         one, re-commit it with the SAME body and status='superseded', superseded_by=[<new path>] (a
-        metadata-only change — the immutability guard allows it; a different body is refused)."""
+        metadata-only change — the immutability guard allows it; a different body is refused).
+
+        THE FOLD, in one act: pass `horizon=` to author the entry AND its `confirmed` vantage
+        atomically — one commit, one op_id; if any guard refuses the entry, the vantage never lands
+        (both fail together). The horizon carries what the entry CANNOT say about itself — the
+        pressure felt, the uncertainty, the salience, what a later reader should check — never a
+        restatement of the entry's content (one home for the reflection). Omission stays honest:
+        no horizon simply means no vantage — never auto-filled. `vap_record` remains the call for
+        `reconstructed` vantages and for later vantages on your own older acts."""
         ref = persp_ref(instance_id)
         path = f"{domain}/{slug}.md"
         _authz(instance_id, "kip_commit", ref, path)
         _check_immutable(instance_id, ref, path, body)
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
                                       supersedes=supersedes, superseded_by=superseded_by)
+        extra, vap_path, vap_env = None, None, None
+        if horizon:
+            # confirmed-by-construction: the folded entry is necessarily the author's own, recorded at
+            # the true moment — the dignity and temporal guards are satisfied by the call shape itself
+            vap_path = f"vantages/{op_id}-vap.md"
+            vap_env = {"type": "vap", "title": horizon_title or f"vantage on {path}", "status": "active",
+                       "vantage": "confirmed", "canon_state": _canon_cursor(instance_id) or "",
+                       "coordinates": [path]}
+            extra = {vap_path: compose_entry(vap_env, horizon)}
         try:
-            r = _commit_retry(ref, path, compose_entry(envelope, body), instance_id, op_id)
+            r = _commit_retry(ref, path, compose_entry(envelope, body), instance_id, op_id, extra=extra)
         except CapStoreError as e:
             _log(instance_id, "kip_commit", target_ref=ref, target_path=path, op_id=op_id,
                  outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
             raise
         _index(ref, path, False, instance_id, r.oid, envelope, body)            # git-first ...
-        _log(instance_id, "kip_commit", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid)  # ... then audit
-        return {"oid": r.oid, "ref": r.ref, "path": path, "op_id": r.op_id, "author": instance_id}
+        detail = {"folded": vap_path} if vap_path else None
+        _log(instance_id, "kip_commit", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid,
+             detail=detail)                                                     # ... then audit
+        out = {"oid": r.oid, "ref": r.ref, "path": path, "op_id": r.op_id, "author": instance_id}
+        if vap_path:
+            _index(ref, vap_path, False, instance_id, r.oid, vap_env, horizon)
+            out["folded"] = {"path": vap_path, "vantage": "confirmed", "canon_state": vap_env["canon_state"]}
+        return out
 
     # ---------------------------------------------------------------- read
     @mcp.tool()

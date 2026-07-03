@@ -107,6 +107,28 @@ async def main():
                                                      "horizon": HORIZON, "op_id": "v1b", "kind": "confirmed"}))
         assert rec_b["binds"] == "practice/tide-note.md", rec_b
 
+        # THE ATOMIC FOLD: kip_commit(horizon=) authors entry + confirmed vantage in ONE act (one
+        # commit, one op_id) — confirmed-by-construction, canon_state pinned at the commit itself
+        af = pay(await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
+                "slug": "fold-note", "body": "a folded note", "op_id": "af1",
+                "horizon": "the standpoint the note cannot carry",
+                "horizon_title": "Horizon — the fold test"}))
+        assert af["folded"]["path"] == "vantages/af1-vap.md" and af["folded"]["vantage"] == "confirmed", af
+        assert af["folded"]["canon_state"], "the fold pins canon-state at the commit"
+        fv = pay(await c.call_tool("vap_for", {"entry": "practice/fold-note.md"}))["vantages"]
+        assert any(v["path"] == "vantages/af1-vap.md" and v["author"] == "Aria" for v in fv), fv
+        # BOTH FAIL TOGETHER: a refused entry (body change on an existing path) must not orphan a vantage
+        bad_fold = await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
+                "slug": "fold-note", "body": "DIFFERENT body", "op_id": "af2",
+                "horizon": "this horizon must never land"})
+        assert getattr(bad_fold, "isError", False), "the entry refusal must fire"
+        orphan = await c.call_tool("kip_get", {"ref": "Aria", "path": "vantages/af2-vap.md"})
+        assert getattr(orphan, "isError", False), "no orphaned vantage on a refused entry"
+        # OMISSION STAYS HONEST: no horizon means no vantage — never auto-filled
+        plain = pay(await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
+                "slug": "plain-note", "body": "no fold", "op_id": "af3"}))
+        assert "folded" not in plain, plain
+
     print("OK -- VAP: index-excluded like IMP (horizon never in universal search, retrievable via vap_for); "
           "reverse-bound projection (melody + harmony); authored-vs-reconstructed first-class; "
           "confirmed-on-another's-entry refused, no trace.")
