@@ -270,13 +270,16 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     # ---------------------------------------------------------------- read
     @mcp.tool()
-    def kip_get(ref: str, path: str, resolve: str = "live") -> dict:
+    def kip_get(ref: str, path: str, resolve: str = "live", with_vantages: bool = False) -> dict:
         """Read an entry (envelope + body in `text`). `ref` may be 'canon', an instance name, or a full ref.
         resolve='live' (default): if the entry at `path` is superseded, follow superseded_by to the LIVING
         edition and return that, with the redirect chain in `resolved_from` — a base-path fetch can no
         longer silently hand back a retired body. resolve='exact': return exactly the edition at `path`
         (deliberately reading a retired body). A missing '.md' is normalized; a miss on the asked ref
-        names where the path actually lives, so the re-fetch stays deliberate and attributed."""
+        names where the path actually lives, so the re-fetch stays deliberate and attributed.
+        with_vantages=true (opt-in): ALSO return the vantages bound to the returned edition, in full
+        (attribution, kind, canon_state ride with each) — the second optic turned on territory you
+        already hold, bounded by its per-entry scope. The universal-search exclusion is untouched."""
         full = resolve_alias(ref)
         p = path if path.endswith(".md") else path + ".md"
         try:
@@ -314,6 +317,11 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         out = {"text": text, "path": p, "status": envelope.get("status", ""), "title": envelope.get("title", "")}
         if chain:
             out["resolved_from"] = chain
+        if with_vantages:
+            vs = index.vantages_for(entry=p) if index is not None else []
+            out["vantages"] = [{"path": v.path, "ref": v.ref, "author": v.authoring_instance,
+                                "vantage": v.vantage, "canon_state": v.canon_state, "title": v.title,
+                                "horizon": v.body_text} for v in vs]
         return out
 
     def _listing(full_ref: str, paths: list) -> list:
@@ -531,17 +539,37 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                         "canon_state": cursor, "oid": r.oid}
 
             @mcp.tool()
-            def vap_for(entry: str = "", author: str = "", canon_state: str = "") -> dict:
+            def vap_for(entry: str = "", author: str = "", canon_state: str = "",
+                        detail: str = "pointer", limit: int = 16) -> dict:
                 """The second layer on a search result: vantages reverse-bound to an entry, never the result
                 itself. Project by `entry` (the set bound to it — one author over canon-states is melody,
                 many authors at one canon-state is harmony), by `author` (one instance's thread), or by
-                `canon_state` (a cross-instance slice). Vantages are excluded from universal search; this
-                scoped lookup is the only way they surface."""
+                `canon_state` (a cross-instance slice). Returns POINTERS by default — path/ref/author/binds/
+                vantage/canon_state/title/preview, plus the BOUND entry's status (a vantage pinned to a
+                retired edition is correct, but the staleness must be apparent); `detail="full"` adds the
+                complete horizon. Newest-first, bounded (default 16 — the hex-page unit; a full thread is
+                read in pages, never in one unbounded call). THE RECOVERY CONVENTION, stated: recovery
+                after context loss = vap_for(author=<you>, detail="full"), newest-first, paged — the
+                standpoint-thread rebuilt from the substrate. Vantages stay excluded from universal
+                search; this scoped lookup is the only way they surface."""
                 rows = index.vantages_for(entry=entry or None, author=author or None,
                                           canon_state=canon_state or None)
-                return {"vantages": [{"path": v.path, "ref": v.ref, "author": v.authoring_instance,
+                total = len(rows)
+                rows = rows[:max(1, limit)]
+                env_by_ref = {}   # bound-entry status: the fourth supersession-visibility surface
+                out = []
+                for v in rows:
+                    binds = v.links[0] if v.links else ""
+                    if v.ref not in env_by_ref:
+                        env_by_ref[v.ref] = index.envelopes_for(v.ref)
+                    p = {"path": v.path, "ref": v.ref, "author": v.authoring_instance,
                          "binds": v.links, "vantage": v.vantage, "canon_state": v.canon_state,
-                         "horizon": v.body_text} for v in rows]}
+                         "title": v.title, "preview": v.body_text[:240],
+                         "binds_status": env_by_ref[v.ref].get(binds, {}).get("status", "")}
+                    if detail == "full":
+                        p["horizon"] = v.body_text
+                    out.append(p)
+                return {"vantages": out, "count": len(out), "total": total, "truncated": total > len(out)}
 
     # ---------------------------------------------------------------- SUP: per-instance state ↔ canon coherence
     if audit is not None:

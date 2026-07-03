@@ -74,7 +74,11 @@ async def main():
         # PROJECTION by entry: the reverse-bound set, attributed, horizon retrievable
         vf = pay(await c.call_tool("vap_for", {"entry": "practice/tide-note.md"}))["vantages"]
         assert len(vf) == 1 and vf[0]["author"] == "Aria" and vf[0]["vantage"] == "confirmed", vf
-        assert HORIZON in vf[0]["horizon"], "the excluded-from-search horizon surfaces via vap_for"
+        # pointers by default: preview-240 + title + the BOUND entry's status ride; no full horizon
+        assert HORIZON in vf[0]["preview"] and "horizon" not in vf[0], vf[0]
+        assert vf[0]["binds_status"] == "active", vf[0]
+        vff = pay(await c.call_tool("vap_for", {"entry": "practice/tide-note.md", "detail": "full"}))["vantages"]
+        assert HORIZON in vff[0]["horizon"], "the excluded-from-search horizon surfaces via vap_for (detail=full)"
 
         # RECONSTRUCTED: Bram reads Aria's entry and records his scholarly reading — marked, never on her behalf
         br = pay(await c.call_tool("vap_record", {"instance_id": "Bram", "binds": "practice/tide-note.md",
@@ -128,6 +132,26 @@ async def main():
         plain = pay(await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
                 "slug": "plain-note", "body": "no fold", "op_id": "af3"}))
         assert "folded" not in plain, plain
+
+        # COMBINED READ: kip_get(with_vantages=true) — the entry PLUS its bound vantages, one call,
+        # full attribution/kind/canon_state per vantage; the search-exclusion is untouched by this flag
+        cr = pay(await c.call_tool("kip_get", {"ref": "Aria", "path": "practice/fold-note.md",
+                                               "with_vantages": True}))
+        assert any(v["path"] == "vantages/af1-vap.md" and "standpoint" in v["horizon"]
+                   and v["vantage"] == "confirmed" and v["canon_state"] for v in cr["vantages"]), cr
+
+        # STALE EDITION SURFACED AT READ (the fourth supersession-visibility surface): supersede the
+        # folded entry; its vantage's pointer must now carry binds_status=superseded
+        r4 = await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
+                "slug": "fold-note-v2", "body": "a folded note, restated", "op_id": "af4",
+                "supersedes": ["practice/fold-note.md"]})
+        assert not getattr(r4, "isError", False), r4
+        r5 = await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
+                "slug": "fold-note", "body": "a folded note", "op_id": "af5", "status": "superseded",
+                "superseded_by": ["practice/fold-note-v2.md"]})
+        assert not getattr(r5, "isError", False), r5
+        sv = pay(await c.call_tool("vap_for", {"entry": "practice/fold-note.md"}))["vantages"]
+        assert any(v["path"] == "vantages/af1-vap.md" and v["binds_status"] == "superseded" for v in sv), sv
 
     print("OK -- VAP: index-excluded like IMP (horizon never in universal search, retrievable via vap_for); "
           "reverse-bound projection (melody + harmony); authored-vs-reconstructed first-class; "

@@ -287,8 +287,11 @@ class SqliteMapIndex(MapIndex):
             where.append("authoring_instance = ?"); params.append(author)
         if canon_state:
             where.append("canon_state = ?"); params.append(canon_state)
+        # newest-first: rowid DESC is insertion order for inline-indexed writes (a reindex rebuilds in
+        # path order — honest proxy until the pinned instance_state column supplies true thread order)
         rows = [self._row(r) for r in
-                self.conn.execute("SELECT * FROM map_entries WHERE " + " AND ".join(where), params).fetchall()]
+                self.conn.execute("SELECT * FROM map_entries WHERE " + " AND ".join(where) +
+                                  " ORDER BY rowid DESC", params).fetchall()]
         if entry:
             rows = [r for r in rows if entry in r.links]   # reverse-binding: the vantage points AT the entry
         return rows
