@@ -91,6 +91,14 @@ async def main():
         assert cd["changed_count"] == len(cd["changed"])
         sr = payload(await call("sup_reconcile", instance_id="r2", body="I've read current canon."))
         old_tip = sr["canon_cursor"]
+        # dedup names its referent: a replayed reconcile must say WHAT it duplicated (path+oid+subject),
+        # so a ghost-run hunt costs zero extra reads (the soak's ghost-run finding)
+        dup = payload(await call("sup_reconcile", instance_id="r2", body="same cursor again"))
+        assert dup["already"] is True and dup["oid"] == sr["oid"], "dedup carries the prior commit's oid"
+        assert dup.get("subject"), "dedup carries the prior commit's subject"
+        # kip_history speaks the pointer grammar: each version carries its title (and .md normalizes)
+        kh = payload(await call("kip_history", ref="r2", path="practice/notes"))
+        assert kh["history"] and kh["history"][0]["title"] == "notes", "history versions carry titles"
         assert not err(await call("propose", instance_id="r2", proposal_id="p-1", domain="practice",
                                   slug="principle", body="a principle", op_id="pr1")), "propose allowed after reconcile"
         # every proposal carries its log entry (canon sits at ::3B pre-land, so this one is ::3C)

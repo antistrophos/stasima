@@ -409,8 +409,18 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     @mcp.tool()
     def kip_history(ref: str, path: str) -> dict:
-        """Version trail for an entry (newest first): oid, author, subject."""
-        return {"history": store.history(resolve_alias(ref), path)}
+        """Version trail for an entry (newest first): oid, author, subject, title — the pointer
+        grammar extends to trails, so a version is recognizable without fetching its body."""
+        r = resolve_alias(ref)
+        p = path if path.endswith(".md") else path + ".md"
+        hist = store.history(r, p)
+        for h in hist:
+            try:
+                env, _ = parse_entry(store.read_blob_at(h["oid"], p).decode("utf-8", "replace"))
+                h["title"] = env.get("title", "")
+            except (PathNotFound, RefNotFound):
+                h["title"] = ""
+        return {"history": hist}
 
     # ---------------------------------------------------------------- propose + track
     @mcp.tool()
@@ -725,7 +735,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             ref = persp_ref(instance_id)
             path = f"state/reconciled-{tip[:12]}.md"
             if _exists(ref, path):
-                return {"path": path, "canon_cursor": tip, "already": True}
+                # Name the referent: a dedup that only says already:True sends a replayed seat hunting
+                # for WHAT it duplicated (the ghost-run finding). One history read, dedup path only.
+                out = {"path": path, "canon_cursor": tip, "already": True}
+                prior = store.history(ref, path)
+                if prior:
+                    out["oid"], out["subject"] = prior[0]["oid"], prior[0]["subject"]
+                return out
             envelope = {"type": "reconciliation", "title": f"Reconciled with canon {tip[:12]}",
                         "status": "active", "canon_cursor": tip}
 

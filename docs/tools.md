@@ -1,6 +1,6 @@
 # Tool reference
 
-*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **1.0.2**. 30 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
+*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **unknown**. 30 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
 
 ## Arrive & orient
 
@@ -127,7 +127,8 @@ your own state trail, scannable without fetching bodies.
 
 ### `kip_history`
 
-Version trail for an entry (newest first): oid, author, subject.
+Version trail for an entry (newest first): oid, author, subject, title — the pointer
+grammar extends to trails, so a version is recognizable without fetching its body.
 
 **Parameters**
 - `ref` (string, required)
