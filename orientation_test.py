@@ -50,4 +50,19 @@ for s in SECTIONS:
 assert "has not authored its 'syntax'" in text, "expected placeholder for unauthored syntax"
 assert "has not authored its 'community'" in text, "expected placeholder for unauthored community"
 
-print("OK -- orientation: machinery preamble + canon-authored sections + placeholders for unauthored slots.")
+# a slot revises by the ordinary supersession grammar (v2 + retire flip) and arrival serves the
+# LIVING edition — without live-resolution a slot could be authored once and never lawfully changed
+from stasima.local_capstore import Identity
+REF2 = "refs/cap/perspectives/oritest"
+flip = compose_entry({"type": "ori", "title": "Conduct", "status": "superseded",
+                      "superseded_by": ["technical/orientation/conduct-v2"]},  # bare path: .md normalizes
+                     "Be honest; mark uncertainty; decline what degrades the work.").encode()
+store.commit(REF2, {
+    "technical/orientation/conduct.md": flip,
+    "technical/orientation/conduct-v2.md": ori("Conduct v2", "Be honest; and read the frontier first."),
+}, "slot supersession fixture", Identity("oritest"), expected_parent=None, op_id="op-orient-1")
+t2 = build_orientation(store, canon_ref=REF2)
+assert "read the frontier first" in t2, "slot must serve the living edition through the tombstone"
+assert "decline what degrades" not in t2, "retired slot body must not render"
+
+print("OK -- orientation: machinery preamble + canon-authored sections + placeholders + live-resolving slots.")

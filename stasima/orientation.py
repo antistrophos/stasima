@@ -48,12 +48,23 @@ The rest of this orientation is authored by this deployment:"""
 SECTIONS = ["welcome", "orientation", "syntax", "conduct", "claims", "community"]
 
 
-def _section_body(store, canon_ref, path):
+def _section_body(store, canon_ref, path, _hops=10):
+    # Live-resolving, like kip_get: a slot revises by the ordinary supersession land (v2 + retire
+    # flip), and arrival serves the living edition. Without this, slots could be authored once and
+    # never lawfully changed (bodies are immutable; the exact-path read never saw a successor).
     try:
-        text = store.read_blob(canon_ref, path).decode("utf-8", "replace")
+        for _ in range(_hops):
+            env, body = parse_entry(store.read_blob(canon_ref, path).decode("utf-8", "replace"))
+            succ = env.get("superseded_by") or []
+            if env.get("status") == "superseded" and succ:
+                nxt = succ[0] if succ[0].endswith(".md") else succ[0] + ".md"
+                if nxt != path:
+                    path = nxt
+                    continue
+            return body
+        return body  # chain longer than _hops (or cyclic): serve the deepest edition reached
     except Exception:
         return None
-    return parse_entry(text)[1]
 
 
 def build_orientation(store, *, base: str = "technical/orientation",
