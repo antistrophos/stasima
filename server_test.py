@@ -166,6 +166,19 @@ async def main():
         bad = await client.call_tool("kip_commit", {"instance_id": "research-2", "domain": "practice",
             "slug": "durability-notes", "body": "secretly rewritten", "op_id": "sup-3"})
         assert getattr(bad, "isError", False), "body change must still be refused"
+        # relevance floor: below-floor hits are withheld WITH a count (an empty result says "N weak
+        # matches withheld", never just silence); include_weak returns them; the stub's own default
+        # floor is 0 = off (live calibration showed its scores cannot separate true hits from junk)
+        assert type(emb).score_floor == 0.0, "stub ships with the floor OFF"
+        emb.score_floor = 0.99   # force: every stub score sits below this
+        floored = payload(await client.call_tool("map_search",
+            {"instance_id": "research-2", "query": "durability", "scope": "mine"}))
+        assert floored["results"] == [] and floored["below_floor"] > 0, floored
+        weak = payload(await client.call_tool("map_search",
+            {"instance_id": "research-2", "query": "durability", "scope": "mine", "include_weak": True}))
+        assert weak["results"] and weak["below_floor"] == 0, weak
+        emb.score_floor = 0.0    # restore — later searches in this test must see hits again
+        print("relevance floor: withheld-with-count + include_weak opt-in OK")
         print("supersede: forward link + metadata-flip authorable, body still immutable OK")
 
         # message multiple recipients, flag, inbox, read

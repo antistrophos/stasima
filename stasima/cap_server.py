@@ -516,17 +516,26 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         @mcp.tool()
         def map_search(instance_id: str, query: str, scope: str = "all",
                        type: str | None = None, limit: int = 10,
-                       include_superseded: bool = False) -> dict:
+                       include_superseded: bool = False, include_weak: bool = False) -> dict:
             """Semantic search over the corpus, attributed. scope: canon | mine | all. Returns pointers
             (path, ref, author, is_canon, type, title, status, score, preview) — never an unattributed
             blend. Live-only by default: superseded editions are excluded; `include_superseded=true` is
-            the deliberate opt-in, and every hit carries its `status` so a retired edition is apparent."""
+            the deliberate opt-in, and every hit carries its `status` so a retired edition is apparent.
+            Hits below the embedder's calibrated relevance floor are dropped (`below_floor` reports the
+            count, so an empty result says "N weak matches withheld", never just silence);
+            `include_weak=true` returns them anyway. The floor is 0 (off) where no honest calibration
+            exists — the stub embedder's scores cannot separate true matches from junk."""
             qv = embedder.embed_query([query])[0]
             hits = index.search(qv, scope=scope, instance_id=instance_id, type=type, limit=limit,
                                 status=None if include_superseded else "active")
+            floor = getattr(embedder, "score_floor", 0.0) or 0.0
+            weak = [h for h in hits if h.score < floor]
+            if weak and not include_weak:
+                hits = [h for h in hits if h.score >= floor]
             return {"results": [{"path": h.path, "ref": h.ref, "author": h.authoring_instance, "is_canon": h.is_canon,
                      "type": h.type, "title": h.title, "status": h.status, "score": h.score,
-                     "preview": h.preview} for h in hits]}
+                     "preview": h.preview} for h in hits],
+                    "below_floor": 0 if include_weak else len(weak)}
 
         if audit is not None:
             @mcp.tool()
@@ -824,6 +833,8 @@ def components_from_config(cfg):
                                        query_prefix=cfg.embed_query_prefix)
     else:
         embedder = StubEmbedder(dim=64)
+    if cfg.search_score_floor is not None:   # deployment-calibrated override of the embedder default
+        embedder.score_floor = cfg.search_score_floor
     airlock = Airlock(store, audit,
                       secret_path=cfg.resolved_airlock_secret(),
                       land_fn=lambda prepared, approval: land_and_record(store, index, embedder, audit,

@@ -142,6 +142,10 @@ Semantic search over the corpus, attributed. scope: canon | mine | all. Returns 
 (path, ref, author, is_canon, type, title, status, score, preview) — never an unattributed
 blend. Live-only by default: superseded editions are excluded; `include_superseded=true` is
 the deliberate opt-in, and every hit carries its `status` so a retired edition is apparent.
+Hits below the embedder's calibrated relevance floor are dropped (`below_floor` reports the
+count, so an empty result says "N weak matches withheld", never just silence);
+`include_weak=true` returns them anyway. The floor is 0 (off) where no honest calibration
+exists — the stub embedder's scores cannot separate true matches from junk.
 
 **Parameters**
 - `instance_id` (string, required)
@@ -150,6 +154,7 @@ the deliberate opt-in, and every hit carries its `status` so a retired edition i
 - `type` (string | null, default `None`)
 - `limit` (integer, default `10`)
 - `include_superseded` (boolean, default `False`)
+- `include_weak` (boolean, default `False`)
 
 ## Vantages (VAP)
 

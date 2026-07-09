@@ -80,6 +80,10 @@ class Config:
     # are NOT bound by the tight steady-state git_timeout above. Raise it for a huge corpus over a slow
     # link; lower it to fail a stuck remote faster.
     git_network_timeout: float = 300.0
+    # Relevance floor for map_search: hits below it are withheld (a count reports them). None = the
+    # embedder's own calibrated default (stub: 0.0 = off — its scores don't separate true from junk).
+    # Set only after measuring where YOUR model's true/junk scores separate on YOUR corpus.
+    search_score_floor: float | None = None
 
     @classmethod
     def load(cls, path: str | None = None, env: dict | None = None) -> "Config":
@@ -103,8 +107,8 @@ class Config:
                     data[intf] = int(data[intf])
                 except (TypeError, ValueError):
                     raise ConfigError(f"{intf} must be an integer, got {data[intf]!r}")
-        for _fl in ("git_timeout", "git_network_timeout"):
-            if _fl in data:
+        for _fl in ("git_timeout", "git_network_timeout", "search_score_floor"):
+            if _fl in data and data[_fl] is not None:
                 try:
                     data[_fl] = float(data[_fl])
                 except (TypeError, ValueError):

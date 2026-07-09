@@ -56,6 +56,12 @@ class StubEmbedder(Embedder):
     """Deterministic, offline bag-of-hashed-tokens embedding. For dev/tests without a model server.
     It's essentially lexical similarity — enough to prove ranking/scope/index behavior reproducibly."""
 
+    # Relevance floor for map_search: 0.0 = OFF, deliberately. Calibrated on a live ~630-entry
+    # corpus (2026-07): junk-query top scores (0.28-0.30) OVERLAP true-match top scores (0.23-0.36)
+    # — hashed-token cosine has no absolute meaning, so any floor here silently drops real hits.
+    # A deployment may override via config `search_score_floor`; real embedders calibrate their own.
+    score_floor = 0.0
+
     def __init__(self, dim: int = 64):
         self.dim = dim
         self.model_id = f"stub-{dim}"
@@ -79,6 +85,11 @@ class LocalServerEmbedder(Embedder):
     prefix-conditioned — documents and queries each need an instruction prefix or quality degrades
     badly (verified live: nomic without prefixes ranks related BELOW unrelated). Configure
     `doc_prefix`/`query_prefix` per model; empty strings for models that don't use them."""
+
+    # Relevance floor for map_search: 0.0 = off until calibrated PER MODEL against a real corpus
+    # (score ranges differ wildly across embedding models). Set via config `search_score_floor`
+    # once a deployment has measured where its model's true/junk scores separate.
+    score_floor = 0.0
 
     def __init__(self, base_url: str, model: str, dim: int, api_key: str = "not-needed",
                  doc_prefix: str = "", query_prefix: str = ""):
