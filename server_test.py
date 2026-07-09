@@ -87,6 +87,12 @@ async def main():
             "my_perspective entries are enriched pointers"
         le = payload(await client.call_tool("list_entries", {"ref": "canon"}))
         assert all("path" in e and "status" in e for e in le["entries"]), "list_entries entries are enriched pointers"
+        # a PATH-FILTERED listing must return FULL paths with enrichment intact — subtree-relative
+        # names miss every index key (blank fields) and are unusable as coordinates (Shannon's finding)
+        lf = payload(await client.call_tool("list_entries", {"ref": "canon", "path": "practice/"}))
+        assert lf["entries"], "filtered listing returns the subtree"
+        assert all(e["path"].startswith("practice/") for e in lf["entries"]), "filtered listing keeps full paths"
+        assert any(e["title"] for e in lf["entries"]), "filtered listing keeps enrichment"
         print("my_perspective:", [e["path"] for e in mp["entries"]])
 
         # reconcile with canon before proposing (the coherence gate now requires it)

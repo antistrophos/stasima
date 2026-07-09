@@ -236,11 +236,16 @@ class LocalCapStore:
         return [TreeEntry(*line.split("\t")) for line in out.decode().splitlines() if line]
 
     def list_paths(self, ref: str, path: str = "") -> list[str]:
-        """Recursive list of file paths under a tree (relative to `path`)."""
-        treeish = ref if path == "" else f"{ref}:{path}"
-        rc, out, err = self._run("ls-tree", "-r", "--name-only", treeish)
+        """Recursive list of FULL file paths under a tree, optionally filtered to a subtree.
+        Full paths always — a filtered listing must compose with index lookups and follow-up
+        reads (a subtree-relative name is unusable as a coordinate). An unknown path filter
+        yields an empty list, not an error."""
+        args = ["ls-tree", "-r", "--name-only", ref]
+        if path:
+            args += ["--", path]
+        rc, out, err = self._run(*args)
         if rc != 0:
-            raise PathNotFound(f"{treeish}: {err.strip()}")
+            raise PathNotFound(f"{ref}: {err.strip()}")
         return out.decode().splitlines()
 
     def history(self, ref: str, path: str) -> list[dict]:
