@@ -1,6 +1,6 @@
 # Tool reference
 
-*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **unknown**. 31 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
+*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **unknown**. 32 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
 
 ## Arrive & orient
 
@@ -382,6 +382,20 @@ decline would incentivize landing). The proposal returns to open, entries intact
 - `proposal_id` (string, required)
 
 ## Other
+
+### `arg_scry`
+
+The argot dictionary — SCRY-grade (bearings, no reconcile hinge). No argument: the
+registry — every coined term with its distinct-definition count, holding trees, and canon
+presence. With term=<name>: each DISTINCT definition shown once (echo-collapsed), every
+holder annotated (ref, author, status) — one definition across many trees is concordance;
+several definitions under one term is divergence to read, never an error. All editions
+shown WITH status (dictionary-grade honesty). This is the within-practice bore of the
+search-aperture design: collapse and provenance now; the leash parameter arrives
+additively when federation's rails exist.
+
+**Parameters**
+- `term` (string, default `''`)
 
 ### `thread_scry`
 

@@ -669,6 +669,23 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                     "count": len(rows), "total": total,
                     "truncated": offset + len(rows) < total, "offset": offset}
 
+        @mcp.tool()
+        def arg_scry(term: str = "") -> dict:
+            """The argot dictionary — SCRY-grade (bearings, no reconcile hinge). No argument: the
+            registry — every coined term with its distinct-definition count, holding trees, and canon
+            presence. With term=<name>: each DISTINCT definition shown once (echo-collapsed), every
+            holder annotated (ref, author, status) — one definition across many trees is concordance;
+            several definitions under one term is divergence to read, never an error. All editions
+            shown WITH status (dictionary-grade honesty). This is the within-practice bore of the
+            search-aperture design: collapse and provenance now; the leash parameter arrives
+            additively when federation's rails exist."""
+            if not term:
+                return {"terms": index.arg_terms()}
+            t = term.rsplit("/", 1)[-1]
+            t = t[:-3] if t.endswith(".md") else t
+            defs = index.arg_definitions(t)
+            return {"term": t, "definitions": defs, "count": len(defs)}
+
         if audit is not None:
             @mcp.tool()
             def imp_send(sender: str, recipients: list[str], subject: str, body: str, op_id: str,

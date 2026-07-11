@@ -199,6 +199,12 @@ class MapIndex(ABC):
     def thread_entries(self, tag: str, limit: int = 16, offset: int = 0): ...   # (rows newest-first, total) for one tag
 
     @abstractmethod
+    def arg_terms(self) -> dict: ...   # the dictionary registry: {term: {definitions, trees, canon}} over type='arg'
+
+    @abstractmethod
+    def arg_definitions(self, term: str) -> list: ...   # one term's DISTINCT definitions, holders annotated (echo-collapse)
+
+    @abstractmethod
     def envelopes_for(self, ref: str) -> dict: ...   # {path: {title,status,type}} — listing enrichment, one query
 
     @abstractmethod
@@ -381,6 +387,39 @@ class SqliteMapIndex(MapIndex):
             "SELECT * FROM map_entries WHERE thread = ? ORDER BY rowid DESC LIMIT ? OFFSET ?",
             (tag, limit, offset))]
         return rows, total
+
+    def arg_terms(self):
+        """The dictionary registry: {term: {definitions, trees, canon}} over every type='arg' row.
+        A term is its path stem; a DEFINITION is a distinct stripped body. One term with several
+        definitions is divergence to read; one definition echoed across trees is concordance."""
+        out = {}
+        for r in self.conn.execute("SELECT path, ref, is_canon, body_text FROM map_entries WHERE type = 'arg'"):
+            stem = r["path"].rsplit("/", 1)[-1]
+            term = stem[:-3] if stem.endswith(".md") else stem
+            e = out.setdefault(term, {"defs": set(), "trees": set(), "canon": False})
+            e["defs"].add((r["body_text"] or "").strip())
+            e["trees"].add(r["ref"])
+            e["canon"] = e["canon"] or bool(r["is_canon"])
+        return {t: {"definitions": len(e["defs"]), "trees": sorted(e["trees"]), "canon": e["canon"]}
+                for t, e in sorted(out.items())}
+
+    def arg_definitions(self, term):
+        """One term's DISTINCT definitions, each shown once, every holder annotated — the
+        concordance-vs-divergence view: echo-collapsing by provenance, at path-length zero.
+        Canon-held definitions sort first, then by echo count. All editions shown WITH status."""
+        defs = {}
+        for r in self.conn.execute(
+                "SELECT path, ref, authoring_instance, is_canon, status, body_text FROM map_entries "
+                "WHERE type = 'arg' AND (path LIKE ? OR path = ?)", (f"%/{term}.md", f"{term}.md")):
+            key = (r["body_text"] or "").strip()
+            d = defs.setdefault(key, {"preview": key[:240], "canon": False, "holders": []})
+            d["canon"] = d["canon"] or bool(r["is_canon"])
+            d["holders"].append({"ref": r["ref"], "author": r["authoring_instance"],
+                                 "path": r["path"], "status": r["status"] or ""})
+        ordered = sorted(defs.values(), key=lambda d: (not d["canon"], -len(d["holders"]), d["preview"]))
+        for d in ordered:
+            d["holders"].sort(key=lambda h: h["ref"])
+        return ordered
 
     def envelopes_for(self, ref):
         """Envelope pointers (title/status/type, + tick where a state update declared one) for every

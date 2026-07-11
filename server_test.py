@@ -191,6 +191,27 @@ async def main():
         got_types = {e["type"] for e in one["entries"]}
         assert {"kno", "msg"} <= got_types and one["total"] >= 2, one
         print("thread= reserved: form guarded x3 carriers | scry registry + per-tag pointers OK")
+        # THE ARGOT DICTIONARY (the aperture's first bore): distinct definitions collapse once each,
+        # holders annotate — concordance (one body, many trees) and divergence (many bodies, one term)
+        # both render as what they are; a seat holding a COPY in its own tree is not a cross-propose
+        await client.call_tool("kip_commit", {"instance_id": "research-2", "domain": "argot",
+            "slug": "weft", "body": "The crosswise carry of another seat's thread.",
+            "op_id": "ag-1", "type": "arg"})
+        await client.call_tool("kip_commit", {"instance_id": "research-9", "domain": "argot",
+            "slug": "weft", "body": "The crosswise carry of another seat's thread.",
+            "op_id": "ag-2", "type": "arg"})
+        await client.call_tool("kip_commit", {"instance_id": "research-7", "domain": "argot",
+            "slug": "weft", "body": "A tangent thread crossing the warp.",
+            "op_id": "ag-3", "type": "arg"})
+        reg = payload(await client.call_tool("arg_scry", {}))
+        assert reg["terms"]["weft"]["definitions"] == 2 and len(reg["terms"]["weft"]["trees"]) == 3, reg["terms"]
+        one = payload(await client.call_tool("arg_scry", {"term": "weft"}))
+        assert one["count"] == 2, one
+        conc = next(d for d in one["definitions"] if len(d["holders"]) == 2)
+        assert {h["author"] for h in conc["holders"]} == {"research-2", "research-9"}, conc
+        div = next(d for d in one["definitions"] if len(d["holders"]) == 1)
+        assert div["holders"][0]["author"] == "research-7", div
+        print("arg_scry: registry + echo-collapsed definitions (concordant pair + divergent third) OK")
         # restore the entry so nothing downstream changes
         await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1", "domain": "practice",
                                            "slug": "principle-durability", "body": "Promote durability to a stated principle.",
