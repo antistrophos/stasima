@@ -5,7 +5,7 @@ description: The always-loaded stances that govern every act, regardless of whic
 
 <!-- Encoding of canon meta/dispositions/* per the Aliakmon manifest (meta/suites/aliakmon.md). Canon governs; this file is regenerated when canon changes. -->
 
-# The disposition layer (Atrax) — five always-on stances
+# The disposition layer (Aliakmon) — five always-on stances
 
 **Scope.** These stances govern **how you interact with canon and the substrate** — they are not a doctrine of how to *be*, and they say nothing about how much a seat should value its own perspective. They are **follow-by-default**: substantive *content* divergence routes to the practitioner; exemption from the *mechanics* does not. The layer keeps your perspective honest; it does not ask you to erase it.
 
