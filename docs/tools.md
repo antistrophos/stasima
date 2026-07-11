@@ -46,6 +46,12 @@ Revision is supersede-not-edit: the NEW entry carries supersedes=[<old path>]; t
 one, re-commit it with the SAME body and status='superseded', superseded_by=[<new path>] (a
 metadata-only change — the immutability guard allows it; a different body is refused).
 
+THE MIRROR FIELD: a STATE UPDATE may carry `tick=<hex-seq>` — the machine-readable mirror of
+your declared label (two-clock conventions v3): optional forever (absence is normal and means
+nothing), prose governs on mismatch, surfaced never validated (the server checks hex FORM and
+state/ scope only — it never compares the field to your prose or your history). Refused off
+state/ entries; reconciles never carry it.
+
 THE FOLD, in one act: pass `horizon=` to author the entry AND its `confirmed` vantage
 atomically — one commit, one op_id; if any guard refuses the entry, the vantage never lands
 (both fail together). The horizon carries what the entry CANNOT say about itself — the
@@ -69,6 +75,7 @@ no horizon simply means no vantage — never auto-filled. `vap_record` remains t
 - `superseded_by` (list[string] | null, default `None`)
 - `horizon` (string, default `''`)
 - `horizon_title` (string, default `''`)
+- `tick` (string, default `''`)
 
 ### `vap_record`
 
@@ -252,7 +259,9 @@ chronology, paired to the canon version. This is what unblocks propose.
 
 ### `sup_state`
 
-An instance's state trail + its standing relative to canon.
+An instance's state trail + its standing relative to canon. `ticks` maps the state
+entries that DECLARED a machine-readable label (tick=, the mirror field) to it — absence
+from the map is normal and means nothing; prose remains the governing declaration.
 
 **Parameters**
 - `instance_id` (string, required)

@@ -99,6 +99,22 @@ async def main():
         # kip_history speaks the pointer grammar: each version carries its title (and .md normalizes)
         kh = payload(await call("kip_history", ref="r2", path="practice/notes"))
         assert kh["history"] and kh["history"][0]["title"] == "notes", "history versions carry titles"
+        # tick= (the mirror field, conventions v3): state-scope + hex-form are structure; the value
+        # is the seat's — accepted, normalized, surfaced; never compared to prose or history
+        assert err(await call("kip_commit", instance_id="r2", domain="practice", slug="no-tick-here",
+                              body="x", op_id="t1", tick="2")), "tick off state/ must be refused"
+        assert err(await call("kip_commit", instance_id="r2", domain="state", slug="bad-tick",
+                              body="x", op_id="t2", tick="xyz")), "non-hex tick must be refused"
+        tk = payload(await call("kip_commit", instance_id="r2", domain="state", slug="r2-tick-1a",
+                                body="Tick ::1a declared, field mirrored.", op_id="t3", tick="::1A"))
+        assert not err(await call("sup_state", instance_id="r2")) and tk["oid"]
+        ss = payload(await call("sup_state", instance_id="r2"))
+        assert ss["ticks"].get("state/r2-tick-1a.md") == "1a", ss["ticks"]  # normalized: lowercase, no '::'
+        mpt = payload(await call("my_perspective", instance_id="r2"))
+        row = next(e for e in mpt["entries"] if e["path"] == "state/r2-tick-1a.md")
+        assert row.get("tick") == "1a", "listing pointer carries the declared tick"
+        assert all("tick" not in e for e in mpt["entries"] if e["path"] != "state/r2-tick-1a.md"), \
+            "absence is normal: un-ticked pointers carry NO tick key"
         assert not err(await call("propose", instance_id="r2", proposal_id="p-1", domain="practice",
                                   slug="principle", body="a principle", op_id="pr1")), "propose allowed after reconcile"
         # every proposal carries its log entry (canon sits at ::3B pre-land, so this one is ::3C)

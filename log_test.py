@@ -109,4 +109,20 @@ assert "refs/tags/state/3c" in report["synced"] and "refs/tags/state/3d" in repo
 assert not report["missing_on_remote"] and not report["oid_mismatch"]
 print("5. state tags replicate via sync   OK")
 
+# 7. mid-review land: a proposal branched BEFORE another land must validate against the merge
+# CANDIDATE, not a raw canon-vs-proposal-tip diff — else canon's own newer log (absent from the
+# earlier-branched proposal) is counted as a second log and the land is refused (::15's defect,
+# predicted by two seats before it fired)
+early = store.resolve_ref(CANON)                       # branch P-EARLY here...
+store.create_branch(prop("p-early"), early)
+p_mid = make_proposal("p-mid", {"practice/f.md": entry({"type": "kno", "title": "F", "status": "active"}, "f"),
+                                "meta/log/3e.md": log_entry("3e", "::3E — a land that happens mid-review.")})
+land(p_mid)                                            # ...canon advances to ::3E while P-EARLY is open
+store.commit(prop("p-early"), {"practice/g.md": entry({"type": "kno", "title": "G", "status": "active"}, "g"),
+                               "meta/log/3f.md": log_entry("3f", "::3F — the earlier-branched proposal lands.")},
+             "propose p-early", Identity("r2"), expected_parent=early, op_id="op-p-early")
+res3 = land(store.prepare_merge(prop("p-early")))
+assert res3["seq"] == "3f" and canon_seq(store) == 0x3F, res3
+print("7. earlier-branched proposal lands across a mid-review land OK")
+
 print("\nOK -- log entries + state sequence: all acceptance checks pass.")

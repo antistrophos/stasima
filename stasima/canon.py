@@ -93,14 +93,18 @@ def validate_log_entry(store, prepared, origin: int = CHAT_ERA_FREEZE) -> str:
     """A proposal lands with its story attached: exactly one new log entry under meta/log/, whose
     seq (hex front-matter, matching the filename) is canon's seq + 1. Raises ValueError otherwise."""
     base = store.resolve_ref(prepared.into)
-    tip = store.resolve_ref(prepared.proposal_ref)
-    logs = [p for p in store.changed_paths(base, tip) if p.startswith(LOG_DIR)]
+    # Diff the MERGE CANDIDATE against canon — the same tree conflict_preview reads. A raw
+    # canon-vs-proposal-tip diff is bidirectional: when canon advances mid-review, canon's own
+    # newer logs (absent from the earlier-branched proposal) read as "changed", and the count
+    # refuses a log the proposer never touched (::15's recorded defect — predicted by two seats
+    # before it fired). The candidate holds exactly what would land; validate that.
+    logs = [p for p in store.changed_paths(base, prepared.candidate_oid) if p.startswith(LOG_DIR)]
     if len(logs) != 1:
         raise ValueError(
             f"a proposal must contain exactly one log entry under {LOG_DIR} — found {len(logs)} "
             f"({logs or 'none'}); author it with propose(domain='meta/log', slug='<seq>', type='log', seq='<seq>')")
     path = logs[0]
-    env, _ = parse_entry(store.read_blob(prepared.proposal_ref, path).decode("utf-8", "replace"))
+    env, _ = parse_entry(store.read_blob_at(prepared.candidate_oid, path).decode("utf-8", "replace"))
     seq = str(env.get("seq", "")).lower()
     try:
         n = int(seq, 16)

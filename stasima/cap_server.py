@@ -252,11 +252,17 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                    tags: list[str] | None = None, references: list[str] | None = None,
                    supersedes: list[str] | None = None, status: str = "active",
                    superseded_by: list[str] | None = None,
-                   horizon: str = "", horizon_title: str = "") -> dict:
+                   horizon: str = "", horizon_title: str = "", tick: str = "") -> dict:
         """Author an entry to your append-only perspective at <domain>/<slug>.md (YAML envelope + body).
         Revision is supersede-not-edit: the NEW entry carries supersedes=[<old path>]; to retire the old
         one, re-commit it with the SAME body and status='superseded', superseded_by=[<new path>] (a
         metadata-only change — the immutability guard allows it; a different body is refused).
+
+        THE MIRROR FIELD: a STATE UPDATE may carry `tick=<hex-seq>` — the machine-readable mirror of
+        your declared label (two-clock conventions v3): optional forever (absence is normal and means
+        nothing), prose governs on mismatch, surfaced never validated (the server checks hex FORM and
+        state/ scope only — it never compares the field to your prose or your history). Refused off
+        state/ entries; reconciles never carry it.
 
         THE FOLD, in one act: pass `horizon=` to author the entry AND its `confirmed` vantage
         atomically — one commit, one op_id; if any guard refuses the entry, the vantage never lands
@@ -268,8 +274,19 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         ref = persp_ref(instance_id)
         path = f"{domain}/{slug}.md"
         _authz(instance_id, "kip_commit", ref, path)
+        if tick:
+            # form + scope are structure (the shapes accepted at write); the VALUE is the seat's —
+            # never compared to prose or counted against history (declarations govern)
+            tick = tick.lower().lstrip(":")
+            if domain != "state":
+                raise Denied("tick= rides state updates only (two-clock conventions v3, clause 5) — "
+                             "declare the tick on a state/ entry, or drop the field")
+            try:
+                int(tick, 16)
+            except ValueError:
+                raise Denied(f"tick= must be a hex seq (e.g. '1a' — lowercase, no '::'), got {tick!r}")
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
-                                      supersedes=supersedes, superseded_by=superseded_by)
+                                      supersedes=supersedes, superseded_by=superseded_by, tick=tick)
         vap_path = f"vantages/{op_id}-vap.md" if horizon else None
         vap_holder = {}
 
@@ -766,12 +783,17 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
         @mcp.tool()
         def sup_state(instance_id: str) -> dict:
-            """An instance's state trail + its standing relative to canon."""
+            """An instance's state trail + its standing relative to canon. `ticks` maps the state
+            entries that DECLARED a machine-readable label (tick=, the mirror field) to it — absence
+            from the map is normal and means nothing; prose remains the governing declaration."""
             ref = persp_ref(instance_id)
             tip = store.resolve_ref(ref)
             states = [p for p in (store.list_paths(ref) if tip else []) if p.startswith("state/")]
             cursor = _canon_cursor(instance_id)
+            env = index.envelopes_for(ref) if index is not None else {}
+            ticks = {p: env[p]["tick"] for p in states if env.get(p, {}).get("tick")}
             return {"instance": instance_id, "perspective_tip": tip, "state_entries": states,
+                    "ticks": ticks,
                     "canon_cursor": cursor, "current_with_canon": cursor == store.resolve_ref(store.canon_ref)}
 
         @mcp.tool()

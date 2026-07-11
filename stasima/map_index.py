@@ -145,6 +145,7 @@ class MapRow:
     vantage: str = ""                                        # vantages: provenance (confirmed | reconstructed-by-X)
     canon_state: str = ""                                    # the canon oid the act was figured against (pinned at write)
     instance_depth: int = 0                                  # mechanical per-ref commit position (pinned at write; 0 = unpinned)
+    tick: str = ""                                           # state updates: the DECLARED label's mirror field (hex; optional forever; prose governs)
     body_text: str = ""
     embedding: list[float] = field(default_factory=list)
     model_id: str = ""
@@ -200,7 +201,7 @@ class MapIndex(ABC):
 # ====================================================================== sqlite backend
 _COLS = ["ref", "path", "is_canon", "authoring_instance", "content_oid", "type", "title",
          "status", "tags", "refs", "supersedes", "region_labels", "links", "salience", "recipients",
-         "subject", "vantage", "canon_state", "instance_depth", "body_text", "embedding", "model_id"]
+         "subject", "vantage", "canon_state", "instance_depth", "tick", "body_text", "embedding", "model_id"]
 _JSON_COLS = {"tags", "refs", "supersedes", "region_labels", "links", "recipients", "embedding"}
 
 
@@ -218,7 +219,7 @@ class SqliteMapIndex(MapIndex):
                 authoring_instance TEXT, content_oid TEXT, type TEXT, title TEXT, status TEXT,
                 tags TEXT, refs TEXT, supersedes TEXT, region_labels TEXT, links TEXT, salience REAL,
                 recipients TEXT, subject TEXT, vantage TEXT, canon_state TEXT, instance_depth INTEGER,
-                body_text TEXT, embedding TEXT, model_id TEXT,
+                tick TEXT, body_text TEXT, embedding TEXT, model_id TEXT,
                 PRIMARY KEY (ref, path)
             );
             CREATE INDEX IF NOT EXISTS ix_author ON map_entries(authoring_instance);
@@ -232,7 +233,7 @@ class SqliteMapIndex(MapIndex):
         # the new columns, or the index creation hits 'no such column' on a pre-VAP db.
         have = {r["name"] for r in self.conn.execute("PRAGMA table_info(map_entries)")}
         for col, sqltype in (("vantage", "TEXT"), ("canon_state", "TEXT"), ("instance_depth", "INTEGER"),
-                             ("supersedes", "TEXT")):
+                             ("supersedes", "TEXT"), ("tick", "TEXT")):
             if col not in have:
                 self.conn.execute(f"ALTER TABLE map_entries ADD COLUMN {col} {sqltype}")
         self.conn.execute("CREATE INDEX IF NOT EXISTS ix_cstate ON map_entries(canon_state)")
@@ -256,6 +257,7 @@ class SqliteMapIndex(MapIndex):
         d = {c: r[c] for c in _COLS}
         d["is_canon"] = bool(d["is_canon"])
         d["instance_depth"] = int(d["instance_depth"] or 0)   # pre-pin rows carry NULL — 0 means unpinned
+        d["tick"] = d["tick"] or ""                           # pre-field rows carry NULL — absence is normal
         for c in _JSON_COLS:
             d[c] = json.loads(d[c]) if d[c] else ([] )
         return MapRow(**d)
@@ -329,12 +331,15 @@ class SqliteMapIndex(MapIndex):
                 self.conn.execute("SELECT DISTINCT authoring_instance FROM map_entries WHERE path = ?", (path,))}
 
     def envelopes_for(self, ref):
-        """Envelope pointers (title/status/type) for every indexed entry under `ref` — ONE query, so
-        listings can be enriched without N per-path git reads. The index is a derived cache: a path it
-        doesn't know simply gets empty fields; git remains the truth of WHICH paths exist."""
-        return {r["path"]: {"title": r["title"] or "", "status": r["status"] or "", "type": r["type"] or ""}
+        """Envelope pointers (title/status/type, + tick where a state update declared one) for every
+        indexed entry under `ref` — ONE query, so listings can be enriched without N per-path git
+        reads. The index is a derived cache: a path it doesn't know simply gets empty fields; git
+        remains the truth of WHICH paths exist. `tick` rides only when present — absence is normal
+        and means nothing (two-clock conventions v3, clause 1)."""
+        return {r["path"]: {"title": r["title"] or "", "status": r["status"] or "", "type": r["type"] or "",
+                            **({"tick": r["tick"]} if r["tick"] else {})}
                 for r in self.conn.execute(
-                    "SELECT path, title, status, type FROM map_entries WHERE ref = ?", (ref,))}
+                    "SELECT path, title, status, type, tick FROM map_entries WHERE ref = ?", (ref,))}
 
     def status_of(self, path):
         """The entry's status wherever the path lives, canon edition preferred — for resolving a
@@ -366,6 +371,7 @@ def index_entry(index: MapIndex, embedder: Embedder, *, ref: str, path: str, is_
         recipients=envelope.get("recipients", []), subject=envelope.get("subject", ""),
         vantage=envelope.get("vantage", ""), canon_state=envelope.get("canon_state", ""),
         instance_depth=int(envelope.get("instance_depth", 0) or 0),   # str after a reindex's parse_entry
+        tick=str(envelope.get("tick", "") or ""),                     # the mirror field, surfaced verbatim
         body_text=body, embedding=emb, model_id=embedder.model_id,
     )
     index.upsert(row)
