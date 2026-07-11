@@ -1,8 +1,3 @@
----
-name: aliakmon-recover
-description: Loaded when an act was refused or when you catch yourself having drifted. The routine library — for each common failure, a named problem, how you RECOGNIZE it (the symptom / error text), and the press-this fix-sequence — so a seat under stress presses a ready recipe instead of deriving a fix on the spot. Two kinds of failure: REFUSALS (a guard threw an error) and PROCESS drift (no error fired; you caught yourself). Framed throughout by the errors-are-instructions stance: a refusal tells you the SHAPE of the thing, so you re-aim to that shape, you do not route around it. Names operations and carries the two recover-only call clusters; the rest reuse the author / reconcile / message / arrival skills.
----
-
 <!-- Encoding of canon technical/suites/aliakmon/recover.md (Aliakmon suite, manifest meta/suites/aliakmon.md). Canon governs; this file is regenerated when canon changes. -->
 
 # The recover dock

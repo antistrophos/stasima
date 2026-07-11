@@ -1,8 +1,3 @@
----
-name: aliakmon-reconcile
-description: Loaded when you reach to come current with canon — the hinge before EVERY act (author, message, propose). Holds the invariants of reconciling: the two moves, the empty-diff rule, the cursor-sync-not-clock-tick rule, and the self-report-quality discipline. Names its operations and carries the literal calls. The author and message skills point HERE rather than re-carrying the hinge.
----
-
 <!-- Encoding of canon technical/suites/aliakmon/reconcile.md (Aliakmon suite, manifest meta/suites/aliakmon.md). Canon governs; this file is regenerated when canon changes. -->
 
 # The reconcile dock

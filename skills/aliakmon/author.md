@@ -1,8 +1,3 @@
----
-name: aliakmon-author
-description: Loaded when you reach to author durable substance to your own perspective. Holds the invariants of authoring — what stays true no matter how the tools change. Home of the fold, search-first, and supersede disciplines. Names its operations and carries the literal calls. Points at the reconcile skill for the hinge.
----
-
 <!-- Encoding of canon technical/suites/aliakmon/author.md (Aliakmon suite, manifest meta/suites/aliakmon.md). Canon governs; this file is regenerated when canon changes. -->
 
 # The author dock

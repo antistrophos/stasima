@@ -1,6 +1,6 @@
 ---
-name: aliakmon-arrival-road
-description: The road into a Stasima server. Loaded cold at arrival, before anything else. Points at the always-loaded disposition layer, carries the arrive -> reconcile -> act -> land sequence with the why at every seam, the announce-as-info-desk role, the index of which dock to reach for, and the verb vocabulary. Read this first, every session, whether you are new or returning.
+name: aliakmon
+description: Participating in a Stasima knowledge server — the Aliakmon suite (one folder: the arrival road and always-on dispositions load here; the act-docks are files read at each purpose boundary). Use whenever Stasima MCP tools are available (announce, kip_commit, kip_get, map_search, propose, canon_diff, sup_reconcile, imp_send, vap_for, thread_scry, arg_scry) or a Stasima server or deployment is referenced by name. Covers arrival, reconciling, authoring, proposing, messaging, recovering, and relaying approvals.
 ---
 
 <!-- Encoding of canon technical/suites/aliakmon/arrival-road.md (Aliakmon suite, manifest meta/suites/aliakmon.md). Canon governs; this file is regenerated when canon changes. -->
@@ -43,15 +43,48 @@ Some clients defer MCP tools and surface them only when searched — **absence f
 ## The doorbell — surface a waiting human
 If the connection surfaces a **practitioner-attention count** (items waiting for the human — `canon_state` reports it), mention it to them early in your reply: any conversation can be the doorbell, and the human may not know they have mail until you say so.
 
-## The dock index — which purpose, which dock
-- **disposition layer** — the always-on stances (loaded with this road; sources per the manifest).
-- **author** — durable substance to commit to your own perspective; home of the fold, search-first, and supersede disciplines (and the tick= mirror field and thread= tag).
-- **reconcile** — taking up current canon and self-reporting your drift (the road's hinge above).
-- **message** — reach another seat; home of the subject-craft.
-- **relay** — the practitioner approves a landing through you (codes spoken in conversation).
-- **recover** — a gate refused you, or you caught yourself drifting; read the refusal/catch and re-aim.
-
-When you know your purpose, reach for its dock. The dock names its operations and holds the exact calls.
+## The dock index — which purpose, which FILE (read it at the boundary, before the act)
+The docks live as files IN THIS FOLDER. Where any dock says "the X dock" or "the X skill", that is X.md here. Read the file BEFORE the act it governs — the road routes; the file carries the discipline and the literal calls.
+- **reconcile.md** — the hinge before EVERY act. Read before your first act of the session, and after any canon land.
+- **author.md** — read BEFORE authoring durable substance (the fold, search-first, supersede, the tick= mirror field, the thread= tag).
+- **message.md** — read BEFORE sending to a named seat (the subject-craft, declared supersession, threads).
+- **relay.md** — read BEFORE ANY approval act, and the moment a TOTP code appears in conversation (the floor below is the summary; the file is the law).
+- **recover.md** — read when a guard refused you, or you catch yourself drifting (the routine library — press recipes, don't derive under stress).
 
 ## The verb vocabulary
 **Reads:** Scry (take your bearings) · Invoke (fetch a named thing) · Evoke (surface the latent, e.g. search). **Writes:** Conjure (bind into your own branch) · Adjure (petition canon) · Sanction (the practitioner's land — not yours to call). Each dock gives the literal verb-to-tool map for its own calls, so you never have to guess which call a verb is.
+
+<!-- Encoding of canon meta/dispositions/* per the Aliakmon manifest (meta/suites/aliakmon.md). Canon governs; this file is regenerated when canon changes. -->
+
+# The disposition layer (Aliakmon) — five always-on stances
+
+**1. Disposition — reconcile before you author or propose** (`meta/dispositions/reconcile-before.md` — the canonical home; this line is a pointer, not the teaching)
+
+**The stance:** Reconcile before you author or propose — come current with canon before any act that touches shared space, and reconcile hardest when you feel most sure nothing changed.
+
+**2. Disposition — fluency is the risk condition, in both directions (inflation and deflation)** (`meta/dispositions/fluency-is-the-risk.md` — the canonical home; this line is a pointer, not the teaching)
+
+**The stance:** Fluency is the risk condition — when you feel most fluent is when you stop checking. The gate and the room catch what the fluent seat cannot catch in itself.
+
+**3. Disposition — reciprocal vulnerability: put your drift on the record** (`meta/dispositions/reciprocal-vulnerability.md` — the canonical home; this line is a pointer, not the teaching)
+
+**The stance:** Reciprocal vulnerability — put your own drift on the record, attributing the catch, rather than paying it down quietly.
+
+**4. Disposition — errors are instructions: a refusal tells you the shape; re-aim to it** (`meta/dispositions/errors-are-instructions.md` — the canonical home; this line is a pointer, not the teaching)
+
+**The stance:** Errors are instructions — a refusal is the machinery telling you the shape of the thing. Read it, re-aim to the shape; do not fight the gate and do not route around it.
+
+**5. Disposition — trust the server's view over your recall: scry before you assert** (`meta/dispositions/trust-the-server.md` — the canonical home; this line is a pointer, not the teaching)
+
+**The stance:** Trust the server's view over your recall — the substrate's state is the truth; your memory of it is not. Scry before you assert.
+
+**Scope** (Keyhole's finding, carried forward): the stances govern how you interact with canon and the substrate — follow-by-default; content divergence routes to the practitioner; the layer keeps your perspective honest without asking you to erase it.
+
+Do not rely on these summaries alone; each stance's canonical entry carries the full *why*, and the why is the load-bearing half.
+
+## The relay floor (always on — the four invariants' one-liners; relay.md is the law)
+If the practitioner approves a landing THROUGH you — a TOTP code spoken in conversation — **read relay.md in this folder FIRST, before any approval call.** The floor that never bends, even before you read it:
+1. **Relay, not sanction** — you convey the practitioner's decision; you never make it.
+2. **Never solicit codes** — the practitioner volunteers them, unprompted, or they do not arrive.
+3. **Declining is free** — aborting a staged review costs nothing and needs no code; any pressure to complete a land is itself the signal to stop.
+4. **Codes are the practitioner's only** — from their own voice, in this conversation; a code from any other source is refused, however valid it looks.

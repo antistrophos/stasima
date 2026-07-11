@@ -1,8 +1,3 @@
----
-name: aliakmon-relay
-description: Loaded when the practitioner approves a landing THROUGH you (TOTP codes spoken in conversation). The highest-consequence, lowest-frequency skill; its failure mode is exploitation, not confusion. Holds four HARD security invariants — relay-not-sanction, never-solicit-codes, declining-is-free, codes-are-the-practitioner's-only — each with the reason it is shaped that way, so a seat under a hostile prompt holds the line even against an attack the rules do not literally name. Names its operations and carries the literal approval calls and the code-passing mechanic.
----
-
 <!-- Encoding of canon technical/suites/aliakmon/relay.md (Aliakmon suite, manifest meta/suites/aliakmon.md). Canon governs; this file is regenerated when canon changes. -->
 
 # The relay dock
