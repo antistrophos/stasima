@@ -1,6 +1,6 @@
 # Tool reference
 
-*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **unknown**. 30 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
+*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **unknown**. 31 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
 
 ## Arrive & orient
 
@@ -52,6 +52,11 @@ nothing), prose governs on mismatch, surfaced never validated (the server checks
 state/ scope only — it never compares the field to your prose or your history). Refused off
 state/ entries; reconciles never carry it.
 
+THE THREAD TAG (reserved field): any entry may carry `thread=<ref-safe-tag>` — a declared
+associative tag (which continuing work this belongs to). Form-checked only (lowercase slug,
+ref-safe); the value semantics are deliberately unruled until the thread layer lands
+(reserve-the-field-rule-the-values). Scry declared tags with thread_scry — no hinge needed.
+
 THE FOLD, in one act: pass `horizon=` to author the entry AND its `confirmed` vantage
 atomically — one commit, one op_id; if any guard refuses the entry, the vantage never lands
 (both fail together). The horizon carries what the entry CANNOT say about itself — the
@@ -76,6 +81,7 @@ no horizon simply means no vantage — never auto-filled. `vap_record` remains t
 - `horizon` (string, default `''`)
 - `horizon_title` (string, default `''`)
 - `tick` (string, default `''`)
+- `thread` (string, default `''`)
 
 ### `vap_record`
 
@@ -195,6 +201,8 @@ Author an addressed message — a KIP entry on your branch under messages/. Worl
 attributed on the spine; indexed into each recipient's inbox. `coordinates` are paths to jump to.
 `supersedes` marks earlier message(s) this one replaces (sender-declared, the same lineage
 field entries use) — the recipient's inbox then shows the old message WITH its tombstone.
+`thread=<ref-safe-tag>` (reserved field) chains messages to a continuing work — the same
+declared tag entries carry, so a conversation and its substance scry as one thread.
 
 **Parameters**
 - `sender` (string, required)
@@ -204,6 +212,7 @@ field entries use) — the recipient's inbox then shows the old message WITH its
 - `op_id` (string, required)
 - `coordinates` (list[string] | null, default `None`)
 - `supersedes` (list[string] | null, default `None`)
+- `thread` (string, default `''`)
 
 ### `imp_check`
 
@@ -287,6 +296,9 @@ keeps the true author, the practitioner sees authored-vs-proposed at the gate, a
 edition stays attributed to its origin. Exact-body match only: verbatim carriage is a fact the
 guard can hold; whether a PARAPHRASE owes credit is seat discipline, not machinery.
 
+`thread=<ref-safe-tag>` (reserved field) declares which continuing work this entry belongs to
+— a thread= on the LOG entry tags the whole land. Form-checked only; values unruled.
+
 **Parameters**
 - `instance_id` (string, required)
 - `proposal_id` (string, required)
@@ -303,6 +315,7 @@ guard can hold; whether a PARAPHRASE owes credit is seat discipline, not machine
 - `status` (string, default `'active'`)
 - `superseded_by` (list[string] | null, default `None`)
 - `origin_author` (string, default `''`)
+- `thread` (string, default `''`)
 
 ### `propose_retract`
 
@@ -367,3 +380,19 @@ decline would incentivize landing). The proposal returns to open, entries intact
 
 **Parameters**
 - `proposal_id` (string, required)
+
+## Other
+
+### `thread_scry`
+
+Bearings on declared threads — SCRY-grade: coordination metadata, changes nothing, costs
+no reconcile hinge (fetch, not pull). No argument: the registry view — every declared tag
+with its entry count, authors, and latest pointer. With thread=<tag>: that thread's entries
+as pointers, newest-first, bounded (the hex-page unit). Declared tags only — the value
+semantics are unruled (reserve-the-field-rule-the-values); one tag with surprising authors
+is a curation catch to read, never an error.
+
+**Parameters**
+- `thread` (string, default `''`)
+- `limit` (integer, default `16`)
+- `offset` (integer, default `0`)

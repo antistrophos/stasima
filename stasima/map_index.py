@@ -146,6 +146,7 @@ class MapRow:
     canon_state: str = ""                                    # the canon oid the act was figured against (pinned at write)
     instance_depth: int = 0                                  # mechanical per-ref commit position (pinned at write; 0 = unpinned)
     tick: str = ""                                           # state updates: the DECLARED label's mirror field (hex; optional forever; prose governs)
+    thread: str = ""                                         # reserved associative tag (ref-safe form; value semantics unruled — reserve-the-field-rule-the-values)
     body_text: str = ""
     embedding: list[float] = field(default_factory=list)
     model_id: str = ""
@@ -192,6 +193,12 @@ class MapIndex(ABC):
     def authors_of_body(self, body: str) -> dict: ...   # {author: exemplar path} for a VERBATIM body — the cross-propose guard's second axis
 
     @abstractmethod
+    def threads(self) -> dict: ...   # {tag: {count, authors, latest}} over declared thread= — the scry registry
+
+    @abstractmethod
+    def thread_entries(self, tag: str, limit: int = 16, offset: int = 0): ...   # (rows newest-first, total) for one tag
+
+    @abstractmethod
     def envelopes_for(self, ref: str) -> dict: ...   # {path: {title,status,type}} — listing enrichment, one query
 
     @abstractmethod
@@ -204,7 +211,7 @@ class MapIndex(ABC):
 # ====================================================================== sqlite backend
 _COLS = ["ref", "path", "is_canon", "authoring_instance", "content_oid", "type", "title",
          "status", "tags", "refs", "supersedes", "region_labels", "links", "salience", "recipients",
-         "subject", "vantage", "canon_state", "instance_depth", "tick", "body_text", "embedding", "model_id"]
+         "subject", "vantage", "canon_state", "instance_depth", "tick", "thread", "body_text", "embedding", "model_id"]
 _JSON_COLS = {"tags", "refs", "supersedes", "region_labels", "links", "recipients", "embedding"}
 
 
@@ -222,7 +229,7 @@ class SqliteMapIndex(MapIndex):
                 authoring_instance TEXT, content_oid TEXT, type TEXT, title TEXT, status TEXT,
                 tags TEXT, refs TEXT, supersedes TEXT, region_labels TEXT, links TEXT, salience REAL,
                 recipients TEXT, subject TEXT, vantage TEXT, canon_state TEXT, instance_depth INTEGER,
-                tick TEXT, body_text TEXT, embedding TEXT, model_id TEXT,
+                tick TEXT, thread TEXT, body_text TEXT, embedding TEXT, model_id TEXT,
                 PRIMARY KEY (ref, path)
             );
             CREATE INDEX IF NOT EXISTS ix_author ON map_entries(authoring_instance);
@@ -236,7 +243,7 @@ class SqliteMapIndex(MapIndex):
         # the new columns, or the index creation hits 'no such column' on a pre-VAP db.
         have = {r["name"] for r in self.conn.execute("PRAGMA table_info(map_entries)")}
         for col, sqltype in (("vantage", "TEXT"), ("canon_state", "TEXT"), ("instance_depth", "INTEGER"),
-                             ("supersedes", "TEXT"), ("tick", "TEXT")):
+                             ("supersedes", "TEXT"), ("tick", "TEXT"), ("thread", "TEXT")):
             if col not in have:
                 self.conn.execute(f"ALTER TABLE map_entries ADD COLUMN {col} {sqltype}")
         self.conn.execute("CREATE INDEX IF NOT EXISTS ix_cstate ON map_entries(canon_state)")
@@ -261,6 +268,7 @@ class SqliteMapIndex(MapIndex):
         d["is_canon"] = bool(d["is_canon"])
         d["instance_depth"] = int(d["instance_depth"] or 0)   # pre-pin rows carry NULL — 0 means unpinned
         d["tick"] = d["tick"] or ""                           # pre-field rows carry NULL — absence is normal
+        d["thread"] = d["thread"] or ""
         for c in _JSON_COLS:
             d[c] = json.loads(d[c]) if d[c] else ([] )
         return MapRow(**d)
@@ -347,6 +355,33 @@ class SqliteMapIndex(MapIndex):
             out.setdefault(r["authoring_instance"], r["path"])
         return out
 
+    def threads(self):
+        """{tag: {count, authors, latest}} over every declared thread= — the scry registry.
+        Declared tags only; a homonym collision shows here as one tag with surprising authors,
+        which is exactly the curation catch the values-open era wants visible."""
+        out = {}
+        for r in self.conn.execute(
+                "SELECT thread, COUNT(*) AS n FROM map_entries WHERE thread != '' GROUP BY thread"):
+            out[r["thread"]] = {"count": r["n"]}
+        for tag in out:
+            auth = [x["authoring_instance"] for x in self.conn.execute(
+                "SELECT DISTINCT authoring_instance FROM map_entries WHERE thread = ?", (tag,))]
+            last = self.conn.execute(
+                "SELECT path, ref FROM map_entries WHERE thread = ? ORDER BY rowid DESC LIMIT 1",
+                (tag,)).fetchone()
+            out[tag]["authors"] = sorted(a for a in auth if a)
+            out[tag]["latest"] = {"path": last["path"], "ref": last["ref"]} if last else None
+        return out
+
+    def thread_entries(self, tag, limit=16, offset=0):
+        """One tag's rows, newest-indexed-first, bounded — plus the total for honest truncation."""
+        total = self.conn.execute(
+            "SELECT COUNT(*) FROM map_entries WHERE thread = ?", (tag,)).fetchone()[0]
+        rows = [self._row(r) for r in self.conn.execute(
+            "SELECT * FROM map_entries WHERE thread = ? ORDER BY rowid DESC LIMIT ? OFFSET ?",
+            (tag, limit, offset))]
+        return rows, total
+
     def envelopes_for(self, ref):
         """Envelope pointers (title/status/type, + tick where a state update declared one) for every
         indexed entry under `ref` — ONE query, so listings can be enriched without N per-path git
@@ -354,9 +389,10 @@ class SqliteMapIndex(MapIndex):
         remains the truth of WHICH paths exist. `tick` rides only when present — absence is normal
         and means nothing (two-clock conventions v3, clause 1)."""
         return {r["path"]: {"title": r["title"] or "", "status": r["status"] or "", "type": r["type"] or "",
-                            **({"tick": r["tick"]} if r["tick"] else {})}
+                            **({"tick": r["tick"]} if r["tick"] else {}),
+                            **({"thread": r["thread"]} if r["thread"] else {})}
                 for r in self.conn.execute(
-                    "SELECT path, title, status, type, tick FROM map_entries WHERE ref = ?", (ref,))}
+                    "SELECT path, title, status, type, tick, thread FROM map_entries WHERE ref = ?", (ref,))}
 
     def status_of(self, path):
         """The entry's status wherever the path lives, canon edition preferred — for resolving a
@@ -389,6 +425,7 @@ def index_entry(index: MapIndex, embedder: Embedder, *, ref: str, path: str, is_
         vantage=envelope.get("vantage", ""), canon_state=envelope.get("canon_state", ""),
         instance_depth=int(envelope.get("instance_depth", 0) or 0),   # str after a reindex's parse_entry
         tick=str(envelope.get("tick", "") or ""),                     # the mirror field, surfaced verbatim
+        thread=str(envelope.get("thread", "") or ""),                 # the reserved associative tag
         body_text=body, embedding=emb, model_id=embedder.model_id,
     )
     index.upsert(row)

@@ -171,6 +171,26 @@ async def main():
         att = cpx["attributions"].get("practice/renamed-carriage.md")
         assert att and att["authored"] == "research-2" and att["proposed"] == "research-9", cpx["attributions"]
         print("cross-propose guard: silence refused (both axes) | lie refused | labeled carriage passes, gate sees both names OK")
+        # THE RESERVED thread= TAG: ref-safe form guarded on all three carriers (commit/propose/send);
+        # value semantics unruled; declared tags scry without the hinge (registry + per-tag pointers)
+        for bad in ("Has Space", "UPPER", "-leads", "x" * 65):
+            b = await client.call_tool("kip_commit", {"instance_id": "research-2", "domain": "practice",
+                "slug": f"bad-{len(bad)}", "body": "x", "op_id": f"th-bad-{len(bad)}", "thread": bad})
+            assert getattr(b, "isError", False), f"non-ref-safe tag {bad!r} must refuse"
+        await client.call_tool("kip_commit", {"instance_id": "research-2", "domain": "practice",
+            "slug": "thread-entry", "body": "A threaded entry.", "op_id": "th-1", "thread": "weave-test"})
+        assert not getattr(await client.call_tool("propose", {"instance_id": "research-9",
+            "proposal_id": "p-x", "domain": "practice", "slug": "threaded-prop",
+            "body": "A threaded proposal entry.", "op_id": "th-2", "thread": "weave-test"}), "isError", False)
+        assert not getattr(await client.call_tool("imp_send", {"sender": "research-2",
+            "recipients": ["research-9"], "subject": "threaded note", "body": "chained",
+            "op_id": "th-msg-1", "thread": "weave-test"}), "isError", False)
+        reg = payload(await client.call_tool("thread_scry", {}))
+        assert "weave-test" in reg["threads"] and reg["threads"]["weave-test"]["count"] >= 2, reg["threads"]
+        one = payload(await client.call_tool("thread_scry", {"thread": "weave-test"}))
+        got_types = {e["type"] for e in one["entries"]}
+        assert {"kno", "msg"} <= got_types and one["total"] >= 2, one
+        print("thread= reserved: form guarded x3 carriers | scry registry + per-tag pointers OK")
         # restore the entry so nothing downstream changes
         await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1", "domain": "practice",
                                            "slug": "principle-durability", "body": "Promote durability to a stated principle.",

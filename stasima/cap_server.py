@@ -78,6 +78,18 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         env.update({k: v for k, v in extra.items() if v})
         return env
 
+    _THREAD_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789-")
+
+    def _check_thread(tag):
+        # Ref-safe by construction: a reserved tag must never mint a name the future thread-ref
+        # registry (first-open-wins via ref creation, scry via the ref namespace) cannot hold.
+        # Lowercase alnum + hyphens, starts alphanumeric, max 64. The VALUE semantics stay unruled
+        # (reserve-the-field-rule-the-values); only the form is structure.
+        if not tag or len(tag) > 64 or tag[0] == "-" or not set(tag) <= _THREAD_CHARS:
+            raise Denied(f"thread= must be a ref-safe tag (lowercase a-z, 0-9, hyphens; starts "
+                         f"alphanumeric; max 64), got {tag!r} — the tag becomes a ref name when the "
+                         f"thread registry lands, and a form it cannot hold would poison the reservation")
+
     def _name_collision(name):
         """An existing perspective whose name case-insensitively equals `name` but differs in exact
         casing — a drift that would FORK identity, since names are case-sensitive everywhere in v1
@@ -252,7 +264,8 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                    tags: list[str] | None = None, references: list[str] | None = None,
                    supersedes: list[str] | None = None, status: str = "active",
                    superseded_by: list[str] | None = None,
-                   horizon: str = "", horizon_title: str = "", tick: str = "") -> dict:
+                   horizon: str = "", horizon_title: str = "", tick: str = "",
+                   thread: str = "") -> dict:
         """Author an entry to your append-only perspective at <domain>/<slug>.md (YAML envelope + body).
         Revision is supersede-not-edit: the NEW entry carries supersedes=[<old path>]; to retire the old
         one, re-commit it with the SAME body and status='superseded', superseded_by=[<new path>] (a
@@ -263,6 +276,11 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         nothing), prose governs on mismatch, surfaced never validated (the server checks hex FORM and
         state/ scope only — it never compares the field to your prose or your history). Refused off
         state/ entries; reconciles never carry it.
+
+        THE THREAD TAG (reserved field): any entry may carry `thread=<ref-safe-tag>` — a declared
+        associative tag (which continuing work this belongs to). Form-checked only (lowercase slug,
+        ref-safe); the value semantics are deliberately unruled until the thread layer lands
+        (reserve-the-field-rule-the-values). Scry declared tags with thread_scry — no hinge needed.
 
         THE FOLD, in one act: pass `horizon=` to author the entry AND its `confirmed` vantage
         atomically — one commit, one op_id; if any guard refuses the entry, the vantage never lands
@@ -285,8 +303,11 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 int(tick, 16)
             except ValueError:
                 raise Denied(f"tick= must be a hex seq (e.g. '1a' — lowercase, no '::'), got {tick!r}")
+        if thread:
+            _check_thread(thread)
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
-                                      supersedes=supersedes, superseded_by=superseded_by, tick=tick)
+                                      supersedes=supersedes, superseded_by=superseded_by, tick=tick,
+                                      thread=thread or None)
         vap_path = f"vantages/{op_id}-vap.md" if horizon else None
         vap_holder = {}
 
@@ -445,7 +466,8 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 title: str = "", type: str = "kno", seq: str = "",
                 tags: list[str] | None = None, references: list[str] | None = None,
                 supersedes: list[str] | None = None, status: str = "active",
-                superseded_by: list[str] | None = None, origin_author: str = "") -> dict:
+                superseded_by: list[str] | None = None, origin_author: str = "",
+                thread: str = "") -> dict:
         """Open or extend a proposal targeting canon at <domain>/<slug>.md. Landing is the practitioner's,
         out of band. A proposal must include exactly one LOG ENTRY before it can land — the narrative of
         the change: propose(domain='meta/log', slug='<seq>', type='log', seq='<seq>') where seq is
@@ -457,7 +479,10 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         anywhere) requires `origin_author=<that seat>` — silent reattribution is refused; the envelope
         keeps the true author, the practitioner sees authored-vs-proposed at the gate, and canon's
         edition stays attributed to its origin. Exact-body match only: verbatim carriage is a fact the
-        guard can hold; whether a PARAPHRASE owes credit is seat discipline, not machinery."""
+        guard can hold; whether a PARAPHRASE owes credit is seat discipline, not machinery.
+
+        `thread=<ref-safe-tag>` (reserved field) declares which continuing work this entry belongs to
+        — a thread= on the LOG entry tags the whole land. Form-checked only; values unruled."""
         ref = prop_ref(proposal_id)
         path = f"{domain}/{slug}.md"
         _authz(instance_id, "propose", ref, path)
@@ -499,10 +524,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 raise Denied(f"origin_author={origin_author!r} contradicts the record that triggered the "
                              f"guard — the matched author(s): {sorted(matched)}. Name the seat the content "
                              f"actually belongs to.")
+        if thread:
+            _check_thread(thread)
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
                                       supersedes=supersedes, superseded_by=superseded_by,
                                       seq=seq.lower() if seq else None,
-                                      origin_author=origin_author or None)
+                                      origin_author=origin_author or None,
+                                      thread=thread or None)
 
         def build(btip):
             _pin(envelope, instance_id, btip)
@@ -623,20 +651,44 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                      "preview": h.preview} for h in hits],
                     "below_floor": 0 if include_weak else len(weak)}
 
+        @mcp.tool()
+        def thread_scry(thread: str = "", limit: int = 16, offset: int = 0) -> dict:
+            """Bearings on declared threads — SCRY-grade: coordination metadata, changes nothing, costs
+            no reconcile hinge (fetch, not pull). No argument: the registry view — every declared tag
+            with its entry count, authors, and latest pointer. With thread=<tag>: that thread's entries
+            as pointers, newest-first, bounded (the hex-page unit). Declared tags only — the value
+            semantics are unruled (reserve-the-field-rule-the-values); one tag with surprising authors
+            is a curation catch to read, never an error."""
+            if not thread:
+                return {"threads": index.threads()}
+            rows, total = index.thread_entries(thread, limit=limit, offset=offset)
+            return {"thread": thread,
+                    "entries": [{"path": r.path, "ref": r.ref, "author": r.authoring_instance,
+                                 "type": r.type, "title": r.title or r.subject, "status": r.status}
+                                for r in rows],
+                    "count": len(rows), "total": total,
+                    "truncated": offset + len(rows) < total, "offset": offset}
+
         if audit is not None:
             @mcp.tool()
             def imp_send(sender: str, recipients: list[str], subject: str, body: str, op_id: str,
                          coordinates: list[str] | None = None,
-                         supersedes: list[str] | None = None) -> dict:
+                         supersedes: list[str] | None = None, thread: str = "") -> dict:
                 """Author an addressed message — a KIP entry on your branch under messages/. World-readable and
                 attributed on the spine; indexed into each recipient's inbox. `coordinates` are paths to jump to.
                 `supersedes` marks earlier message(s) this one replaces (sender-declared, the same lineage
-                field entries use) — the recipient's inbox then shows the old message WITH its tombstone."""
+                field entries use) — the recipient's inbox then shows the old message WITH its tombstone.
+                `thread=<ref-safe-tag>` (reserved field) chains messages to a continuing work — the same
+                declared tag entries carry, so a conversation and its substance scry as one thread."""
                 ref = persp_ref(sender)
                 path = f"messages/{op_id}.md"
                 _authz(sender, "imp_send", ref, path)
+                if thread:
+                    _check_thread(thread)
                 envelope = {"type": "msg", "subject": subject, "status": "active",
                             "recipients": recipients, "coordinates": coordinates or []}
+                if thread:
+                    envelope["thread"] = thread
                 if supersedes:
                     envelope["supersedes"] = [p if p.endswith(".md") else p + ".md" for p in supersedes]
 
