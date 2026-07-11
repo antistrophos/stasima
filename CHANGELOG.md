@@ -3,7 +3,58 @@
 All notable changes to the Stasima suite. The suite follows the practice's own discipline: entries
 are added, never rewritten — corrections appear as later entries.
 
-## 0.1.3 — unreleased (release candidate)
+## 0.1.4 — unreleased (in soak as 0.1.4a1)
+
+**Versioning note.** 0.1.3 never went final: its release candidate (0.1.3a1) soaked in production,
+the soak worked — and what the soak's findings built grew past the RC's contents. Cutting that tree
+as "0.1.3" would have claimed the RC's blessing for code the RC never contained, so 0.1.3 remains
+the version that only ever existed as its candidate, and this line carries everything forward.
+Every 0.1.3 breaking shape is unchanged; everything below is additive or a fix.
+
+### Added (all soak-earned, all seat-reported)
+- **`tick=` — the mirror field** (two-clock conventions v3, chorus-reviewed): a state update may
+  carry its declared label machine-readably; optional forever, prose governs, hex form and state/
+  scope guarded, the value never validated against prose or history; surfaced via `sup_state.ticks`
+  and listing pointers (absence is normal and produces no key).
+- **`thread=` — the reserved associative tag** on all three carriers (`kip_commit`, `propose` — a
+  thread on the log entry tags the whole land — and `imp_send`, so message chains join their work);
+  ref-safe form guarded, value semantics deliberately unruled (reserve-the-field-rule-the-values).
+- **`thread_scry`** — hinge-free bearings on declared threads: registry (tag, count, authors,
+  latest) and per-tag pointers, newest-first, bounded.
+- **`arg_scry` — the argot dictionary**, built as the search-aperture's within-practice bore:
+  registry of coined terms (distinct-definition count, trees, canon presence) and echo-collapsed
+  per-term definitions with every holder annotated; concordance and divergence render as what they
+  are; the leash parameter arrives additively when federation's rails exist.
+- **The cross-propose attribution guard** — carrying another seat's work toward canon requires
+  `origin_author=`; silent reattribution refused on both axes (path under another name; verbatim
+  body anywhere — exact match only); the envelope keeps the true author, reindex prefers it over
+  the introducer heuristic, `conflict_preview.attributions` shows authored-vs-proposed at the gate.
+  Also closes the proposer→confirmed-vantage dignity leak.
+- **`map_search` relevance floor machinery** — below-floor hits withheld WITH a count
+  (`below_floor`; an empty result is never silent), `include_weak=true` opt-in; the floor is
+  embedder-calibrated and config-overridable (`search_score_floor`) — and OFF for the stub
+  embedder, whose measured junk/true score ranges overlap.
+- **Richer read returns** — `sup_reconcile`'s dedup names its referent (path + oid + subject);
+  `kip_history` versions carry titles (the pointer grammar extends to trails).
+
+### Changed
+- **Orientation slots join the supersession grammar** — the slot read live-resolves tombstones, so
+  a deployment revises its own front door by the ordinary v2+flip land (previously slots could be
+  authored once and never lawfully changed).
+- **`propose_retract` restores zero divergence** — a canon-held path reverts to canon's current
+  edition instead of deleting (a retract can no longer construct a canon-deletion); proposal-added
+  paths still leave the tree.
+- **`meta/log` proposals fail fast** — missing/non-hex `seq` or slug≠seq refuses at propose-time
+  with the fix in the error text, instead of failing at the practitioner's land.
+- **The land validator reads the merge candidate** — the same tree `conflict_preview` reads, so the
+  two checks can never disagree; a mid-review land no longer makes canon's own newer log read as an
+  innocent proposal's second log.
+
+### Fixed
+- Path-filtered `list_entries` returned subtree-relative names — blank pointer fields and unusable
+  coordinates; `list_paths` now returns full paths under a filter.
+
+## 0.1.3 — never released (superseded in soak by 0.1.4)
 
 **Versioning note.** This release executes the 0.x reset: 1.0.0–1.0.2 are yanked on PyPI and
 republished as 0.1.0–0.1.2 (PEP 592 — pip installs the highest non-yanked version, so no rename is
