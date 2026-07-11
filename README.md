@@ -48,9 +48,9 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 - **[docs/first-session.md](docs/first-session.md)** — the single narrative from zero to a landed canon entry, both hats.
 
 **Using it**
-- **[docs/tools.md](docs/tools.md)** — the tool reference: all 30 tools, parameters, and behavior, **generated from the live registry** (`docs/gen_tools.py`) so it cannot drift from the code.
+- **[docs/tools.md](docs/tools.md)** — the tool reference: all 33 tools, parameters, and behavior, **generated from the live registry** (`docs/gen_tools.py`) so it cannot drift from the code.
 - **[CONTENT-MODEL.md](CONTENT-MODEL.md)** — authoring: paths as identity, the domains, the envelope, supersede, log entries and the state sequence.
-- **The participant skills** — hand one to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Two suites ship: **[Atrax](skills/atrax/)** (current — seven intent-scoped skills: the arrival road, the always-on dispositions, reconcile, author, message, relay, recover) and **[Strophos](skills/strophos/SKILL.md)** (the original single-file suite, supported). Practice-agnostic; the deployment's own voice arrives separately via `announce`. Per-dock maps: **[docs/docks/](docs/docks/)** — what each dock is for, which tools it wields, where its sources live.
+- **The participant skills** — hand one to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Three suites ship: **[Aliakmon](skills/aliakmon/)** (current — seven intent-scoped skills for the 0.1.4 contract), **[Atrax](skills/atrax/)** (its predecessor, the 0.1.3-contract edition, supported — suites succeed rather than supersede: supersession corrects, succession grows), and **[Strophos](skills/strophos/SKILL.md)** (the original single-file suite, kept current). Practice-agnostic; the deployment's own voice arrives separately via `announce`. Per-dock maps: **[docs/docks/](docs/docks/)** — what each dock is for, which tools it wields, where its sources live.
 
 **Running it**
 - **[OPERATIONS.md](OPERATIONS.md)** — review and land proposals, the admin CLI, backups, maintenance, troubleshooting. This is the one to keep open.
