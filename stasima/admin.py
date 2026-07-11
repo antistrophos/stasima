@@ -22,6 +22,9 @@ and `land` (promotion to canon) IS the human gate, performed here out of band.
       anchor              write the audit head into git now
       preview <id>        dry-run a proposal merge (conflicts / changed paths)
       land <id> [--by X]  approve + land a proposal to canon (audit + reindex + anchor)
+      proposals           every proposal's lifecycle: open / landed / closed (+ lands_behind, raw)
+      close <id> <reason> close a lingering proposal (tombstone; terminal for seats; the gate's own
+                          duty to clear what will not land — nothing is deleted)
 """
 import argparse
 import json
@@ -33,7 +36,8 @@ import time
 from .config import Config
 from .entries import compose_entry
 from .cap_server import components_from_config
-from .canon import reindex_from_git, land_and_record, canon_seq, seq_display, LOG_DIR
+from .canon import (reindex_from_git, land_and_record, canon_seq, seq_display, LOG_DIR,
+                    proposal_statuses, close_proposal)
 from .audit_log import reconcile_from_git, anchor_audit_head, verify_against_anchor
 from .local_capstore import Approval, MergeConflict, CanonAppendOnly, PERSP_PREFIX as PERSP, PROP_PREFIX as PROP
 from .airlock import generate_secret, otpauth_uri, verify_code, totp_at, STEP
@@ -216,6 +220,12 @@ def run(args) -> dict:
     if args.cmd == "reindex":
         return {"reindexed": reindex_from_git(store, index, embedder)}
 
+    if args.cmd == "proposals":
+        return {"proposals": proposal_statuses(store)}
+
+    if args.cmd == "close":
+        return close_proposal(store, audit, args.proposal_id, args.reason, "practitioner")
+
     if args.cmd == "reconcile":
         return {"backfilled": reconcile_from_git(store, audit)}
 
@@ -260,8 +270,11 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="stasima-admin", description="Stasima maintenance + promotion")
     ap.add_argument("--config", default=os.environ.get("STASIMA_CONFIG"))
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for c in ("status", "reindex", "reconcile", "verify", "anchor"):
+    for c in ("status", "reindex", "reconcile", "verify", "anchor", "proposals"):
         sub.add_parser(c)
+    cl = sub.add_parser("close")
+    cl.add_argument("proposal_id")
+    cl.add_argument("reason", help="why this proposal will not land (recorded in the tombstone + audit)")
     sub.add_parser("bootstrap").add_argument("seed_dir", help="folder of .md entries to seed an empty canon")
     tp = sub.add_parser("totp-provision")
     tp.add_argument("--force", action="store_true", help="rotate an existing secret")

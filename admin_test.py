@@ -61,6 +61,18 @@ assert s2["audit_vs_anchor"] is True, "audit anchored into git on land"
 assert s2["canon_seq"] == "::3C", "status reports the state number"
 assert "practice/principle.md" in store.list_paths("refs/heads/main"), "promotion landed in canon"
 
+# the barbecue: the practitioner's own lifecycle screen + burn knob — landed reads landed, and a
+# lingering proposal closes from the console (tombstone, terminal for seats, nothing deleted)
+lc = run("proposals")
+assert lc["proposals"]["p-1"]["status"] == "landed", lc["proposals"]
+cl = run("close", "p-1", "leftover after landing — burning the notar")
+assert cl["closed"] and "notar" in cl["reason"], cl
+lc2 = run("proposals")
+assert lc2["proposals"]["p-1"]["status"] == "closed" and "notar" in lc2["proposals"]["p-1"]["closed_reason"]
+cl2 = run("close", "p-1", "twice")
+assert cl2.get("already") is True, "re-close is idempotent"
+print("proposals+close", {"lifecycle": lc2["proposals"]["p-1"]})
+
 # totp: provision -> a real current-window code verifies; a wrong code reports cleanly
 import time
 from stasima.airlock import totp_at, STEP

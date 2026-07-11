@@ -25,7 +25,8 @@ from .orientation import build_orientation               # practice-agnostic mac
 from .airlock import Airlock                             # TOTP two-phase remote approval
 # canon lifecycle (re-exported here for callers/tests that import via the server module)
 from .canon import (LOG_DIR, CHAT_ERA_FREEZE, canon_seq, seq_display, reindex_from_git,
-                   land_and_record, validate_log_entry, validate_log_entry as _validate_log_entry)
+                   land_and_record, validate_log_entry, validate_log_entry as _validate_log_entry,
+                   proposal_statuses, close_proposal)
 
 
 def _transport_security(http_host: str, extra_hosts):
@@ -646,20 +647,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         tip = store.resolve_ref(ref)
         if tip is None:
             raise RefNotFound(ref)
-        already = _closed_reason(proposal_id)
-        if already is not None:
-            return {"proposal_id": proposal_id, "closed": True, "reason": already, "already": True}
         owner = store.branch_creator(ref, store.canon_ref)
         if owner and owner != instance_id and instance_id not in store.approvers:
             _log(instance_id, "propose_close", target_ref=ref, outcome="denied",
                  detail={"reason": "not the proposal's creator", "owner": owner})
             raise Denied(f"proposal {proposal_id} was opened by {owner} — only its creator (or a "
                          f"configured approver) may close it")
-        r = store.commit(ref, {}, f"close: {reason}", Identity(instance_id),
-                         expected_parent=tip, op_id=op_id)
-        _log(instance_id, "propose_close", target_ref=ref, op_id=op_id, result_oid=r.oid,
-             detail={"reason": reason})
-        return {"proposal_id": proposal_id, "closed": True, "reason": reason, "oid": r.oid}
+        return close_proposal(store, audit, proposal_id, reason, instance_id, op_id=op_id)
 
     @mcp.tool()
     def list_proposals() -> dict:
@@ -670,29 +664,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         open proposal would merge cleanly stays conflict_preview's question — a listing is bearings,
         not an examination."""
         ids = [r.name[len(PROP):] for r in store.list_refs(PROP)]
-        canon_tip = store.resolve_ref(store.canon_ref)
-        spine_pos = {oid: i for i, oid in enumerate(store.rev_list(canon_tip))} if canon_tip else {}
-        statuses = {}
-        for pid in ids:
-            ref = prop_ref(pid)
-            tip = store.resolve_ref(ref)
-            reason = _closed_reason(pid)
-            if reason is not None:
-                statuses[pid] = {"status": "closed", "closed_reason": reason}
-            elif tip in spine_pos:
-                # no commits of its own: the tip IS its branch point on canon's spine — open, aged
-                statuses[pid] = {"status": "open", "lands_behind": spine_pos[tip]}
-            elif tip and canon_tip and store.is_ancestor(tip, canon_tip):
-                # reachable but off-spine: it arrived as a merge's second parent — landed
-                statuses[pid] = {"status": "landed"}
-            else:
-                st = {"status": "open"}
-                if tip and canon_tip:
-                    base = store.merge_base(canon_tip, tip)
-                    if base in spine_pos:
-                        st["lands_behind"] = spine_pos[base]
-                statuses[pid] = st
-        return {"proposals": ids, "statuses": statuses}
+        return {"proposals": ids, "statuses": proposal_statuses(store)}
 
     @mcp.tool()
     def list_instances() -> dict:

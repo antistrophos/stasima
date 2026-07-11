@@ -8,7 +8,7 @@ its story attached), the practitioner's landing routine, and the index rebuild. 
 protocol surface to get at lifecycle machinery.
 """
 from .entries import parse_entry
-from .local_capstore import LocalCapStore, PERSP_PREFIX
+from .local_capstore import LocalCapStore, PERSP_PREFIX, PROP_PREFIX, Identity, RefNotFound
 from .map_index import index_entry
 from .audit_log import anchor_audit_head
 
@@ -77,6 +77,54 @@ def reindex_from_git(store: LocalCapStore, index, embedder, *, clear: bool = Tru
 
 
 # ---- log entries + the state sequence (the State Log's descendant) ----
+def proposal_statuses(store) -> dict:
+    """{proposal_id: lifecycle} — open | landed | closed(+closed_reason); open proposals carry
+    `lands_behind`, the branch point's distance down canon's first-parent spine (the raw staleness
+    fact — no threshold baked in: the window is a value for the practice to rule, not the code).
+    An empty branch's tip sits ON the spine (open at its branch point); a landed proposal's tip is
+    reachable but off-spine (it arrived as a merge's second parent) — that asymmetry is the test."""
+    canon_tip = store.resolve_ref(store.canon_ref)
+    spine_pos = {oid: i for i, oid in enumerate(store.rev_list(canon_tip))} if canon_tip else {}
+    out = {}
+    for r in store.list_refs(PROP_PREFIX):
+        pid = r.name[len(PROP_PREFIX):]
+        tip = store.resolve_ref(r.name)
+        sub = store.tip_subject(r.name)
+        if sub.startswith("close: "):
+            out[pid] = {"status": "closed", "closed_reason": sub[len("close: "):]}
+        elif tip in spine_pos:
+            out[pid] = {"status": "open", "lands_behind": spine_pos[tip]}
+        elif tip and canon_tip and store.is_ancestor(tip, canon_tip):
+            out[pid] = {"status": "landed"}
+        else:
+            st = {"status": "open"}
+            if tip and canon_tip:
+                base = store.merge_base(canon_tip, tip)
+                if base in spine_pos:
+                    st["lands_behind"] = spine_pos[base]
+            out[pid] = st
+    return out
+
+
+def close_proposal(store, audit, proposal_id: str, reason: str, actor: str, op_id: str = "") -> dict:
+    """The terminal verb's shared body: a `close:` tombstone commit + the audit event. The caller
+    enforces its own lane — the MCP tool checks creator-or-approver; the admin console IS the gate
+    (clearing lingering offerings is its own duty). Idempotent: re-closing reports `already`."""
+    ref = PROP_PREFIX + proposal_id
+    tip = store.resolve_ref(ref)
+    if tip is None:
+        raise RefNotFound(ref)
+    sub = store.tip_subject(ref)
+    if sub.startswith("close: "):
+        return {"proposal_id": proposal_id, "closed": True,
+                "reason": sub[len("close: "):], "already": True}
+    r = store.commit(ref, {}, f"close: {reason}", Identity(actor),
+                     expected_parent=tip, op_id=op_id or f"close-{proposal_id}-{tip[:8]}")
+    audit.append(actor, "propose_close", target_ref=ref, op_id=r.op_id, result_oid=r.oid,
+                 detail={"reason": reason})
+    return {"proposal_id": proposal_id, "closed": True, "reason": reason, "oid": r.oid}
+
+
 def canon_seq(store, origin: int = CHAT_ERA_FREEZE) -> int:
     """Canon's current state number, read from the state/<seq> tags (hex). `origin` before any land."""
     vals = []

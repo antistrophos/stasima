@@ -140,15 +140,27 @@ def _proposals(config):
         print(RED("! " + err)); return
     props = st["proposals"]
     staged = {s["proposal_id"] for s in st.get("staged", [])}
+    lc_res, _lc_err = _call(config, "proposals")          # lifecycle is enrichment; absence degrades
+    lifecycle = (lc_res or {}).get("proposals", {})
     if not props:
         print(DIM("\nno open proposals.")); return
     print(BOLD("\nProposals:"))
     for i, p in enumerate(props, 1):
         flag = YELLOW("  (staged)") if p in staged else ""
+        lc = lifecycle.get(p, {})
+        if lc.get("status") == "closed":
+            flag += DIM(f"  (closed: {lc.get('closed_reason', '')})")
+        elif lc.get("status") == "landed":
+            flag += GREEN("  (landed)")
+        elif lc.get("lands_behind"):
+            flag += YELLOW(f"  ({lc['lands_behind']} land(s) behind)")
         print(f"  {i:>2}  {p}{flag}")
-    pick = _prompt("\nNumber to preview/land, or Enter to go back: ")
+    pick = _prompt("\nNumber to preview/land, b<number> to close (burn), or Enter to go back: ")
     if pick in ("", "\x00"):
         return
+    burn = False
+    if pick[:1].lower() == "b" and pick[1:].strip().isdigit():
+        burn, pick = True, pick[1:].strip()
     pid = None
     if pick.isdigit() and 1 <= int(pick) <= len(props):
         pid = props[int(pick) - 1]
@@ -156,6 +168,22 @@ def _proposals(config):
         pid = pick
     if pid is None:
         print(RED("not a valid choice.")); return
+
+    if burn:
+        # the notar lane: closing what will not land is the gate's own duty. Same fat-finger guard
+        # as the stamp — typing the id is the deliberateness appropriate to a terminal verb.
+        reason = _prompt("Reason for closing (recorded in the tombstone + audit): ")
+        if reason in ("", "\x00"):
+            print(DIM("cancelled — nothing closed.")); return
+        conf = _prompt(f"Type the proposal id to confirm closing {CYAN(pid)} (Enter cancels): ")
+        if conf != pid:
+            print(DIM("cancelled — nothing closed.")); return
+        res, err = _call(config, "close", pid, reason)
+        if err:
+            print(RED("✗ not closed — " + err)); return
+        note = DIM(" (was already closed)") if res.get("already") else ""
+        print(GREEN(f"\n✓ closed {pid}") + note + DIM(f" — {res['reason']}"))
+        return
 
     pv, err = _call(config, "preview", pid)
     if err:
