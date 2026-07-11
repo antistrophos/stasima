@@ -248,6 +248,21 @@ class LocalCapStore:
             raise PathNotFound(f"{ref}: {err.strip()}")
         return out.decode().splitlines()
 
+    def merge_base(self, a: str, b: str):
+        """The branch point of two commits/refs, or None."""
+        rc, out, _ = self._run("merge-base", a, b)
+        return out.decode().strip() if rc == 0 else None
+
+    def is_ancestor(self, a: str, b: str) -> bool:
+        """True iff `a` is an ancestor of `b` — a landed proposal's tip is canon ancestry."""
+        rc, _, _ = self._run("merge-base", "--is-ancestor", a, b)
+        return rc == 0
+
+    def tip_subject(self, ref: str) -> str:
+        """The tip commit's subject line — carries lifecycle markers (e.g. a proposal's `close:`)."""
+        rc, out, _ = self._run("log", "-1", "--format=%s", ref)
+        return out.decode().strip() if rc == 0 else ""
+
     def history(self, ref: str, path: str) -> list[dict]:
         """Commit trail touching `path`, newest first: oid, author (instance), subject."""
         rc, out, err = self._run("log", "--format=%H%x09%an%x09%s", ref, "--", path)
@@ -321,6 +336,12 @@ class LocalCapStore:
         added = removed = modified = []
         if rc == 0 and lines:
             added, removed, modified = self._diff_status(into_tip, lines[0].strip())
+        elif rc == 1:
+            # a conflicted preview must not hide the delta: report the PROPOSAL'S OWN changes since
+            # its branch point (a canon-relative diff is undefined until the conflicts resolve)
+            base = self.merge_base(into_tip, prop_tip)
+            if base:
+                added, removed, modified = self._diff_status(base, prop_tip)
         authors = sorted(set(self._git("log", "--format=%an", f"{into_tip}..{prop_tip}").decode().split()) - {""})
         return MergeSummary(changed_paths=sorted(added + removed + modified), conflicts=conflicts,
                             authoring_instances=authors, added=added, removed=removed, modified=modified)

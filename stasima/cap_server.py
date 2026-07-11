@@ -198,6 +198,18 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         if airlock is not None and airlock.state(proposal_id)["state"] == "staged":
             raise Denied(f"proposal {proposal_id} is frozen for review (staged) — land, revert, or let it expire")
 
+    def _closed_reason(proposal_id):
+        # a proposal's closure is its tip commit's `close:` subject — terminal for SEAT operations
+        # only (the gate stays sovereign: the practitioner may still land or discard anything)
+        sub = store.tip_subject(prop_ref(proposal_id))
+        return sub[len("close: "):] if sub.startswith("close: ") else None
+
+    def _check_not_closed(proposal_id):
+        reason = _closed_reason(proposal_id)
+        if reason is not None:
+            raise Denied(f"proposal {proposal_id} is closed ({reason}) — closed is terminal for seats; "
+                         f"open a fresh proposal (the gate may still land or discard the closed one)")
+
     def _attention():
         # count of unread practitioner-recipient messages; delivery is conduct-convention, this is just the field
         if not has_map or audit is None:
@@ -487,6 +499,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         path = f"{domain}/{slug}.md"
         _authz(instance_id, "propose", ref, path)
         _check_not_staged(proposal_id)
+        _check_not_closed(proposal_id)
         _require_reconciled(instance_id)
         if domain.rstrip("/") == "meta/log":
             # fail-fast at the seat that can fix it: without this, a malformed log entry sails
@@ -555,6 +568,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         ref = prop_ref(proposal_id)
         _authz(instance_id, "propose", ref, path)
         _check_not_staged(proposal_id)
+        _check_not_closed(proposal_id)
         tip = store.resolve_ref(ref)
         if tip is None:
             raise RefNotFound(ref)
@@ -607,16 +621,78 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 hist = store.history(pref, p)
                 attributions[p] = {"authored": env["origin_author"],
                                    "proposed": hist[0]["author"] if hist else ""}
-        return {"conflicts": bool(summary.conflicts), "conflict_detail": summary.conflicts,
+        conflicted = bool(summary.conflicts)
+        return {"conflicts": conflicted, "conflict_detail": summary.conflicts,
                 "changed_paths": summary.changed_paths,
                 "adds": summary.added, "removes": summary.removed, "modifies": summary.modified,
-                "would_remove_canon": bool(summary.removed),
+                # on a clean preview the delta is canon-relative (the candidate); on a conflicted one
+                # it is the proposal's own changes since branching — shown so a conflict never hides
+                # the delta, but a canon-removal claim is only meaningful on the candidate basis
+                "delta_basis": "proposal-since-base" if conflicted else "candidate",
+                "would_remove_canon": bool(summary.removed) and not conflicted,
                 "attributions": attributions}
 
     @mcp.tool()
+    def propose_close(instance_id: str, proposal_id: str, reason: str, op_id: str) -> dict:
+        """Close a proposal — the terminal verb for staging that will not land: superseded by a fresh
+        proposal, dead against current canon, or simply done with. Writes a `close:` tombstone commit
+        (the ref and its history remain; nothing is deleted). Terminal for SEAT operations only —
+        propose and retract refuse a closed proposal; the gate stays sovereign and may still land or
+        discard it. Creator-only, plus the practitioner's configured approvers (clearing lingering
+        offerings is the gate's own duty)."""
+        ref = prop_ref(proposal_id)
+        _authz(instance_id, "propose", ref, f"close/{proposal_id}")
+        _check_not_staged(proposal_id)
+        tip = store.resolve_ref(ref)
+        if tip is None:
+            raise RefNotFound(ref)
+        already = _closed_reason(proposal_id)
+        if already is not None:
+            return {"proposal_id": proposal_id, "closed": True, "reason": already, "already": True}
+        owner = store.branch_creator(ref, store.canon_ref)
+        if owner and owner != instance_id and instance_id not in store.approvers:
+            _log(instance_id, "propose_close", target_ref=ref, outcome="denied",
+                 detail={"reason": "not the proposal's creator", "owner": owner})
+            raise Denied(f"proposal {proposal_id} was opened by {owner} — only its creator (or a "
+                         f"configured approver) may close it")
+        r = store.commit(ref, {}, f"close: {reason}", Identity(instance_id),
+                         expected_parent=tip, op_id=op_id)
+        _log(instance_id, "propose_close", target_ref=ref, op_id=op_id, result_oid=r.oid,
+             detail={"reason": reason})
+        return {"proposal_id": proposal_id, "closed": True, "reason": reason, "oid": r.oid}
+
+    @mcp.tool()
     def list_proposals() -> dict:
-        """Open proposal ids."""
-        return {"proposals": [r.name[len(PROP):] for r in store.list_refs(PROP)]}
+        """Proposal ids plus their lifecycle: `statuses` maps each id to open | landed | closed
+        (with `closed_reason`), and open proposals carry `lands_behind` — how many lands canon has
+        taken since the proposal branched (the mechanical staleness fact, surfaced raw; whether a
+        lingering proposal is DUE for closing is judgment, so no threshold is baked in). Whether an
+        open proposal would merge cleanly stays conflict_preview's question — a listing is bearings,
+        not an examination."""
+        ids = [r.name[len(PROP):] for r in store.list_refs(PROP)]
+        canon_tip = store.resolve_ref(store.canon_ref)
+        spine_pos = {oid: i for i, oid in enumerate(store.rev_list(canon_tip))} if canon_tip else {}
+        statuses = {}
+        for pid in ids:
+            ref = prop_ref(pid)
+            tip = store.resolve_ref(ref)
+            reason = _closed_reason(pid)
+            if reason is not None:
+                statuses[pid] = {"status": "closed", "closed_reason": reason}
+            elif tip in spine_pos:
+                # no commits of its own: the tip IS its branch point on canon's spine — open, aged
+                statuses[pid] = {"status": "open", "lands_behind": spine_pos[tip]}
+            elif tip and canon_tip and store.is_ancestor(tip, canon_tip):
+                # reachable but off-spine: it arrived as a merge's second parent — landed
+                statuses[pid] = {"status": "landed"}
+            else:
+                st = {"status": "open"}
+                if tip and canon_tip:
+                    base = store.merge_base(canon_tip, tip)
+                    if base in spine_pos:
+                        st["lands_behind"] = spine_pos[base]
+                statuses[pid] = st
+        return {"proposals": ids, "statuses": statuses}
 
     @mcp.tool()
     def list_instances() -> dict:

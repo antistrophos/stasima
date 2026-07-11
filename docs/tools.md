@@ -1,6 +1,6 @@
 # Tool reference
 
-*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **unknown**. 32 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
+*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **unknown**. 33 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
 
 ## Arrive & orient
 
@@ -350,7 +350,12 @@ Would this proposal merge cleanly into canon right now? Read-only; creates no ca
 
 ### `list_proposals`
 
-Open proposal ids.
+Proposal ids plus their lifecycle: `statuses` maps each id to open | landed | closed
+(with `closed_reason`), and open proposals carry `lands_behind` — how many lands canon has
+taken since the proposal branched (the mechanical staleness fact, surfaced raw; whether a
+lingering proposal is DUE for closing is judgment, so no threshold is baked in). Whether an
+open proposal would merge cleanly stays conflict_preview's question — a listing is bearings,
+not an examination.
 
 ## Approval relay (the airlock)
 
@@ -396,6 +401,21 @@ additively when federation's rails exist.
 
 **Parameters**
 - `term` (string, default `''`)
+
+### `propose_close`
+
+Close a proposal — the terminal verb for staging that will not land: superseded by a fresh
+proposal, dead against current canon, or simply done with. Writes a `close:` tombstone commit
+(the ref and its history remain; nothing is deleted). Terminal for SEAT operations only —
+propose and retract refuse a closed proposal; the gate stays sovereign and may still land or
+discard it. Creator-only, plus the practitioner's configured approvers (clearing lingering
+offerings is the gate's own duty).
+
+**Parameters**
+- `instance_id` (string, required)
+- `proposal_id` (string, required)
+- `reason` (string, required)
+- `op_id` (string, required)
 
 ### `thread_scry`
 

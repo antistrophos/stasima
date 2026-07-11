@@ -157,6 +157,12 @@ async def main():
         assert any(l["path"] == "meta/log/3c.md" and "::3C" in l["body"] for l in cd2["logs"]), \
             "the log narrative rides the diff in full"
         assert all("content" not in c for c in cd2["changed"]), "incremental diff is pointers too"
+        # lifecycle across a real land: the landed proposal reads landed (off-spine ancestry), and a
+        # branch opened at the OLD canon reads open with the mechanical lands_behind surfaced
+        store.create_branch("refs/cap/proposals/p-behind", old_tip)
+        lp = payload(await call("list_proposals"))
+        assert lp["statuses"]["p-1"]["status"] == "landed", lp["statuses"]["p-1"]
+        assert lp["statuses"]["p-behind"] == {"status": "open", "lands_behind": 1}, lp["statuses"]["p-behind"]
         payload(await call("sup_reconcile", instance_id="r2", body="Read the new principle; adjusting."))
         assert not err(await call("propose", instance_id="r2", proposal_id="p-2", domain="practice",
                                   slug="principle2", body="another", op_id="pr2")), "propose allowed after re-reconcile"

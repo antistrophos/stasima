@@ -212,6 +212,27 @@ async def main():
         div = next(d for d in one["definitions"] if len(d["holders"]) == 1)
         assert div["holders"][0]["author"] == "research-7", div
         print("arg_scry: registry + echo-collapsed definitions (concordant pair + divergent third) OK")
+        # THE TERMINAL VERB: close is creator-or-approver only, tombstones without deleting, and is
+        # terminal for SEAT operations (the gate stays sovereign); the listing carries the lifecycle
+        nc = await client.call_tool("propose_close", {"instance_id": "research-2", "proposal_id": "p-x",
+                                                      "reason": "not mine to close", "op_id": "cl-0"})
+        assert getattr(nc, "isError", False), "non-creator close must be denied"
+        cl = payload(await client.call_tool("propose_close", {"instance_id": "research-9", "proposal_id": "p-x",
+                                                              "reason": "superseded by a fresh proposal", "op_id": "cl-1"}))
+        assert cl["closed"] and cl["reason"] == "superseded by a fresh proposal", cl
+        again = payload(await client.call_tool("propose_close", {"instance_id": "research-9", "proposal_id": "p-x",
+                                                                 "reason": "twice", "op_id": "cl-2"}))
+        assert again.get("already") is True, "re-close reports already, changes nothing"
+        dead = await client.call_tool("propose", {"instance_id": "research-9", "proposal_id": "p-x",
+            "domain": "practice", "slug": "late-arrival", "body": "too late", "op_id": "cl-3"})
+        assert getattr(dead, "isError", False) and "closed" in str(dead.content), "propose to closed refuses"
+        dead_r = await client.call_tool("propose_retract", {"instance_id": "research-9", "proposal_id": "p-x",
+                                                            "path": "practice/renamed-carriage.md", "op_id": "cl-4"})
+        assert getattr(dead_r, "isError", False), "retract on closed refuses"
+        lp = payload(await client.call_tool("list_proposals", {}))
+        assert lp["statuses"]["p-x"]["status"] == "closed" and "superseded" in lp["statuses"]["p-x"]["closed_reason"]
+        assert lp["statuses"]["p-1"]["status"] == "open" and lp["statuses"]["p-1"].get("lands_behind") == 0, lp["statuses"]["p-1"]
+        print("propose_close: creator lane + terminal-for-seats + lifecycle listing OK")
         # restore the entry so nothing downstream changes
         await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1", "domain": "practice",
                                            "slug": "principle-durability", "body": "Promote durability to a stated principle.",
