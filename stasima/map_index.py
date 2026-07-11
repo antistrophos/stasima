@@ -189,6 +189,9 @@ class MapIndex(ABC):
     def authors_of(self, path: str) -> set: ...   # whose entry is this, across refs — for the confirmed check
 
     @abstractmethod
+    def authors_of_body(self, body: str) -> dict: ...   # {author: exemplar path} for a VERBATIM body — the cross-propose guard's second axis
+
+    @abstractmethod
     def envelopes_for(self, ref: str) -> dict: ...   # {path: {title,status,type}} — listing enrichment, one query
 
     @abstractmethod
@@ -329,6 +332,20 @@ class SqliteMapIndex(MapIndex):
         promotion, so this answers 'whose entry is this?' for the confirmed-vantage dignity check."""
         return {r["authoring_instance"] for r in
                 self.conn.execute("SELECT DISTINCT authoring_instance FROM map_entries WHERE path = ?", (path,))}
+
+    def authors_of_body(self, body):
+        """{authoring_instance: exemplar path} for every seat holding this VERBATIM body (stripped —
+        the same normalization the immutability guard compares by). Exact match only, deliberately:
+        a byte-identical body is a FACT machinery can hold; a near-match is a judgment about whose
+        idea something is, which is usage, not structure. The cross-propose guard's second axis —
+        path-match alone is bypassable by renaming the slug."""
+        ws = " " + chr(10) + chr(13) + chr(9)
+        out = {}
+        for r in self.conn.execute(
+                "SELECT authoring_instance, path FROM map_entries "
+                "WHERE TRIM(body_text, ?) = ? AND authoring_instance != ''", (ws, body.strip())):
+            out.setdefault(r["authoring_instance"], r["path"])
+        return out
 
     def envelopes_for(self, ref):
         """Envelope pointers (title/status/type, + tick where a state update declared one) for every

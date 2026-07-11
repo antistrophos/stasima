@@ -118,11 +118,19 @@ store.create_branch(prop("p-early"), early)
 p_mid = make_proposal("p-mid", {"practice/f.md": entry({"type": "kno", "title": "F", "status": "active"}, "f"),
                                 "meta/log/3e.md": log_entry("3e", "::3E — a land that happens mid-review.")})
 land(p_mid)                                            # ...canon advances to ::3E while P-EARLY is open
-store.commit(prop("p-early"), {"practice/g.md": entry({"type": "kno", "title": "G", "status": "active"}, "g"),
+store.commit(prop("p-early"), {"practice/g.md": entry({"type": "kno", "title": "G", "status": "active",
+                                                       "origin_author": "Mercurius"}, "g"),
                                "meta/log/3f.md": log_entry("3f", "::3F — the earlier-branched proposal lands.")},
              "propose p-early", Identity("r2"), expected_parent=early, op_id="op-p-early")
 res3 = land(store.prepare_merge(prop("p-early")))
 assert res3["seq"] == "3f" and canon_seq(store) == 0x3F, res3
 print("7. earlier-branched proposal lands across a mid-review land OK")
+
+# 8. attribution survives the land: a carried entry (origin_author in the envelope) indexes canon's
+# edition under its TRUE author, not the proposer — the introducer heuristic yields to the declaration
+grow = index.conn.execute(
+    "SELECT authoring_instance FROM map_entries WHERE ref='refs/heads/main' AND path='practice/g.md'").fetchone()
+assert grow and grow["authoring_instance"] == "Mercurius", dict(grow) if grow else grow
+print("8. carried entry lands attributed to its origin (Mercurius, not r2) OK")
 
 print("\nOK -- log entries + state sequence: all acceptance checks pass.")

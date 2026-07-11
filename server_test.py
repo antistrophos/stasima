@@ -141,6 +141,36 @@ async def main():
             "domain": "meta/log", "slug": "3c", "body": "x", "op_id": "op-mismlog", "type": "log", "seq": "3d"})
         assert getattr(mism, "isError", False), "log slug != seq must refuse at propose-time"
         print("retract reverts canon-held paths | meta/log fails fast at propose OK")
+        # THE CROSS-PROPOSE ATTRIBUTION GUARD: carrying another seat's work toward canon requires
+        # origin_author — silent reattribution refused on BOTH axes (path under another name; verbatim
+        # body anywhere), the declared origin must match the evidence, and the gate sees both names
+        await client.call_tool("kip_commit", {"instance_id": "research-2", "domain": "practice",
+            "slug": "attribution-src", "body": "Attribution is provenance made durable.", "op_id": "as-1"})
+        await client.call_tool("canon_diff", {"instance_id": "research-9"})
+        await client.call_tool("sup_reconcile", {"instance_id": "research-9", "body": "Read current canon."})
+        sil = await client.call_tool("propose", {"instance_id": "research-9", "proposal_id": "p-x",
+            "domain": "practice", "slug": "attribution-src", "body": "Attribution is provenance made durable.",
+            "op_id": "px-1"})
+        assert getattr(sil, "isError", False) and "research-2" in str(sil.content), \
+            "silent cross-propose (path+body match) must refuse, naming the origin"
+        ren = await client.call_tool("propose", {"instance_id": "research-9", "proposal_id": "p-x",
+            "domain": "practice", "slug": "renamed-carriage", "body": "Attribution is provenance made durable.",
+            "op_id": "px-2"})
+        assert getattr(ren, "isError", False), "verbatim body under a NEW slug must still refuse (rename-bypass closed)"
+        lie = await client.call_tool("propose", {"instance_id": "research-9", "proposal_id": "p-x",
+            "domain": "practice", "slug": "renamed-carriage", "body": "Attribution is provenance made durable.",
+            "op_id": "px-3", "origin_author": "research-7"})
+        assert getattr(lie, "isError", False), "an origin_author contradicting the matched evidence must refuse"
+        ok_x = await client.call_tool("propose", {"instance_id": "research-9", "proposal_id": "p-x",
+            "domain": "practice", "slug": "renamed-carriage", "body": "Attribution is provenance made durable.",
+            "op_id": "px-4", "origin_author": "research-2"})
+        assert not getattr(ok_x, "isError", False), "carriage WITH true origin must pass"
+        carried = store.read_blob("refs/cap/proposals/p-x", "practice/renamed-carriage.md").decode()
+        assert "origin_author: research-2" in carried, "the envelope carries the true author"
+        cpx = payload(await client.call_tool("conflict_preview", {"proposal_id": "p-x"}))
+        att = cpx["attributions"].get("practice/renamed-carriage.md")
+        assert att and att["authored"] == "research-2" and att["proposed"] == "research-9", cpx["attributions"]
+        print("cross-propose guard: silence refused (both axes) | lie refused | labeled carriage passes, gate sees both names OK")
         # restore the entry so nothing downstream changes
         await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1", "domain": "practice",
                                            "slug": "principle-durability", "body": "Promote durability to a stated principle.",

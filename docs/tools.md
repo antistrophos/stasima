@@ -280,6 +280,13 @@ the change: propose(domain='meta/log', slug='<seq>', type='log', seq='<seq>') wh
 canon's current seq + 1 in lowercase hex (see canon_state). Carries the same lineage fields as
 kip_commit (references / supersedes / superseded_by) — a canon entry's lineage is first-class.
 
+CARRYING ANOTHER SEAT'S WORK: proposing your own entries needs nothing new. Proposing content
+that already exists under ANOTHER seat's name (same path on their ref, or a verbatim body
+anywhere) requires `origin_author=<that seat>` — silent reattribution is refused; the envelope
+keeps the true author, the practitioner sees authored-vs-proposed at the gate, and canon's
+edition stays attributed to its origin. Exact-body match only: verbatim carriage is a fact the
+guard can hold; whether a PARAPHRASE owes credit is seat discipline, not machinery.
+
 **Parameters**
 - `instance_id` (string, required)
 - `proposal_id` (string, required)
@@ -295,6 +302,7 @@ kip_commit (references / supersedes / superseded_by) — a canon entry's lineage
 - `supersedes` (list[string] | null, default `None`)
 - `status` (string, default `'active'`)
 - `superseded_by` (list[string] | null, default `None`)
+- `origin_author` (string, default `''`)
 
 ### `propose_retract`
 
@@ -321,6 +329,8 @@ pending / landed / unknown — 'landed' = the proposal tip is an ancestor of can
 Would this proposal merge cleanly into canon right now? Read-only; creates no candidate.
 `removes` is the one to watch: landing a proposal that removes a canon path is REFUSED
 (canon is append-only). If `removes` is non-empty, re-author before asking to land.
+`attributions` lists entries carried on ANOTHER seat's behalf ({path: {authored, proposed}})
+— the gate sees both names wherever origin_author was declared.
 
 **Parameters**
 - `proposal_id` (string, required)

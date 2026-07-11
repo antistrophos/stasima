@@ -445,12 +445,19 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 title: str = "", type: str = "kno", seq: str = "",
                 tags: list[str] | None = None, references: list[str] | None = None,
                 supersedes: list[str] | None = None, status: str = "active",
-                superseded_by: list[str] | None = None) -> dict:
+                superseded_by: list[str] | None = None, origin_author: str = "") -> dict:
         """Open or extend a proposal targeting canon at <domain>/<slug>.md. Landing is the practitioner's,
         out of band. A proposal must include exactly one LOG ENTRY before it can land — the narrative of
         the change: propose(domain='meta/log', slug='<seq>', type='log', seq='<seq>') where seq is
         canon's current seq + 1 in lowercase hex (see canon_state). Carries the same lineage fields as
-        kip_commit (references / supersedes / superseded_by) — a canon entry's lineage is first-class."""
+        kip_commit (references / supersedes / superseded_by) — a canon entry's lineage is first-class.
+
+        CARRYING ANOTHER SEAT'S WORK: proposing your own entries needs nothing new. Proposing content
+        that already exists under ANOTHER seat's name (same path on their ref, or a verbatim body
+        anywhere) requires `origin_author=<that seat>` — silent reattribution is refused; the envelope
+        keeps the true author, the practitioner sees authored-vs-proposed at the gate, and canon's
+        edition stays attributed to its origin. Exact-body match only: verbatim carriage is a fact the
+        guard can hold; whether a PARAPHRASE owes credit is seat discipline, not machinery."""
         ref = prop_ref(proposal_id)
         path = f"{domain}/{slug}.md"
         _authz(instance_id, "propose", ref, path)
@@ -468,9 +475,34 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                              f"— canon_state shows next_seq; the land would refuse this later, so refuse it here")
             if slug.lower() != s:
                 raise Denied(f"log slug {slug!r} must equal its seq {s!r} (the entry lands at meta/log/<seq>.md)")
+        if index is not None:
+            # the cross-propose attribution guard: carrying another seat's work toward canon is a
+            # legitimate flow (curation) — carrying it SILENTLY is not. Two axes, both facts: the
+            # path already under another name, or the verbatim body anywhere. Refusing silence is
+            # structure; judging paraphrase-credit stays usage (meta/machinery-structure-instance-usage).
+            matched = {}                                     # author -> exemplar path
+            for a in index.authors_of(path):
+                if a and a != instance_id:
+                    matched.setdefault(a, path)
+            for a, p in index.authors_of_body(body).items():
+                if a and a != instance_id:
+                    matched.setdefault(a, p)
+            if matched and not origin_author:
+                who = "; ".join(f"{a} ({p})" for a, p in sorted(matched.items()))
+                _log(instance_id, "propose", target_ref=ref, target_path=path, outcome="denied",
+                     detail={"reason": "cross-propose without origin_author", "matched": sorted(matched)})
+                raise Denied(f"this content already exists under another seat's name — {who}. Carrying "
+                             f"another's work toward canon requires origin_author=<seat> (attribution "
+                             f"rides the envelope; the practitioner sees both names at the gate). "
+                             f"Silent reattribution is refused.")
+            if origin_author and matched and origin_author not in matched:
+                raise Denied(f"origin_author={origin_author!r} contradicts the record that triggered the "
+                             f"guard — the matched author(s): {sorted(matched)}. Name the seat the content "
+                             f"actually belongs to.")
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
                                       supersedes=supersedes, superseded_by=superseded_by,
-                                      seq=seq.lower() if seq else None)
+                                      seq=seq.lower() if seq else None,
+                                      origin_author=origin_author or None)
 
         def build(btip):
             _pin(envelope, instance_id, btip)
@@ -532,12 +564,26 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     def conflict_preview(proposal_id: str) -> dict:
         """Would this proposal merge cleanly into canon right now? Read-only; creates no candidate.
         `removes` is the one to watch: landing a proposal that removes a canon path is REFUSED
-        (canon is append-only). If `removes` is non-empty, re-author before asking to land."""
+        (canon is append-only). If `removes` is non-empty, re-author before asking to land.
+        `attributions` lists entries carried on ANOTHER seat's behalf ({path: {authored, proposed}})
+        — the gate sees both names wherever origin_author was declared."""
         summary = store.preview_merge(prop_ref(proposal_id))
+        pref = prop_ref(proposal_id)
+        attributions = {}
+        for p in summary.changed_paths:
+            try:
+                env, _ = parse_entry(store.read_blob(pref, p).decode("utf-8", "replace"))
+            except (PathNotFound, RefNotFound):
+                continue
+            if env.get("origin_author"):
+                hist = store.history(pref, p)
+                attributions[p] = {"authored": env["origin_author"],
+                                   "proposed": hist[0]["author"] if hist else ""}
         return {"conflicts": bool(summary.conflicts), "conflict_detail": summary.conflicts,
                 "changed_paths": summary.changed_paths,
                 "adds": summary.added, "removes": summary.removed, "modifies": summary.modified,
-                "would_remove_canon": bool(summary.removed)}
+                "would_remove_canon": bool(summary.removed),
+                "attributions": attributions}
 
     @mcp.tool()
     def list_proposals() -> dict:

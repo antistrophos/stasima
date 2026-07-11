@@ -60,9 +60,12 @@ def reindex_from_git(store: LocalCapStore, index, embedder, *, clear: bool = Tru
                 continue
             envelope, body = parse_entry(store.read_blob(ref, path).decode("utf-8", "replace"))
             author = _instance_from_ref(ref)
-            if author is None:                       # canon: originator of the path's history
+            if author is None:                       # canon: the envelope's declared origin, else the
+                # path's introducer. The introducer heuristic answers "who PROPOSED" wearing the label
+                # "who authored" — a cross-proposed entry (carried toward canon by another seat, with
+                # origin_author stamped by the propose guard) keeps its true author here.
                 hist = store.history(ref, path)
-                author = hist[-1]["author"] if hist else ""
+                author = envelope.get("origin_author") or (hist[-1]["author"] if hist else "")
                 # canon rows carry canon's own coordinates — the envelope keeps the authoring ones
                 envelope = dict(envelope)
                 envelope["instance_depth"] = canon_pos.get(path, 0)
