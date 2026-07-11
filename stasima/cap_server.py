@@ -456,6 +456,18 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         _authz(instance_id, "propose", ref, path)
         _check_not_staged(proposal_id)
         _require_reconciled(instance_id)
+        if domain.rstrip("/") == "meta/log":
+            # fail-fast at the seat that can fix it: without this, a malformed log entry sails
+            # through propose and the guard fires at LAND — making the practitioner the error-relay
+            # for a defect only the proposer can repair (Lintel's soak finding)
+            s = (seq or "").lower()
+            try:
+                int(s, 16)
+            except ValueError:
+                raise Denied(f"a meta/log entry needs `seq` as lowercase hex at propose-time (got {seq!r}) "
+                             f"— canon_state shows next_seq; the land would refuse this later, so refuse it here")
+            if slug.lower() != s:
+                raise Denied(f"log slug {slug!r} must equal its seq {s!r} (the entry lands at meta/log/<seq>.md)")
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
                                       supersedes=supersedes, superseded_by=superseded_by,
                                       seq=seq.lower() if seq else None)
@@ -476,8 +488,10 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     @mcp.tool()
     def propose_retract(instance_id: str, proposal_id: str, path: str, op_id: str) -> dict:
-        """Remove a path from a proposal — e.g. a stale log entry after renumbering (canon advanced,
-        so your meta/log/<old-seq>.md must be retracted and re-authored at the new seq)."""
+        """Retract a path from a proposal — e.g. a stale log entry after renumbering (canon advanced,
+        so your meta/log/<old-seq>.md must be retracted and re-authored at the new seq). Retraction
+        restores ZERO DIVERGENCE: a path canon also holds reverts to canon's current edition; a path
+        the proposal added leaves the tree. (It never turns a proposal into a canon-deletion.)"""
         ref = prop_ref(proposal_id)
         _authz(instance_id, "propose", ref, path)
         _check_not_staged(proposal_id)
@@ -491,9 +505,18 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             _log(instance_id, "propose_retract", target_ref=ref, target_path=path, outcome="denied",
                  detail={"reason": "not the proposal's creator", "owner": owner})
             raise Denied(f"proposal {proposal_id} was opened by {owner} — only its creator may retract from it")
-        r = store.commit(ref, {path: None}, f"retract {path}",
+        # Retract = restore ZERO DIVERGENCE for the path, not "delete the path": a proposal that
+        # MODIFIED a canon path reverts to canon's current edition — deleting it instead would turn
+        # the proposal into a canon-deletion the land guard must refuse (Lintel's finding: the model
+        # that expected revert was the correct one). A path the proposal ADDED simply leaves the tree.
+        try:
+            canon_side = store.read_blob(store.canon_ref, path)
+        except (PathNotFound, RefNotFound):
+            canon_side = None
+        r = store.commit(ref, {path: canon_side}, f"retract {path}",
                          Identity(instance_id), expected_parent=tip, op_id=op_id)
-        _log(instance_id, "propose_retract", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid)
+        _log(instance_id, "propose_retract", target_ref=ref, target_path=path, op_id=op_id,
+             result_oid=r.oid, detail={"reverted_to_canon": canon_side is not None})
         return {"proposal_id": proposal_id, "retracted": path, "oid": r.oid}
 
     @mcp.tool()

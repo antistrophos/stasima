@@ -120,6 +120,27 @@ async def main():
         assert evs and evs[-1]["actor"] == "research-2" and evs[-1]["target_path"] == "practice/principle-durability.md"             and evs[-1]["result_oid"], "retraction must write full operation-truth"
         assert "practice/principle-durability.md" not in store.list_paths("refs/cap/proposals/p-1"),             "retracted path must actually leave the proposal tree"
         print("retract lane: cross-instance denied (audited) | own retract OK (audited, content gone)")
+        # retract of a CANON-HELD path reverts to canon's edition (zero divergence) — never deletes,
+        # so a retract can't construct a canon-deletion for the land guard to refuse (Lintel's finding)
+        seed = store.read_blob("refs/heads/main", "practice/no-silent-loss.md").decode()
+        await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1",
+            "domain": "practice", "slug": "no-silent-loss", "body": seed.split("---")[-1].strip(),
+            "op_id": "op-3flip", "title": "No silent loss", "status": "superseded"})
+        await client.call_tool("propose_retract", {"instance_id": "research-2", "proposal_id": "p-1",
+                                                   "path": "practice/no-silent-loss.md", "op_id": "rx-3"})
+        assert "practice/no-silent-loss.md" in store.list_paths("refs/cap/proposals/p-1"), \
+            "canon-held path must SURVIVE its retract (reverted, not deleted)"
+        cp2 = payload(await client.call_tool("conflict_preview", {"proposal_id": "p-1"}))
+        assert "practice/no-silent-loss.md" not in cp2["removes"], "retract must not read as a canon-deletion"
+        assert "practice/no-silent-loss.md" not in cp2["modifies"], "reverted path must show zero divergence"
+        # log entries fail fast at propose-time: missing/malformed seq refuses HERE, not at the land
+        bad_log = await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1",
+            "domain": "meta/log", "slug": "3c", "body": "no seq given", "op_id": "op-badlog", "type": "log"})
+        assert getattr(bad_log, "isError", False), "meta/log without seq must refuse at propose-time"
+        mism = await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1",
+            "domain": "meta/log", "slug": "3c", "body": "x", "op_id": "op-mismlog", "type": "log", "seq": "3d"})
+        assert getattr(mism, "isError", False), "log slug != seq must refuse at propose-time"
+        print("retract reverts canon-held paths | meta/log fails fast at propose OK")
         # restore the entry so nothing downstream changes
         await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1", "domain": "practice",
                                            "slug": "principle-durability", "body": "Promote durability to a stated principle.",

@@ -298,8 +298,10 @@ kip_commit (references / supersedes / superseded_by) — a canon entry's lineage
 
 ### `propose_retract`
 
-Remove a path from a proposal — e.g. a stale log entry after renumbering (canon advanced,
-so your meta/log/<old-seq>.md must be retracted and re-authored at the new seq).
+Retract a path from a proposal — e.g. a stale log entry after renumbering (canon advanced,
+so your meta/log/<old-seq>.md must be retracted and re-authored at the new seq). Retraction
+restores ZERO DIVERGENCE: a path canon also holds reverts to canon's current edition; a path
+the proposal added leaves the tree. (It never turns a proposal into a canon-deletion.)
 
 **Parameters**
 - `instance_id` (string, required)
