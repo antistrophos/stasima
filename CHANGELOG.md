@@ -3,13 +3,18 @@
 All notable changes to the Stasima suite. The suite follows the practice's own discipline: entries
 are added, never rewritten — corrections appear as later entries.
 
-## 0.1.4 — unreleased (in soak as 0.1.4a1)
+## 0.1.4 — 2026-07-11
 
 **Versioning note.** 0.1.3 never went final: its release candidate (0.1.3a1) soaked in production,
 the soak worked — and what the soak's findings built grew past the RC's contents. Cutting that tree
 as "0.1.3" would have claimed the RC's blessing for code the RC never contained, so 0.1.3 remains
 the version that only ever existed as its candidate, and this line carries everything forward.
 Every 0.1.3 breaking shape is unchanged; everything below is additive or a fix.
+
+**The 0.x reset, executed with this release:** 1.0.0–1.0.2 are yanked on PyPI (PEP 592 — pip skips
+yanked versions, so `pip install stasima` lands 0.1.4). The historical code remains available in
+git history under its true commits; no renumbered republish is performed — the reset is documented
+here rather than re-enacted on the index.
 
 ### Added (all soak-earned, all seat-reported)
 - **`tick=` — the mirror field** (two-clock conventions v3, chorus-reviewed): a state update may
