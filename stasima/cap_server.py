@@ -634,6 +634,16 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 "attributions": attributions}
 
     @mcp.tool()
+    def perf_scry() -> dict:
+        """The server-git boundary, measured since this server spawned — SCRY-grade (changes nothing,
+        no hinge). Per-git-verb subprocess counts, total/avg/max wall-clock: every git crossing flows
+        through one chokepoint, so this is the boundary's COMPLETE ledger. Read it before and after a
+        heavy act (a land, a first-pull reconcile, a listing sweep) and the delta names what that act
+        actually cost. On this substrate each git call is a process spawn with a fixed floor — a verb
+        that is hot by COUNT wants batching; hot by MAX wants an algorithmic look."""
+        return store.perf_stats()
+
+    @mcp.tool()
     def propose_close(instance_id: str, proposal_id: str, reason: str, op_id: str) -> dict:
         """Close a proposal — the terminal verb for staging that will not land: superseded by a fresh
         proposal, dead against current canon, or simply done with. Writes a `close:` tombstone commit

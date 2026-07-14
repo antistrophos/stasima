@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+import time as _time
 from dataclasses import dataclass, field
 from typing import Mapping, Optional
 
@@ -131,6 +132,7 @@ class LocalCapStore:
         # generous bound explicitly via _run(..., timeout=...).
         self.git_network_timeout = git_network_timeout
         self._git_warmed = False
+        self._perf: dict = {}   # verb -> [count, total_ms, max_ms]; perf_stats() reads it
 
     # ---- low-level git invocation ----
     def _run(self, *args: str, input: Optional[bytes] = None, extra_env: Optional[dict] = None,
@@ -154,6 +156,9 @@ class LocalCapStore:
         is_network = timeout is not None
         if timeout is None:
             timeout = self.git_timeout if self._git_warmed else max(self.git_timeout, self.git_grace_timeout)
+        # The one chokepoint every git crossing flows through — meter it here and the whole
+        # server-git boundary is measured. In-process, since-spawn; perf_stats() reads it.
+        _t0 = _time.perf_counter()
         try:
             p = subprocess.run([self.git_bin, *args], timeout=timeout, **kwargs)
         except subprocess.TimeoutExpired:
@@ -168,7 +173,25 @@ class LocalCapStore:
                 f"server process contending on the same repo (stdio spawns one server per client; run one "
                 f"at a time, or use the http transport). The operation did NOT complete; retry once clear.")
         self._git_warmed = True   # warm from here on; steady-state timeout applies
+        dt_ms = (_time.perf_counter() - _t0) * 1000.0
+        verb = args[0] if args else "?"
+        s = self._perf.setdefault(verb, [0, 0.0, 0.0])   # [count, total_ms, max_ms]
+        s[0] += 1
+        s[1] += dt_ms
+        if dt_ms > s[2]:
+            s[2] = dt_ms
         return p.returncode, p.stdout, p.stderr.decode("utf-8", "replace")
+
+    def perf_stats(self) -> dict:
+        """The server-git boundary, measured since spawn: per-verb subprocess counts and wall time.
+        Every git crossing flows through _run, so this IS the boundary's complete ledger. On Windows
+        each call is a process spawn (~30-80ms floor) — a hot verb here names its optimization."""
+        total_n = sum(v[0] for v in self._perf.values())
+        total_ms = sum(v[1] for v in self._perf.values())
+        return {"git_calls": total_n, "git_ms": round(total_ms, 1),
+                "by_verb": {k: {"n": v[0], "ms": round(v[1], 1), "avg_ms": round(v[1] / v[0], 1),
+                                "max_ms": round(v[2], 1)}
+                            for k, v in sorted(self._perf.items(), key=lambda i: -i[1][1])}}
 
     def _git(self, *args: str, input: Optional[bytes] = None, extra_env: Optional[dict] = None,
              timeout: Optional[float] = None) -> bytes:

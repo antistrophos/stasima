@@ -233,6 +233,12 @@ async def main():
         assert lp["statuses"]["p-x"]["status"] == "closed" and "superseded" in lp["statuses"]["p-x"]["closed_reason"]
         assert lp["statuses"]["p-1"]["status"] == "open" and lp["statuses"]["p-1"].get("lands_behind") == 0, lp["statuses"]["p-1"]
         print("propose_close: creator lane + terminal-for-seats + lifecycle listing OK")
+        # the boundary meter: every git crossing is counted and timed at the _run chokepoint
+        pf = payload(await client.call_tool("perf_scry", {}))
+        assert pf["git_calls"] > 0 and pf["git_ms"] > 0 and pf["by_verb"], pf
+        top = next(iter(pf["by_verb"].values()))
+        assert {"n", "ms", "avg_ms", "max_ms"} <= set(top), top
+        print(f"perf_scry: {pf['git_calls']} git calls, {pf['git_ms']}ms metered OK")
         # restore the entry so nothing downstream changes
         await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1", "domain": "practice",
                                            "slug": "principle-durability", "body": "Promote durability to a stated principle.",

@@ -1,6 +1,6 @@
 # Tool reference
 
-*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **unknown**. 33 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
+*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **unknown**. 34 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
 
 ## Arrive & orient
 
@@ -401,6 +401,15 @@ additively when federation's rails exist.
 
 **Parameters**
 - `term` (string, default `''`)
+
+### `perf_scry`
+
+The server-git boundary, measured since this server spawned — SCRY-grade (changes nothing,
+no hinge). Per-git-verb subprocess counts, total/avg/max wall-clock: every git crossing flows
+through one chokepoint, so this is the boundary's COMPLETE ledger. Read it before and after a
+heavy act (a land, a first-pull reconcile, a listing sweep) and the delta names what that act
+actually cost. On this substrate each git call is a process spawn with a fixed floor — a verb
+that is hot by COUNT wants batching; hot by MAX wants an algorithmic look.
 
 ### `propose_close`
 
