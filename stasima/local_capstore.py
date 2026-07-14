@@ -134,6 +134,7 @@ class LocalCapStore:
         self._git_warmed = False
         self._perf: dict = {}   # verb -> [count, total_ms, max_ms]; perf_stats() reads it
         self._counts: dict = {}  # oid -> ancestor count; immutable facts, so never stale — only missing
+        self._cat = None         # the cat-file --batch sidecar (lazy; dies with us on stdin EOF)
 
     # ---- low-level git invocation ----
     def _run(self, *args: str, input: Optional[bytes] = None, extra_env: Optional[dict] = None,
@@ -233,16 +234,72 @@ class LocalCapStore:
         oid = out.decode().strip()
         return oid if rc == 0 and oid else None
 
+    def _batch_sidecar(self):
+        """The persistent `git cat-file --batch` child — one spawn serving every blob read, against
+        the per-call process floor (~30-80ms on this substrate) that otherwise taxes each one. Refs
+        in requests are resolved PER REQUEST by git, so cross-process ref updates stay visible.
+        Lazy-spawned; any protocol irregularity kills it and the caller falls back to one-shot."""
+        c = self._cat
+        if c is None or c.poll() is not None:
+            env = dict(os.environ)
+            env["GIT_DIR"] = self.git_dir
+            c = subprocess.Popen([self.git_bin, "cat-file", "--batch"],
+                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL, env=env)
+            self._cat = c
+        return c
+
+    def _batch_read(self, name: str) -> Optional[bytes]:
+        """One request on the sidecar: bytes on hit, None on miss, exception → caller falls back."""
+        _t0 = _time.perf_counter()
+        c = self._batch_sidecar()
+        c.stdin.write(name.encode("utf-8") + b"\n")
+        c.stdin.flush()
+        hdr = c.stdout.readline()
+        if not hdr:                                   # EOF: the child died mid-protocol
+            raise BackendUnavailable("cat-file sidecar EOF")
+        parts = hdr.decode("utf-8", "replace").split()
+        if len(parts) >= 2 and parts[-1] == "missing":
+            out = None
+        else:
+            size = int(parts[2])
+            out = c.stdout.read(size)
+            c.stdout.read(1)                          # the trailing newline
+        dt_ms = (_time.perf_counter() - _t0) * 1000.0
+        s = self._perf.setdefault("cat-file(batch)", [0, 0.0, 0.0])
+        s[0] += 1
+        s[1] += dt_ms
+        s[2] = max(s[2], dt_ms)
+        return out
+
     def read_blob_at(self, commit: Oid, path: str) -> bytes:
-        rc, out, err = self._run("cat-file", "blob", f"{commit}:{path}")
-        if rc != 0:
-            raise PathNotFound(f"{path} @ {commit}: {err.strip()}")
+        try:
+            out = self._batch_read(f"{commit}:{path}")
+        except Exception:
+            # any sidecar irregularity: retire it and take the one-shot road — never worse than before
+            if self._cat is not None:
+                try:
+                    self._cat.kill()
+                except Exception:
+                    pass
+                self._cat = None
+            rc, out1, err = self._run("cat-file", "blob", f"{commit}:{path}")
+            if rc != 0:
+                raise PathNotFound(f"{path} @ {commit}: {err.strip()}")
+            return out1
+        if out is None:
+            raise PathNotFound(f"{path} @ {commit}: missing")
         return out
 
     def read_blob(self, ref: str, path: str) -> bytes:
-        if self.resolve_ref(ref) is None:
-            raise RefNotFound(ref)
-        return self.read_blob_at(ref, path)
+        # classify only on MISS: the ref-existence spawn used to tax every HIT (~40ms against the
+        # sidecar's ~3.5ms read — the meter convicted it inside its own benchmark)
+        try:
+            return self.read_blob_at(ref, path)
+        except PathNotFound:
+            if self.resolve_ref(ref) is None:
+                raise RefNotFound(ref)
+            raise
 
     def blob_oid(self, ref: str, path: str) -> Oid:
         """The git object id of the file at (ref, path) — the derived version pin MAP records."""

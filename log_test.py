@@ -141,4 +141,18 @@ regrow = index.conn.execute(
 assert dict(regrow) == dict(grow), "incremental and full reindex must agree exactly"
 print("8. carried entry lands attributed + positioned incrementally == full reindex OK")
 
+# 9. the cat-file sidecar survives murder: kill the batch child — the next read respawns it (or
+# falls back to one-shot); either way a read is never worse than the pre-sidecar path
+assert store._cat is not None, "the suite's reads should have spawned the sidecar by now"
+store._cat.kill()
+b = store.read_blob("refs/heads/main", "practice/g.md")
+assert b.strip().endswith(b"g"), b
+missing_ok = False
+try:
+    store.read_blob_at(store.resolve_ref(CANON), "no/such/entry.md")
+except Exception as e:
+    missing_ok = type(e).__name__ == "PathNotFound"
+assert missing_ok, "a miss through the sidecar must still raise PathNotFound"
+print("9. sidecar: killed, respawned, hit + miss both honest OK")
+
 print("\nOK -- log entries + state sequence: all acceptance checks pass.")
