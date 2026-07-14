@@ -172,6 +172,33 @@ def validate_log_entry(store, prepared, origin: int = CHAT_ERA_FREEZE) -> str:
     return seq
 
 
+def index_land(store, index, embedder, landed_oid: str) -> int:
+    """Index ONLY what a land changed — the gate's hot path. A full reindex is O(corpus) and the
+    practitioner waits on it at every stamp; a land knows its own changed paths, so the steady
+    state is O(change). Position semantics match `_canon_positions` exactly: the land's paths take
+    the new spine position (newest touch wins), and every older row's position is already stable
+    (oldest = 1 anchoring means adding a commit shifts nothing). `reindex_from_git` remains the
+    recovery / migration / model-swap path."""
+    changed = store.changed_paths(f"{landed_oid}^1", landed_oid)
+    spine_pos = len(store.rev_list(landed_oid))          # first-parent spine length = this land's position
+    n = 0
+    for path in changed:
+        if not path.endswith(".md"):
+            continue
+        envelope, body = parse_entry(store.read_blob_at(landed_oid, path).decode("utf-8", "replace"))
+        author = envelope.get("origin_author")
+        if not author:                                    # the introducer, as reindex derives it
+            hist = store.history(store.canon_ref, path)
+            author = hist[-1]["author"] if hist else ""
+        env2 = dict(envelope)
+        env2["instance_depth"] = spine_pos
+        index_entry(index, embedder, ref=store.canon_ref, path=path, is_canon=True,
+                    authoring_instance=author, content_oid=store.blob_oid(store.canon_ref, path),
+                    envelope=env2, body=body)
+        n += 1
+    return n
+
+
 def land_and_record(store, index, embedder, audit, prepared, approval, *,
                     origin: int = CHAT_ERA_FREEZE) -> dict:
     """The practitioner's promotion routine — NOT a model-facing tool (landing is the human gate).
@@ -183,6 +210,6 @@ def land_and_record(store, index, embedder, audit, prepared, approval, *,
                  op_id=f"land-{r.oid[:12]}", result_oid=r.oid,
                  detail={"proposal": prepared.proposal_ref, "seq": seq})
     store.tag(f"state/{seq}", r.oid)
-    reindex_from_git(store, index, embedder)
+    index_land(store, index, embedder, r.oid)   # O(change), not O(corpus) — the gate stops waiting
     anchor = anchor_audit_head(store, audit)
     return {"landed": r.oid, "seq": seq, "display": seq_display(int(seq, 16)), "anchor": anchor}

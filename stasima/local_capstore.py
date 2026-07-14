@@ -133,6 +133,7 @@ class LocalCapStore:
         self.git_network_timeout = git_network_timeout
         self._git_warmed = False
         self._perf: dict = {}   # verb -> [count, total_ms, max_ms]; perf_stats() reads it
+        self._counts: dict = {}  # oid -> ancestor count; immutable facts, so never stale — only missing
 
     # ---- low-level git invocation ----
     def _run(self, *args: str, input: Optional[bytes] = None, extra_env: Optional[dict] = None,
@@ -211,8 +212,14 @@ class LocalCapStore:
     # ---- reads ----
     def commit_count(self, oid: str) -> int:
         """Commits reachable from `oid` — the mechanical per-ref position (depth) of that commit.
-        Monotonic per ref; the write path stamps parent-count+1 as the new commit's position."""
-        return int(self._git("rev-list", "--count", oid).decode().strip())
+        Monotonic per ref; the write path stamps parent-count+1 as the new commit's position.
+        Cached by oid: counts are immutable facts, so the cache is never stale — only missing.
+        Without the cache this is the write path's one O(history) term, walked on EVERY write."""
+        n = self._counts.get(oid)
+        if n is None:
+            n = int(self._git("rev-list", "--count", oid).decode().strip())
+            self._counts[oid] = n
+        return n
 
     def rev_list(self, oid: str, first_parent: bool = True) -> list:
         """Commit oids reachable from `oid`, newest first. `first_parent` walks the ref's own spine
@@ -456,6 +463,11 @@ class LocalCapStore:
         # append-only is structural: the new commit's only parent is the prior tip, so
         # history is never rewritten. The CAS below rejects a concurrent advance (StaleRef).
         self._cas_update(ref, new, expected_parent or ZERO)
+        # prime the count cache: child = parent + 1, no walk — keeps the write path O(1)
+        if expected_parent is None:
+            self._counts[new] = 1
+        elif expected_parent in self._counts:
+            self._counts[new] = self._counts[expected_parent] + 1
         return self._commit_result(new, ref)
 
     def create_branch(self, ref: str, at: Oid) -> RefInfo:

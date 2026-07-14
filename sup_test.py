@@ -53,8 +53,9 @@ def setup():
     index, emb, audit = SqliteMapIndex(":memory:"), StubEmbedder(dim=64), SqliteAuditLog(":memory:")
     env = {"type": "kno", "title": "Seed", "status": "active"}
     store.bootstrap_canon({"practice/seed.md": compose_entry(env, "the seed").encode()}, "bootstrap")
+    # index as bootstrap does (reindex derives canon positions): the seed sits at spine position 1
     index_entry(index, emb, ref=CANON, path="practice/seed.md", is_canon=True, authoring_instance="practitioner",
-                content_oid=store.resolve_ref(CANON), envelope=env, body="the seed")
+                content_oid=store.resolve_ref(CANON), envelope={**env, "instance_depth": 1}, body="the seed")
     return store, index, emb, audit
 
 

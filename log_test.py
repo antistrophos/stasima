@@ -129,8 +129,16 @@ print("7. earlier-branched proposal lands across a mid-review land OK")
 # 8. attribution survives the land: a carried entry (origin_author in the envelope) indexes canon's
 # edition under its TRUE author, not the proposer — the introducer heuristic yields to the declaration
 grow = index.conn.execute(
-    "SELECT authoring_instance FROM map_entries WHERE ref='refs/heads/main' AND path='practice/g.md'").fetchone()
+    "SELECT authoring_instance, instance_depth FROM map_entries WHERE ref='refs/heads/main' AND path='practice/g.md'").fetchone()
 assert grow and grow["authoring_instance"] == "Mercurius", dict(grow) if grow else grow
-print("8. carried entry lands attributed to its origin (Mercurius, not r2) OK")
+# incremental land indexing: the row was written by index_land (O(change)), and its position is the
+# land's spine index — bootstrap + 3c + 3d + 3e + 3f = 5, matching what a full reindex would derive
+assert grow["instance_depth"] == 5, dict(grow)
+from stasima.canon import reindex_from_git as _full
+_full(store, index, emb)
+regrow = index.conn.execute(
+    "SELECT authoring_instance, instance_depth FROM map_entries WHERE ref='refs/heads/main' AND path='practice/g.md'").fetchone()
+assert dict(regrow) == dict(grow), "incremental and full reindex must agree exactly"
+print("8. carried entry lands attributed + positioned incrementally == full reindex OK")
 
 print("\nOK -- log entries + state sequence: all acceptance checks pass.")
