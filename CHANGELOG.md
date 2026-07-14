@@ -3,6 +3,30 @@
 All notable changes to the Stasima suite. The suite follows the practice's own discipline: entries
 are added, never rewritten — corrections appear as later entries.
 
+## Unreleased (0.1.5.dev — the pre-load performance pass)
+
+All substrate-internal: no wire shape changes, no new seat-facing semantics, no skill updates
+needed. Measured on the live corpus (~630 entries, modest hardware).
+
+### Added
+- **`perf_scry`** — the server-git boundary's complete ledger, metered at the one chokepoint every
+  git call flows through: per-verb subprocess counts and total/avg/max wall-clock since server
+  spawn. Read it before and after a heavy act; the delta names the cost. (34th tool.)
+
+### Changed (performance)
+- **Blob reads ride a persistent `git cat-file --batch` sidecar** — one spawn serves every read
+  (~2.4 ms vs ~41 ms one-shot; a 40-read sweep dropped 1664 ms → 97 ms, 17×). Refs resolve per
+  request, so cross-process updates stay visible; any protocol irregularity retires the sidecar
+  and falls back to the one-shot path — never worse than before.
+- **`commit_count` is oid-cached** — counts are immutable facts, so the cache can only miss, never
+  stale; each commit primes its child from the CAS parent. Removes the write path's one
+  O(history) walk (every write previously re-counted its whole trail).
+- **Lands index incrementally** (`index_land`) — O(change) instead of a full O(corpus) rebuild
+  (~90 s and growing) at every gate stamp; positions provably identical to a full reindex
+  (witnessed by running both). `reindex_from_git` remains the recovery/migration path.
+- `read_blob`'s ref-existence pre-check moved to the miss path — it taxed every hit with a spawn
+  (the meter's first conviction, caught inside the sidecar's own benchmark).
+
 ## 0.1.4 — 2026-07-11
 
 **Versioning note.** 0.1.3 never went final: its release candidate (0.1.3a1) soaked in production,

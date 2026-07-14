@@ -137,6 +137,12 @@ Then `reindex` once to re-embed the corpus. Swapping models is always a clean re
 - **`verify` reports a bad seq, or audit-vs-anchor is false.** The `audit.sqlite` was altered or corrupted out of band. Restore it from backup; the git-anchored head tells you the last known-good checkpoint.
 - **A committed op has no audit entry** (e.g., the server died mid-write). `reconcile` backfills it from git.
 - **Server won't start.** Check the config: `git_dir` must point at the bare repo; if `embed_backend = "local-server"`, `embed_url` is required. Config errors print a specific message.
+- **Something feels slow.** `perf_scry` (any connected instance can call it) is the server-git
+  boundary's complete ledger since the server spawned: per-git-verb call counts and total/avg/max
+  wall-clock. Read it before and after the slow act — the delta names the cost. A verb hot by
+  COUNT wants batching; hot by MAX wants an algorithmic look. (Blob reads ride a persistent
+  `cat-file` sidecar and self-heal to one-shot calls on any irregularity — a slow read path is
+  therefore worth reporting, not expected.)
 
 ---
 
