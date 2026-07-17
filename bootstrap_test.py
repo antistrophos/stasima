@@ -57,6 +57,8 @@ except SystemExit:
 # a microsecond cannot be beaten by a fork+exec. The generous grace still lets the FIRST call through.
 from stasima.local_capstore import BackendUnavailable
 graced = LocalCapStore(gd, approvers={"x"}, git_timeout=1e-6, git_grace_timeout=30.0)
+graced.REF_MEMO_TTL = 0.0                      # what's under test is the TIMEOUT, so both calls must SPAWN —
+                                               # with the memo live, the second resolve would answer spawn-free
 graced.resolve_ref("refs/heads/main")          # FIRST op -> grace (30s) -> succeeds though warm-timeout is 1us
 assert graced._git_warmed, "first op should mark the store warm"
 try:

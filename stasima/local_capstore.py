@@ -135,6 +135,7 @@ class LocalCapStore:
         self._perf: dict = {}   # verb -> [count, total_ms, max_ms]; perf_stats() reads it
         self._counts: dict = {}  # oid -> ancestor count; immutable facts, so never stale — only missing
         self._cat = None         # the cat-file --batch sidecar (lazy; dies with us on stdin EOF)
+        self._refs: dict = {}    # ref -> (oid|None, monotonic stamp); TTL'd — refs are MUTABLE facts
 
     # ---- low-level git invocation ----
     def _run(self, *args: str, input: Optional[bytes] = None, extra_env: Optional[dict] = None,
@@ -229,10 +230,25 @@ class LocalCapStore:
         args = ["rev-list"] + (["--first-parent"] if first_parent else []) + [oid]
         return self._git(*args).decode().split()
 
+    # Unlike commit counts, refs MOVE, so the memo carries a short TTL. Within a burst the same
+    # handful of refs is resolved over and over (the meter's conviction: ref resolution was 56% of
+    # an arrival burst's boundary time); across processes — another chat's write, the practitioner's
+    # land — movement becomes visible within REF_MEMO_TTL seconds, which only ever delays a READ's
+    # view. Writes never trust the memo across processes: the CAS is enforced by git itself, and a
+    # CAS failure drops the memo entry so the error text and any retry read the live tip.
+    REF_MEMO_TTL = 3.0
+
     def resolve_ref(self, ref: str) -> Optional[Oid]:
+        hit = self._refs.get(ref)
+        if hit is not None and (_time.monotonic() - hit[1]) < self.REF_MEMO_TTL:
+            s = self._perf.setdefault("rev-parse(memo)", [0, 0.0, 0.0])  # a hit is NOT a crossing;
+            s[0] += 1                                                    # ledgered so the win is visible
+            return hit[0]
         rc, out, _ = self._run("rev-parse", "--verify", "--quiet", ref)
         oid = out.decode().strip()
-        return oid if rc == 0 and oid else None
+        val = oid if rc == 0 and oid else None
+        self._refs[ref] = (val, _time.monotonic())
+        return val
 
     def _batch_sidecar(self):
         """The persistent `git cat-file --batch` child — one spawn serving every blob read, against
@@ -478,7 +494,9 @@ class LocalCapStore:
     def _cas_update(self, ref: str, new: Oid, old: Oid) -> None:
         rc, _, err = self._run("update-ref", ref, new, old)
         if rc != 0:
+            self._refs.pop(ref, None)   # the memo is what's stale — drop it so this error and any retry read live
             raise StaleRef(f"{ref}: CAS failed (expected {old}, found {self.resolve_ref(ref)}): {err.strip()}")
+        self._refs[ref] = (new, _time.monotonic())
 
     # ---- provisioning (bootstrap corpus; bypasses ProtectedRef only on first creation) ----
     def bootstrap_canon(self, changes: Mapping[str, Optional[bytes]], message: str) -> CommitResult:
@@ -531,6 +549,7 @@ class LocalCapStore:
         rc, _, err = self._run("update-ref", ref, at, ZERO)
         if rc != 0:
             raise StaleRef(f"{ref} already exists or update failed: {err.strip()}")
+        self._refs[ref] = (at, _time.monotonic())
         return RefInfo(ref, at)
 
     def tag(self, name: str, at: Oid) -> RefInfo:
@@ -616,6 +635,7 @@ class LocalCapStore:
 
     def fetch_all(self, remote: str = "origin") -> None:
         self._git("fetch", remote, *self.SYNC_REFSPECS, timeout=self.git_network_timeout)
+        self._refs.clear()   # these refspecs move LOCAL refs wholesale — the memo is void, not stale-by-TTL
 
     def commit_file(self, ref: str, filename: str, content: bytes, message: str) -> RefInfo:
         """Commit a single file as the whole content of `ref` — a dedicated, force-advanced ref for
@@ -627,6 +647,7 @@ class LocalCapStore:
         oid = self._git(*args, input=(message + "\n").encode(),
                         extra_env=self._author_env("backup")).decode().strip()
         self._git("update-ref", ref, oid)
+        self._refs[ref] = (oid, _time.monotonic())
         return RefInfo(ref, oid)
 
     def mirror_push(self, remote: str, url: str, extra_refspecs=()) -> dict:

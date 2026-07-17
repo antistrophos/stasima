@@ -155,4 +155,35 @@ except Exception as e:
 assert missing_ok, "a miss through the sidecar must still raise PathNotFound"
 print("9. sidecar: killed, respawned, hit + miss both honest OK")
 
+# 10. the ref memo: repeated resolves within the TTL are memo hits (no spawn); an own write
+# refreshes the entry immediately (read-after-write coherence); a CAS failure DROPS it so the
+# error text and any retry read the live tip; with the TTL lapsed, out-of-band movement (another
+# process's write) is visible again with no write on this side
+n = lambda verb: store._perf.get(verb, [0, 0.0, 0.0])[0]
+spawns0, hits0 = n("rev-parse"), n("rev-parse(memo)")
+assert store.resolve_ref(CANON) == store.resolve_ref(CANON)
+assert n("rev-parse(memo)") > hits0, "a repeated resolve must be a memo hit"
+assert n("rev-parse") <= spawns0 + 1, "two resolves may cost at most one spawn"
+
+seat = "refs/cap/perspectives/memo-seat"
+r1 = store.commit(seat, {"state/one.md": entry({"type": "kno", "title": "One", "status": "active"}, "one")},
+                  "one", Identity("memo-seat"), expected_parent=None, op_id="memo-1")
+assert store.resolve_ref(seat) == r1.oid, "an own write must refresh the memo immediately"
+
+store._git("update-ref", seat, store.resolve_ref(CANON), r1.oid)   # out-of-band: below the memo
+assert store.resolve_ref(seat) == r1.oid, "within the TTL the memo serves the now-stale tip"
+try:   # ...so a CAS against that tip fails at git, drops the entry, and reports the LIVE tip
+    store.commit(seat, {"state/two.md": entry({"type": "kno", "title": "Two", "status": "active"}, "two")},
+                 "two", Identity("memo-seat"), expected_parent=r1.oid, op_id="memo-2")
+    raise AssertionError("the CAS must refuse a stale expected_parent")
+except Exception as e:
+    assert type(e).__name__ == "StaleRef" and store.resolve_ref(CANON)[:12] in str(e), (type(e).__name__, str(e))
+assert store.resolve_ref(seat) == store.resolve_ref(CANON), "after the CAS failure the memo reads live"
+
+store.REF_MEMO_TTL = 0.0                                           # lapse the TTL on this instance
+store._git("update-ref", seat, r1.oid)                             # another out-of-band move
+assert store.resolve_ref(seat) == r1.oid, "with the TTL lapsed, cross-process movement is visible"
+del store.REF_MEMO_TTL                                             # restore the class default
+print("10. ref memo: hit, own-write refresh, CAS-drop, TTL freshness OK")
+
 print("\nOK -- log entries + state sequence: all acceptance checks pass.")
