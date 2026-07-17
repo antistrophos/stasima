@@ -142,7 +142,9 @@ Then `reindex` once to re-embed the corpus. Swapping models is always a clean re
   wall-clock. Read it before and after the slow act — the delta names the cost. A verb hot by
   COUNT wants batching; hot by MAX wants an algorithmic look. (Blob reads ride a persistent
   `cat-file` sidecar and self-heal to one-shot calls on any irregularity — a slow read path is
-  therefore worth reporting, not expected.)
+  therefore worth reporting, not expected. Ref resolution rides a short-TTL in-process memo:
+  `rev-parse(memo)` rows in the ledger are hits, not subprocess crossings — a healthy burst shows
+  few `rev-parse` spawns and many memo hits.)
 
 ---
 

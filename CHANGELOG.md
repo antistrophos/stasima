@@ -3,15 +3,26 @@
 All notable changes to the Stasima suite. The suite follows the practice's own discipline: entries
 are added, never rewritten — corrections appear as later entries.
 
-## Unreleased (0.1.5.dev — the pre-load performance pass)
+## Unreleased (0.1.5.dev — the pre-load performance pass, continued in soak)
 
-All substrate-internal: no wire shape changes, no new seat-facing semantics, no skill updates
-needed. Measured on the live corpus (~630 entries, modest hardware).
+The performance items are substrate-internal (no wire shapes moved); the 2026-07-16 items are
+additive and seat-reported. Nothing a dock teaches moved, so no skill updates ride along.
+Measured on the live corpus (~630 entries, modest hardware).
 
 ### Added
 - **`perf_scry`** — the server-git boundary's complete ledger, metered at the one chokepoint every
   git call flows through: per-verb subprocess counts and total/avg/max wall-clock since server
   spawn. Read it before and after a heavy act; the delta names the cost. (34th tool.)
+- **`imp_flags_all`** — the whole practice's mailroom in ONE crossing: every seat's unread-frontier
+  flag, `{seat: {unread, from[]}}`, roster = every perspective (35th tool). A glance surface
+  polling per-seat `imp_flags` was paying a linear-in-seats sweep through client rate caps — hot
+  by COUNT, the meter's other axis (seat-reported from the 16-seat roster, with numbers).
+
+### Changed
+- **`imp_flags` counts the frontier** — a message superseded by its own sender's later message
+  stops flagging (its successor flags instead, if unread); `imp_check` keeps the flat view with
+  tombstones. The flag answers "what waits," not "what exists" — and it now agrees with
+  `imp_flags_all` on every seat.
 
 ### Changed (performance)
 - **Blob reads ride a persistent `git cat-file --batch` sidecar** — one spawn serves every read
@@ -26,6 +37,13 @@ needed. Measured on the live corpus (~630 entries, modest hardware).
   (witnessed by running both). `reindex_from_git` remains the recovery/migration path.
 - `read_blob`'s ref-existence pre-check moved to the miss path — it taxed every hit with a spawn
   (the meter's first conviction, caught inside the sidecar's own benchmark).
+- **Ref resolution rides a short-TTL in-process memo** — a burst resolves the same handful of refs
+  over and over (the meter's second field conviction: 6 rev-parse spawns / 345 ms = 56% of an
+  arrival burst's boundary time); now the first resolve spawns and the rest hit the memo, ledgered
+  as `rev-parse(memo)` — visible, and visibly not a crossing. Own writes refresh their entry in
+  place, a CAS failure drops it so the error and any retry read the live tip, and fetch clears it
+  wholesale; cross-process movement becomes visible within 3 s, which can only delay a read's view
+  — write correctness stays with git's own compare-and-swap, exactly as before.
 
 ## 0.1.4 — 2026-07-11
 
