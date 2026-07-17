@@ -341,6 +341,22 @@ async def main():
         await client.call_tool("imp_mark_read", {"instance_id": "research-7", "message_path": "messages/m-3.md"})
         print("feature C security: cross-sender supersedes rejected")
 
+        # imp_flags_all: the whole roster's unread-frontier flags in ONE git crossing. At this point
+        # research-7 has read everything; recto still holds m-1 unread — and in RECTO's inbox m-1 is
+        # NOT superseded (m-2 was never addressed to recto), so the frontier is per-inbox by
+        # construction. The crossing count is witnessed at the meter: one for-each-ref, nothing else.
+        fer = lambda: store.perf_stats()["by_verb"].get("for-each-ref", {"n": 0})["n"]
+        before_fer = fer()
+        allf = payload(await client.call_tool("imp_flags_all", {}))
+        assert fer() == before_fer + 1, "the roster glance must cost exactly one git crossing"
+        assert allf["roster"] == len(allf["seats"]) >= 3, allf
+        assert allf["seats"]["research-7"]["unread"] == 0, allf
+        assert allf["seats"]["recto"] == {"unread": 1, "from": ["research-2"]}, allf
+        # and the frontier semantics on the single flag: research-7's m-1 is superseded AND read,
+        # m-2/m-3 read -> 0; unread-but-superseded stops flagging (imp_check keeps the flat view)
+        assert payload(await client.call_tool("imp_flags", {"instance_id": "research-7"}))["unread"] == 0
+        print("imp_flags_all: one crossing, per-inbox frontier", {s: f["unread"] for s, f in allf["seats"].items()})
+
         # the bug fix: read-state lives in the audit log, so a reindex must NOT wipe it
         reindex_from_git(store, index, emb)
         after_reindex = payload(await client.call_tool("imp_flags", {"instance_id": "research-7"}))

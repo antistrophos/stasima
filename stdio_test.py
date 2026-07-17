@@ -50,7 +50,7 @@ async def main():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 tools = (await s.list_tools()).tools
-                assert len(tools) == 34, f"expected 34 tools over stdio, got {len(tools)}"  # +thread_scry, +arg_scry, +propose_close, +perf_scry
+                assert len(tools) == 35, f"expected 35 tools over stdio, got {len(tools)}"  # +thread_scry, +arg_scry, +propose_close, +perf_scry, +imp_flags_all
                 # the calls that inherited-stdin used to hang: read-only, git-backed
                 res = await s.call_tool("announce", {"instance_id": "stdio-probe"})
                 txt = "".join(getattr(c, "text", "") for c in res.content)

@@ -1,6 +1,6 @@
 # Tool reference
 
-*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **unknown**. 34 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
+*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **unknown**. 35 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
 
 ## Arrive & orient
 
@@ -230,6 +230,8 @@ unmarked stays author-discipline.
 ### `imp_flags`
 
 The lightweight flag: how much unread mail is waiting (a saved query, not a push).
+Counts the FRONTIER: a message superseded by its own sender's later message stops
+flagging — read the frontier first; imp_check keeps the flat view with tombstones.
 
 **Parameters**
 - `instance_id` (string, required)
@@ -401,6 +403,14 @@ additively when federation's rails exist.
 
 **Parameters**
 - `term` (string, default `''`)
+
+### `imp_flags_all`
+
+The whole practice's mailroom in ONE crossing: every seat's unread-frontier flag,
+{seat: {unread, from[]}}, roster = every perspective. Built for glance surfaces that
+were sweeping per-seat imp_flags N times through client rate caps — hot by COUNT, the
+meter's other axis; the linear-in-seats sweep collapses to a single call. Read-only,
+hinge-free; zero-unread rows ride too (a quiet mailroom is a fact, not an absence).
 
 ### `perf_scry`
 

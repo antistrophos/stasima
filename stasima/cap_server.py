@@ -806,11 +806,34 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                          "coordinates": m.links, "ref": m.ref, "supersedes": m.supersedes,
                          "superseded_by": superseded_by.get(m.path, "")} for m in msgs]}
 
+            def _inbox_flags(instance_id: str) -> dict:
+                # frontier, not corpus: a message the SAME sender later superseded (the author-scoped
+                # rule imp_check resolves) no longer flags — the successor does, if unread. The flat
+                # view with tombstones stays imp_check's; the flag answers "what waits", not "what exists".
+                msgs = index.inbox(instance_id)
+                by_author = {m.path: m.authoring_instance for m in msgs}
+                dead = {old for m in msgs for old in (m.supersedes or [])
+                        if by_author.get(old) == m.authoring_instance}
+                unread = [m for m in msgs
+                          if m.path not in dead and not audit.is_read(instance_id, m.path)]
+                return {"unread": len(unread), "from": sorted({m.authoring_instance for m in unread})}
+
             @mcp.tool()
             def imp_flags(instance_id: str) -> dict:
-                """The lightweight flag: how much unread mail is waiting (a saved query, not a push)."""
-                unread = [m for m in index.inbox(instance_id) if not audit.is_read(instance_id, m.path)]
-                return {"unread": len(unread), "from": sorted({m.authoring_instance for m in unread})}
+                """The lightweight flag: how much unread mail is waiting (a saved query, not a push).
+                Counts the FRONTIER: a message superseded by its own sender's later message stops
+                flagging — read the frontier first; imp_check keeps the flat view with tombstones."""
+                return _inbox_flags(instance_id)
+
+            @mcp.tool()
+            def imp_flags_all() -> dict:
+                """The whole practice's mailroom in ONE crossing: every seat's unread-frontier flag,
+                {seat: {unread, from[]}}, roster = every perspective. Built for glance surfaces that
+                were sweeping per-seat imp_flags N times through client rate caps — hot by COUNT, the
+                meter's other axis; the linear-in-seats sweep collapses to a single call. Read-only,
+                hinge-free; zero-unread rows ride too (a quiet mailroom is a fact, not an absence)."""
+                seats = sorted(r.name[len(PERSP):] for r in store.list_refs(PERSP))
+                return {"seats": {s: _inbox_flags(s) for s in seats}, "roster": len(seats)}
 
             @mcp.tool()
             def imp_mark_read(instance_id: str, message_path: str) -> dict:
