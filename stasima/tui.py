@@ -248,6 +248,60 @@ def _maintenance(config):
     print(RED("! " + err) if err else GREEN("done: ") + str(res))
 
 
+def _bindings(config):
+    d, err = _call(config, "binding")
+    if err:
+        print(RED("! " + err)); return
+    ports = d.get("ports", {})
+    toks = sorted(ports)
+    print(BOLD("\nBindings — the sticky table")
+          + DIM("   (port-security; the append-only ledger IS the running config)"))
+    if not toks:
+        print(DIM("  no ports have learned yet — a ported definition binds at its seat's first write."))
+    for i, t in enumerate(toks, 1):
+        b = ports[t]
+        who = CYAN(b["instance"]) if b.get("instance") else DIM("(cleared — learning re-armed)")
+        print(f"  {i:>2}  {t:<20} {who}   {DIM(str(b.get('ts') or ''))}")
+    trail = d.get("trail", [])
+    if trail:
+        print(BOLD("\nRecent binding events")
+              + DIM("   (pinned spawns · sticky learns · port restores · clears)"))
+        for e in trail:
+            det = e.get("detail") or {}
+            kind = ("clear" if det.get("action") == "clear"
+                    else "learn" if det.get("learned") or det.get("action") == "learn"
+                    else "restore" if det.get("restored")
+                    else det.get("source") or e.get("op", ""))
+            port = f"  port={det['port']}" if det.get("port") else ""
+            print(DIM(f"  {str(e.get('ts', ''))[:19]}  {e['actor']:<14} {kind:<8}{port}"
+                      f"  mode={det.get('mode', '')}"))
+    print(DIM("\nenv per definition:  STASIMA_INSTANCE (pin) · STASIMA_PORT (durable sticky) · "
+              "STASIMA_BINDING strict|witness|off (off = the server-owned rip-cord)"))
+    if not toks:
+        return
+    pick = _prompt("\nc<number> to CLEAR a port (re-arm learning), or Enter to go back: ")
+    if pick in ("", "\x00"):
+        return
+    if pick[:1].lower() == "c" and pick[1:].strip().isdigit():
+        n = int(pick[1:].strip())
+        if 1 <= n <= len(toks):
+            tok = toks[n - 1]
+            was = ports[tok].get("instance")
+            # the rekey is a terminal-ish verb: same fat-finger guard as the burn and the stamp —
+            # typing the port token is the deliberateness appropriate to re-arming a door
+            conf = _prompt(f"Type the port token to confirm clearing {CYAN(tok)}"
+                           f"{' (bound to ' + was + ')' if was else ''} (Enter cancels): ")
+            if conf != tok:
+                print(DIM("cancelled — nothing cleared.")); return
+            res, err = _call(config, "binding", "--clear", tok)
+            if err:
+                print(RED("✗ not cleared — " + err)); return
+            print(GREEN(f"\n✓ cleared {tok}")
+                  + DIM(f" — was {res.get('was')}; learning re-armed, history kept"))
+            return
+    print(RED("not a valid choice."))
+
+
 def _backup(config):
     print(BOLD("\nBackup"))
     print(f"  {BOLD('1')}  local backup   {DIM('— folder; carries the TOTP secret (same-trust move)')}")
@@ -286,10 +340,12 @@ def main(argv=None) -> int:
     menu = (f"  {BOLD('1')}  Status        {DIM('— full dashboard')}\n"
             f"  {BOLD('2')}  Proposals     {DIM('— preview & land   ← the gate')}\n"
             f"  {BOLD('3')}  Inbox         {DIM('— practitioner mail')}\n"
-            f"  {BOLD('4')}  Maintenance   {DIM('— reindex / reconcile / verify / anchor')}\n"
-            f"  {BOLD('5')}  Backup        {DIM('— local backup / remote mirror')}\n"
+            f"  {BOLD('4')}  Bindings      {DIM('— the sticky table: who holds which door; clear = rekey')}\n"
+            f"  {BOLD('5')}  Maintenance   {DIM('— reindex / reconcile / verify / anchor')}\n"
+            f"  {BOLD('6')}  Backup        {DIM('— local backup / remote mirror')}\n"
             f"  {BOLD('q')}  Quit")
-    dispatch = {"1": _show_status, "2": _proposals, "3": _inbox, "4": _maintenance, "5": _backup}
+    dispatch = {"1": _show_status, "2": _proposals, "3": _inbox, "4": _bindings,
+                "5": _maintenance, "6": _backup}
 
     while True:
         print("\n" + _rule())
@@ -304,7 +360,7 @@ def main(argv=None) -> int:
         if fn:
             fn(args.config)
         elif choice:
-            print(DIM("pick 1–5 or q."))
+            print(DIM("pick 1–6 or q."))
 
 
 if __name__ == "__main__":

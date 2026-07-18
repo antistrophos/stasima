@@ -272,7 +272,9 @@ def run(args) -> dict:
             actor = sorted(cfg.approvers)[0] if cfg.approvers else "practitioner"
             audit.append(actor, "port_binding", detail={"port": args.clear, "action": "clear", "was": was})
             return {"cleared": args.clear, "was": was, "note": "learning re-armed; the trail keeps the history"}
-        return {"ports": port_bindings(audit)}
+        trail = sorted(audit.events(op="session_binding") + audit.events(op="port_binding"),
+                       key=lambda e: e["seq"])
+        return {"ports": port_bindings(audit), "trail": trail[-12:]}
 
     raise SystemExit(f"unknown command {args.cmd!r}")
 

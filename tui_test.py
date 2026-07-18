@@ -73,4 +73,19 @@ assert canon() != base, "the proposal id confirms the stamp"
 assert "practice/principle.md" in store.list_paths("refs/heads/main"), "the proposal landed in canon"
 assert seq_display(canon_seq(store)) == "::3C", "state number advanced on the menu land"
 
-print("OK -- cockpit: renders + quits; land gate holds (empty/mistyped cancel, exact id lands ::3C).")
+# Bindings screen: renders empty; then the clear (rekey) gate holds — the same discipline as the
+# land gate: empty and mistyped confirmations clear NOTHING, the exact port token re-arms learning
+from stasima.cap_server import components_from_config, port_bindings
+from stasima.config import Config
+assert drive("4") == 0                                       # empty sticky table renders, EOF quits
+_, _, _, audit, _, _ = components_from_config(Config.load(cfgpath))
+audit.append("Recto", "port_binding", detail={"port": "port-a", "action": "learn", "mode": "strict"})
+drive("4", "c1", "")
+assert port_bindings(audit)["port-a"]["instance"] == "Recto", "an empty confirmation must not clear"
+drive("4", "c1", "port-wrong")
+assert port_bindings(audit)["port-a"]["instance"] == "Recto", "a mistyped confirmation must not clear"
+drive("4", "c1", "port-a")
+assert port_bindings(audit)["port-a"]["instance"] is None, "the exact port token clears — learning re-armed"
+
+print("OK -- cockpit: renders + quits; land gate holds (empty/mistyped cancel, exact id lands ::3C); "
+      "bindings screen renders + clear gate holds (exact token rekeys).")

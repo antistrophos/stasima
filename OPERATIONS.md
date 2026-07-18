@@ -183,7 +183,9 @@ with three postures per connection:
 reopen the chat); a port-sticky binding is cleared from the console — `stasima-admin binding`
 lists the learned table, `stasima-admin binding --clear <port>` appends a clear event and re-arms
 learning (the history is never erased — the ledger keeps every learn and clear in order); a
-pinned binding is an env edit + restart. Every binding event writes an audit row, so the whole
+pinned binding is an env edit + restart. The cockpit carries all of it as menu 4 — **Bindings**:
+the sticky table, the recent binding events, the env cheat-sheet, and the clear behind the same
+type-the-token guard the land stamp uses. Every binding event writes an audit row, so the whole
 rotation history is readable at any time. The relay path needs no exemption at any point: the
 approval verbs carry no identity parameter — `approved_by` is proven by the TOTP code, never
 claimed by the session.
