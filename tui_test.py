@@ -87,5 +87,16 @@ assert port_bindings(audit)["port-a"]["instance"] == "Recto", "a mistyped confir
 drive("4", "c1", "port-a")
 assert port_bindings(audit)["port-a"]["instance"] is None, "the exact port token clears — learning re-armed"
 
+# HTTP-service screen: declines creation cleanly; creates the separate toml on 'y' (default port);
+# status renders DOWN; start/stop not exercised here (no real service in the suite)
+assert drive("7", "") == 0
+assert not os.path.exists(cfgpath.replace(".toml", "-http.toml")), "declining must create nothing"
+drive("7", "y", "", "")
+httpcfg = cfgpath.replace(".toml", "-http.toml")
+assert os.path.exists(httpcfg), "y must write the http toml"
+text = open(httpcfg, encoding="utf-8").read()
+assert 'transport = "http"' in text and "http_port = 8787" in text, text
+
 print("OK -- cockpit: renders + quits; land gate holds (empty/mistyped cancel, exact id lands ::3C); "
-      "bindings screen renders + clear gate holds (exact token rekeys).")
+      "bindings screen renders + clear gate holds (exact token rekeys); http screen creates the "
+      "separate toml on request and never on decline.")

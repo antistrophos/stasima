@@ -302,6 +302,71 @@ def _bindings(config):
     print(RED("not a valid choice."))
 
 
+def _http_service(config):
+    """The fleet-server console (OPERATIONS, 'Running the HTTP service'): status by port probe,
+    create the separate http toml when missing, start detached / stop via pidfile. Stdlib only."""
+    import re as _re
+    import socket
+    import subprocess as _sp
+    stem, _ = os.path.splitext(config)
+    http_cfg = stem + "-http.toml"
+    pidfile = http_cfg + ".pid"
+    print(BOLD("\nHTTP service") + DIM("  — one process serves the fleet; sessions self-bind"))
+    if not os.path.exists(http_cfg):
+        print(DIM(f"  no {os.path.basename(http_cfg)} yet — the service wants its OWN toml "
+                  f"(flipping the shared one would break stdio definitions)."))
+        if _prompt("Create it from the shared config? (y to create, Enter to go back): ").lower() != "y":
+            return
+        port = _prompt("port [8787]: ").strip() or "8787"
+        base = open(config, encoding="utf-8").read().rstrip()
+        base = _re.sub(r'(?m)^\s*(transport|http_port)\s*=.*\n?', "", base).rstrip()
+        with open(http_cfg, "w", encoding="utf-8") as f:
+            f.write(base + f'\ntransport = "http"\nhttp_port = {port}\n')
+        print(GREEN(f"✓ wrote {http_cfg}") + DIM(f" (port {port})"))
+    m = _re.search(r'(?m)^\s*http_port\s*=\s*(\d+)', open(http_cfg, encoding="utf-8").read())
+    port = int(m.group(1)) if m else 8787
+    try:
+        socket.create_connection(("127.0.0.1", port), timeout=0.6).close()
+        up = True
+    except OSError:
+        up = False
+    pid = None
+    if os.path.exists(pidfile):
+        try:
+            pid = int(open(pidfile, encoding="utf-8").read().strip())
+        except Exception:
+            pid = None
+    print(f"  status   {GREEN('UP') if up else RED('DOWN')}   "
+          f"{DIM(f'127.0.0.1:{port}/mcp')}   {DIM('pid ' + str(pid) if pid else '')}")
+    print(DIM("  connector: desktop Settings → Connectors → custom → "
+              f"http://127.0.0.1:{port}/mcp (enable per conversation)"))
+    act = _prompt("\ns to start · x to stop · Enter to go back: ").lower()
+    if act == "s":
+        if up:
+            print(DIM("already up — nothing started.")); return
+        p = _sp.Popen([sys.executable, "-m", "stasima.cap_server"],
+                      env=dict(os.environ, STASIMA_CONFIG=http_cfg),
+                      creationflags=(_sp.DETACHED_PROCESS | _sp.CREATE_NEW_PROCESS_GROUP)
+                      if os.name == "nt" else 0,
+                      stdout=_sp.DEVNULL, stderr=_sp.DEVNULL, stdin=_sp.DEVNULL)
+        with open(pidfile, "w", encoding="utf-8") as f:
+            f.write(str(p.pid))
+        print(GREEN(f"✓ started (pid {p.pid})") + DIM(" — probe again from this screen in a moment"))
+    elif act == "x":
+        if pid is None:
+            print(RED("no pidfile — if it was started elsewhere, stop it where it was started.")); return
+        conf = _prompt(f"Type the pid to confirm stopping {CYAN(str(pid))} (Enter cancels): ")
+        if conf != str(pid):
+            print(DIM("cancelled — nothing stopped.")); return
+        _sp.run(["taskkill", "/PID", str(pid), "/T", "/F"] if os.name == "nt"
+                else ["kill", str(pid)], capture_output=True)
+        try:
+            os.remove(pidfile)
+        except OSError:
+            pass
+        print(GREEN(f"✓ stopped {pid}") + DIM(" — seats fall back to stdio definitions"))
+
+
 def _backup(config):
     print(BOLD("\nBackup"))
     print(f"  {BOLD('1')}  local backup   {DIM('— folder; carries the TOTP secret (same-trust move)')}")
@@ -343,9 +408,10 @@ def main(argv=None) -> int:
             f"  {BOLD('4')}  Bindings      {DIM('— the sticky table: who holds which door; clear = rekey')}\n"
             f"  {BOLD('5')}  Maintenance   {DIM('— reindex / reconcile / verify / anchor')}\n"
             f"  {BOLD('6')}  Backup        {DIM('— local backup / remote mirror')}\n"
+            f"  {BOLD('7')}  HTTP service  {DIM('— the fleet server: status / create config / start / stop')}\n"
             f"  {BOLD('q')}  Quit")
     dispatch = {"1": _show_status, "2": _proposals, "3": _inbox, "4": _bindings,
-                "5": _maintenance, "6": _backup}
+                "5": _maintenance, "6": _backup, "7": _http_service}
 
     while True:
         print("\n" + _rule())
@@ -360,7 +426,7 @@ def main(argv=None) -> int:
         if fn:
             fn(args.config)
         elif choice:
-            print(DIM("pick 1–6 or q."))
+            print(DIM("pick 1–7 or q."))
 
 
 if __name__ == "__main__":
