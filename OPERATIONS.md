@@ -208,8 +208,33 @@ one-line `.cmd` (set the env, start the module) in the Startup folder or a Task 
 logon task. Run the fleet service UNPINNED (no `STASIMA_INSTANCE`) — sessions self-bind;
 a pinned or ported env would make the whole service a single-seat door.
 
-**Connect the client**: desktop Settings → Connectors → add custom connector
-`http://127.0.0.1:8787/mcp`; enable it per conversation exactly like the stdio definition.
+**HTTPS for the desktop connector (the client requires TLS on remote connectors).** Terminate
+TLS in front of the loopback service — `tailscale serve --bg 8787` gives a real cert on your
+`https://<host>.<tailnet>.ts.net/` with no cert management (tailnet-only; `funnel` = public and
+stays off until auth). Add the proxied Host to the http toml or our DNS-rebinding guard 421s it:
+`http_allowed_hosts = ["<host>.<tailnet>.ts.net"]`.
+
+**The OAuth door (required once the client dials a remote HTTPS connector).** The desktop client
+demands the MCP authorization flow from remote connectors — it will not connect to a bare HTTPS
+endpoint. Turn the authorization server ON by setting the public URL in the http toml:
+
+    http_public_url = "https://<host>.<tailnet>.ts.net"
+
+This mounts discovery, dynamic client registration, `/authorize`, `/token`, and a bearer
+requirement on `/mcp` — all from the SDK; the provider behind them (`stasima/oauth.py`) stores
+clients and tokens in `auth.sqlite` (beside the audit log, in the backup path) and gates approval
+with **the same TOTP that gates canon**. Flow, one-time per connector: the client registers
+itself, the browser opens the server's approve page, you enter a code from the practitioner's
+authenticator, and the connector receives a token (auto-refreshed thereafter, revocable by
+clearing `auth.sqlite`). No passwords, no accounts — presence-proof, the airlock's own discipline
+(a consumed TOTP window can't approve twice). Leave `http_public_url` blank for a loopback-only
+service: no auth, the deployment's prior behavior. A bridge client (`mcp-proxy`/`mcp-remote`,
+stdio→HTTPS) is the alternative when you'd rather not run the auth server — it presents locally so
+no OAuth is demanded, one thin process per chat, one heavy server behind them.
+
+**Connect the client**: desktop Settings → Connectors → add custom connector (the `https://…ts.net/mcp`
+URL when TLS+OAuth are on, or `http://127.0.0.1:8787/mcp` for a loopback trial); enable it per
+conversation exactly like the stdio definition.
 Migration is per-seat and reversible — stdio definitions keep working unchanged throughout
 (their spawned children and the service share git via CAS and the SQLite files via file
 locking, the same multi-process reality the stdio fleet always had). Rollback = stop the

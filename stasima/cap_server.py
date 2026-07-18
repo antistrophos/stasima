@@ -71,9 +71,21 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                  seq_origin: int = CHAT_ERA_FREEZE, deployment_name: str = "",
                  http_host: str = "127.0.0.1", http_port: int = 8787, http_allowed_hosts=(),
                  bound_instance: str = None, binding_mode: str = None,
-                 port_token: str = None) -> FastMCP:
+                 port_token: str = None,
+                 oauth_provider=None, public_url: str = None) -> FastMCP:
+    _auth_kwargs = {}
+    if oauth_provider is not None and public_url:
+        # the OAuth door: the SDK mounts discovery + DCR + /authorize + /token + the bearer
+        # middleware from these two kwargs; the provider (stasima.oauth) is the storage + the
+        # TOTP-approval policy behind them. AS and RS are one server: issuer == the public host.
+        from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
+        _auth_kwargs = {"auth_server_provider": oauth_provider,
+                        "auth": AuthSettings(issuer_url=public_url,
+                                             resource_server_url=f"{public_url.rstrip('/')}/mcp",
+                                             client_registration_options=ClientRegistrationOptions(enabled=True))}
     mcp = FastMCP("stasima", host=http_host, port=http_port,   # host/port used only by the http transport
-                  transport_security=_transport_security(http_host, http_allowed_hosts))
+                  transport_security=_transport_security(http_host, http_allowed_hosts),
+                  **_auth_kwargs)
     has_map = index is not None and embedder is not None
 
     # Session binding — the SSH-shaped identity pin, with STICKY learning (port-security with
@@ -1171,6 +1183,33 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 decline would incentivize landing). The proposal returns to open, entries intact."""
                 return airlock.revert(proposal_id)
 
+    if oauth_provider is not None and public_url:
+        # the practitioner's side of the door: the SDK redirected the browser here; the SAME TOTP
+        # that gates canon approves the connector (no passwords, no accounts — presence-proof)
+        from starlette.requests import Request
+        from starlette.responses import HTMLResponse, RedirectResponse
+
+        from .oauth import approve_page
+
+        @mcp.custom_route("/approve", methods=["GET", "POST"])
+        async def _approve(request: Request):
+            if request.method == "GET":
+                txn = request.query_params.get("txn", "")
+                if oauth_provider.pending(txn) is None:
+                    return HTMLResponse("this approval request expired — retry from the client",
+                                        status_code=400)
+                return HTMLResponse(approve_page(txn))
+            form = await request.form()
+            txn = str(form.get("txn", ""))
+            if oauth_provider.pending(txn) is None:
+                return HTMLResponse("expired — retry from the client", status_code=400)
+            w = oauth_provider.totp_window(str(form.get("code", "")))
+            if w is None:
+                return HTMLResponse(approve_page(txn, "code refused (wrong, or its window was "
+                                                      "already used) — try the NEXT code"),
+                                    status_code=401)
+            return RedirectResponse(oauth_provider.grant(txn, w), status_code=302)
+
     return mcp
 
 
@@ -1206,7 +1245,15 @@ def components_from_config(cfg):
 def server_from_config(cfg) -> FastMCP:
     """Assemble the MCP server from a Config."""
     store, index, embedder, audit, authz, airlock = components_from_config(cfg)
+    oauth_provider = None
+    if getattr(cfg, "http_public_url", ""):
+        from .oauth import StasimaOAuth
+        oauth_provider = StasimaOAuth(
+            os.path.join(os.path.dirname(cfg.resolved_audit_db()), "auth.sqlite"),
+            cfg.resolved_airlock_secret(), audit=audit)
     return build_server(store, index, embedder, audit, authz, airlock,
+                        oauth_provider=oauth_provider,
+                        public_url=cfg.http_public_url or None,
                         orientation_base=cfg.orientation_base, seq_origin=cfg.seq_origin,
                         deployment_name=cfg.deployment_name,
                         http_host=cfg.http_host, http_port=cfg.http_port,

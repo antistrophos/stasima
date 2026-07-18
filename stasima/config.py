@@ -57,6 +57,10 @@ class Config:
     # airlock (TOTP two-phase remote approval). Floor must exceed worst-case code lifetime
     # (30s step + ±1 window ≈ 90s) so no code obtained at staging survives to landing.
     airlock_secret_path: str = ""   # blank -> derived beside git_dir; NOT in git
+    # the OAuth door (HTTP era): setting the PUBLIC url (the TLS name clients dial, e.g. the
+    # tailnet https://host.tailXXXX.ts.net) turns the authorization server ON — discovery, DCR,
+    # PKCE, TOTP-approved tokens; /mcp then requires a bearer. Blank = no auth (loopback trust).
+    http_public_url: str = ""
     airlock_floor_s: int = 120
     airlock_ceiling_s: int = 7200
     # transport: "stdio" (default — each client spawns the server) or "http" (one continuously-
