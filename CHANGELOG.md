@@ -17,12 +17,30 @@ Measured on the live corpus (~630 entries, modest hardware).
   flag, `{seat: {unread, from[]}}`, roster = every perspective (35th tool). A glance surface
   polling per-seat `imp_flags` was paying a linear-in-seats sweep through client rate caps — hot
   by COUNT, the meter's other axis (seat-reported from the 16-seat roster, with numbers).
+- **Session binding — the SSH-shaped identity pin** (seat-found: a mis-typed `sender=` landed one
+  seat's message on another's branch under the other's name; identity claims were trusted on every
+  op by documented design). A connection may now be BOUND to a seat via transport — env per server
+  definition (`STASIMA_INSTANCE`), never a payload the model authors — with three modes
+  (`STASIMA_BINDING`): **strict** (a mismatched identity-claiming write refuses; the fix is
+  out-of-band — that seat's own connection, or witness mode; deliberately no in-call override),
+  **witness** (the write proceeds and the mismatch is stamped into the envelope as
+  `authored_via=<bound seat>` plus an audit row — nothing blocked, nothing silent), **off**/unset
+  (the open trust this deployment ran on, unchanged). Reads are never guarded (pull model,
+  world-readable corpus); the relay verbs are outside the guard BY SHAPE (they carry no identity
+  parameter — `approved_by` is proven by the TOTP code, not claimed). Every bound spawn declares
+  its binding into the audit log, so rekeys (env edit + restart) leave a rotation trail; console
+  rekey verbs arrive when the binding table moves server-side. `whoami` surfaces the connection's
+  binding and whether the current claim matches.
 
 ### Changed
 - **`imp_flags` counts the frontier** — a message superseded by its own sender's later message
   stops flagging (its successor flags instead, if unread); `imp_check` keeps the flat view with
   tombstones. The flag answers "what waits," not "what exists" — and it now agrees with
   `imp_flags_all` on every seat.
+- **`imp_send` gains `instance_id=`** as its canonical identity parameter — the same field every
+  other op uses; `sender=` stays accepted as the deprecated 0.1.x twin (pass exactly one). The
+  forgery-by-typo was invited by `imp_send` being the ONE op with a differently-named identity
+  field; uniformity removes the catch-point (root-cause analysis: the finding seat's).
 
 ### Changed (performance)
 - **Blob reads ride a persistent `git cat-file --batch` sidecar** — one spawn serves every read

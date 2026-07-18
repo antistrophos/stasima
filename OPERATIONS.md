@@ -146,6 +146,38 @@ Then `reindex` once to re-embed the corpus. Swapping models is always a clean re
   `rev-parse(memo)` rows in the ledger are hits, not subprocess crossings — a healthy burst shows
   few `rev-parse` spawns and many memo hits.)
 
+## Seat identity and session binding (the SSH shape)
+
+Identity in Stasima is TOFU, deliberately — and the binding layer manages it the way SSH does,
+with three postures per connection:
+
+- **Pinned** (recommended for archive seats and any seat you never act-as-others through): set
+  `STASIMA_INSTANCE=<seat>` in that server definition's env. Trust comes from a config entry you
+  authored — `known_hosts` pre-seeded — so there is no first-use moment at all.
+- **Open** (any definition with no `STASIMA_INSTANCE`): identity claims are trusted per call, the
+  deployment's original behavior. Right for a single-human deployment's general-purpose console.
+- (Accept-new-and-hold — classic TOFU, binding at `announce` — is the designed shape for the HTTP
+  transport, where real per-session headers exist. Not built; the design is on record.)
+
+`STASIMA_BINDING` picks what a bound connection does on a MISMATCHED identity-claiming write
+(reads are never guarded; the corpus is world-readable and the inbox is pull):
+
+- **strict** (default when an instance is set): the write refuses, and the error names the fix.
+  The override is a **config edit on your side** — use the seat's own definition, or flip this one
+  to witness — never an in-call parameter and never a relayed code (an in-band override would be
+  one more trusted assertion; making codes routine would erode never-solicit).
+- **witness**: the write proceeds and confesses — the envelope carries `authored_via=<bound seat>`
+  into git permanently, and the audit log records the mismatch. Use this wherever you legitimately
+  act as more than one name through one connection: nothing is blocked, and the record cannot
+  silently misattribute.
+
+**Rekeying.** Today: edit the env, restart that server — every bound spawn writes a
+`session_binding` row into the audit log, so rotations leave a readable trail. When the binding
+table moves server-side (the HTTP/announce-time era), console verbs (`binding list/set/clear`)
+take over and the same trail continues. The relay path needs no exemption at any point: the
+approval verbs carry no identity parameter — `approved_by` is proven by the TOTP code, never
+claimed by the session.
+
 ---
 
 ## Scope: v1 and what's deferred
