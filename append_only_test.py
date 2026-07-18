@@ -81,7 +81,7 @@ def _payload(res):
 
 
 async def _instance_side():
-    async with connect(build_server(store)) as client:
+    async with connect(build_server(store, binding_mode="off")) as client:   # multi-seat via one connection
         bad = _payload(await client.call_tool("conflict_preview", {"proposal_id": "p-bad"}))
         assert bad["would_remove_canon"] and "practice/keep.md" in bad["removes"], bad
         good = _payload(await client.call_tool("conflict_preview", {"proposal_id": "p-good"}))

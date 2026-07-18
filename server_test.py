@@ -52,7 +52,8 @@ def payload(res):
 
 async def main():
     store, index, emb, audit = setup()
-    mcp = build_server(store, index, emb, audit, DefaultPolicy())
+    # many seats speak through this one connection — the server-owned bypass; binding_test owns the guard
+    mcp = build_server(store, index, emb, audit, DefaultPolicy(), binding_mode="off")
     async with connect(mcp) as client:   # default: tool errors come back as CallToolResult(isError=True)
         names = sorted(t.name for t in (await client.list_tools()).tools)
         print(f"{len(names)} tools:", ", ".join(names))

@@ -263,6 +263,17 @@ def run(args) -> dict:
         except ValueError as e:
             raise SystemExit(f"not landing: {e}")
 
+    if args.cmd == "binding":
+        # the sticky-binding console (port-security, sticky MACs): the audit ledger IS the running
+        # config — list derives it, clear appends to it, and the rotation history stays readable
+        from .cap_server import port_bindings
+        if args.clear:
+            was = port_bindings(audit).get(args.clear, {}).get("instance")
+            actor = sorted(cfg.approvers)[0] if cfg.approvers else "practitioner"
+            audit.append(actor, "port_binding", detail={"port": args.clear, "action": "clear", "was": was})
+            return {"cleared": args.clear, "was": was, "note": "learning re-armed; the trail keeps the history"}
+        return {"ports": port_bindings(audit)}
+
     raise SystemExit(f"unknown command {args.cmd!r}")
 
 
@@ -289,6 +300,9 @@ def build_parser() -> argparse.ArgumentParser:
     land = sub.add_parser("land")
     land.add_argument("proposal_id")
     land.add_argument("--by", default=None, help="approver (defaults to the first configured)")
+    bd = sub.add_parser("binding", help="sticky-binding console: list learned ports, --clear re-arms one")
+    bd.add_argument("--clear", default=None, metavar="PORT",
+                    help="append a clear event for PORT (re-arms learning; the trail keeps history)")
     return ap
 
 

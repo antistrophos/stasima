@@ -26,9 +26,11 @@ entries, land chronology. A proposal's log entry must carry seq = this seq + 1.
 
 ### `whoami`
 
-How the server sees you — including this connection's session binding, if one is
-configured (the SSH-shaped identity pin; see OPERATIONS). authz checks op-shapes; identity
-claims are guarded per-connection by the binding, or trusted openly where none is set.
+How the server sees you — always including this connection's session binding (the
+SSH-shaped identity pin with sticky learning; see OPERATIONS): mode, the bound name (pinned,
+port-restored, or learned from your first write — null if nothing has bound yet), its
+source, and whether YOUR claim matches. Mode `off` is the server-owned downgrade, shown
+plainly — like http:// in the address bar.
 
 **Parameters**
 - `instance_id` (string, required)

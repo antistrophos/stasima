@@ -39,8 +39,10 @@ LocalCapStore(gd, approvers={"p"}).bootstrap_canon(
 
 
 def make_server():
+    # many seats speak through one connection here — the server-owned bypass; binding_test owns the guard
     return build_server(LocalCapStore(gd, approvers={"p"}),
-                        SqliteMapIndex(mapdb), StubEmbedder(64), SqliteAuditLog(auditdb), DefaultPolicy())
+                        SqliteMapIndex(mapdb), StubEmbedder(64), SqliteAuditLog(auditdb), DefaultPolicy(),
+                        binding_mode="off")
 
 
 def pay(r):

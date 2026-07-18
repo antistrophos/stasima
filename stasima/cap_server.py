@@ -48,30 +48,53 @@ def _transport_security(http_host: str, extra_hosts):
                                      allowed_hosts=hosts, allowed_origins=origins)
 
 
+def port_bindings(audit) -> dict:
+    """The durable sticky table, derived from append-only port_binding events (latest per port
+    wins): {port_token: {"instance": name-or-None, "ts": ts}} — a None instance is a CLEARED port
+    (learning re-armed). The audit ledger IS the running config: learning appends, the console
+    clears by appending, and the whole rotation history stays readable in order."""
+    table = {}
+    for e in audit.events(op="port_binding"):
+        d = e.get("detail") or {}
+        p = d.get("port")
+        if not p:
+            continue
+        if d.get("action") == "clear":
+            table[p] = {"instance": None, "ts": e.get("ts")}
+        else:
+            table[p] = {"instance": e.get("actor"), "ts": e.get("ts")}
+    return table
+
+
 def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, authz=None, airlock=None, *,
                  orientation_text: str = None, orientation_base: str = "technical/orientation",
                  seq_origin: int = CHAT_ERA_FREEZE, deployment_name: str = "",
                  http_host: str = "127.0.0.1", http_port: int = 8787, http_allowed_hosts=(),
-                 bound_instance: str = None, binding_mode: str = None) -> FastMCP:
+                 bound_instance: str = None, binding_mode: str = None,
+                 port_token: str = None) -> FastMCP:
     mcp = FastMCP("stasima", host=http_host, port=http_port,   # host/port used only by the http transport
                   transport_security=_transport_security(http_host, http_allowed_hosts))
     has_map = index is not None and embedder is not None
 
-    # Session binding — the SSH-shaped identity pin (OPERATIONS, "Seat identity"). The bound name
-    # arrives from the TRANSPORT (env per server definition, or this explicit param), never from a
-    # payload the model authors. Modes: strict = a mismatched identity-claiming WRITE refuses, and
-    # the fix is out-of-band (that seat's own definition, or witness mode) — deliberately no in-call
-    # override, which would be one more trusted assertion; witness = the write proceeds and the
-    # mismatch is stamped into audit + envelope (nothing blocked, nothing silent); off = the open
-    # trust this deployment ran on before binding existed. Reads are never guarded (pull model;
-    # the corpus is world-readable). Rekey today = edit the env + restart; every spawn's binding
-    # is declared into the audit log below, so rotations leave a trail for the console verbs that
-    # arrive when the binding table moves server-side.
+    # Session binding — the SSH-shaped identity pin, with STICKY learning (port-security with
+    # sticky MACs; OPERATIONS, "Seat identity"). Sources, strongest first: STASIMA_INSTANCE
+    # (pinned — pre-seeded, no learning), a PORT-learned binding (STASIMA_PORT names this
+    # definition; the learned name persists as append-only port_binding events in the audit log —
+    # the ledger IS the running config, and the console clears it), a SESSION-learned binding
+    # (no port: the first identity-claiming WRITE binds this process for its lifetime; the rekey
+    # is a new process). Modes (STASIMA_BINDING): strict = mismatched writes refuse — THE DEFAULT:
+    # secure unless the server's owner explicitly downgrades; witness = proceed and confess
+    # (authored_via in the envelope + an audit row); off = the explicit rip-cord — no learning,
+    # no enforcement, the HTTPS-to-HTTP downgrade, server-owned and never callable from the wire.
+    # Reads are never guarded (pull model; the corpus is world-readable).
     if bound_instance is not None and not str(bound_instance).strip():
         bound_instance = None
-    binding_mode = (binding_mode or ("strict" if bound_instance else "off")).lower()
+    if port_token is not None and not str(port_token).strip():
+        port_token = None
+    binding_mode = (binding_mode or "strict").lower()
     if binding_mode not in ("strict", "witness", "off"):
         raise ValueError(f"binding_mode must be strict|witness|off, got {binding_mode!r}")
+    _learned = {"name": None, "source": None}   # sticky state: session-held; port-restored below
 
     def persp_ref(iid): return PERSP + iid
     def prop_ref(pid): return PROP + pid
@@ -162,27 +185,52 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             raise
 
     def _check_binding(claimed, op, ref=None, path=None):
-        """Identity-claiming WRITES check their claimed name against this connection's binding.
+        """Identity-claiming WRITES check their claimed name against this connection's binding —
+        pinned (env), port-learned (durable sticky), or session-learned (the first write binds).
         Returns the witness stamp ({'authored_via': <bound name>}) when the caller should stamp an
         envelope, else None. Every witness mismatch leaves an audit row here regardless of whether
         the op writes an envelope — the confession is never optional, only its git copy is."""
-        if bound_instance is None or binding_mode == "off" or claimed == bound_instance:
+        if binding_mode == "off":
+            return None                                    # the explicit, server-owned rip-cord
+        bound = bound_instance or _learned["name"]
+        if bound is None:
+            # sticky learn: the first identity-claiming write binds this connection — and, through
+            # a port, the definition (durably: the learn is an append-only event the console clears)
+            _learned.update(name=claimed, source="port" if port_token else "session")
+            detail = {"mode": binding_mode, "source": _learned["source"], "learned": True}
+            if port_token:
+                detail["port"] = port_token
+                _log(claimed, "port_binding", detail={"port": port_token, "action": "learn",
+                                                      "mode": binding_mode})
+            _log(claimed, "session_binding", detail=detail)
+            return None
+        if claimed == bound:
             return None
         if binding_mode == "strict":
+            how = "pinned to" if bound_instance else "learned (sticky) as"
             _log(claimed, op, target_ref=ref, target_path=path, outcome="denied",
-                 detail={"reason": "session-binding mismatch", "bound": bound_instance})
-            raise Denied(f"this connection is bound to '{bound_instance}' (strict). To act as "
-                         f"'{claimed}': use that seat's own connection, or the practitioner sets this "
-                         f"definition's STASIMA_BINDING=witness — the override is a config edit, "
-                         f"out-of-band by design; there is no in-call override")
+                 detail={"reason": "session-binding mismatch", "bound": bound})
+            raise Denied(f"this connection is {how} '{bound}' (strict). To act as '{claimed}': use "
+                         f"that seat's own connection, or the practitioner downgrades this "
+                         f"definition (STASIMA_BINDING=witness, or a console `binding --clear` on "
+                         f"its port) — the downgrade is server-owned by design; there is no "
+                         f"in-call override")
         _log(claimed, op, target_ref=ref, target_path=path, outcome="witness",
-             detail={"bound": bound_instance})
-        return {"authored_via": bound_instance}
+             detail={"bound": bound})
+        return {"authored_via": bound}
 
     if bound_instance is not None:
         # the binding declaration enters the append-only record at every spawn — rekeys (env edit +
         # restart) therefore leave a rotation trail the practitioner can read back
-        _log(bound_instance, "session_binding", detail={"mode": binding_mode})
+        _log(bound_instance, "session_binding", detail={"mode": binding_mode, "source": "pinned"})
+    elif port_token is not None and audit is not None and binding_mode != "off":
+        # durable sticky: restore this port's learned binding from the ledger (latest event wins;
+        # a cleared port re-arms learning)
+        _prior = port_bindings(audit).get(port_token, {}).get("instance")
+        if _prior:
+            _learned.update(name=_prior, source="port")
+            _log(_prior, "session_binding", detail={"mode": binding_mode, "source": "port",
+                                                    "port": port_token, "restored": True})
 
     def _exists(ref, path):
         try:
@@ -305,15 +353,21 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     @mcp.tool()
     def whoami(instance_id: str) -> dict:
-        """How the server sees you — including this connection's session binding, if one is
-        configured (the SSH-shaped identity pin; see OPERATIONS). authz checks op-shapes; identity
-        claims are guarded per-connection by the binding, or trusted openly where none is set."""
+        """How the server sees you — always including this connection's session binding (the
+        SSH-shaped identity pin with sticky learning; see OPERATIONS): mode, the bound name (pinned,
+        port-restored, or learned from your first write — null if nothing has bound yet), its
+        source, and whether YOUR claim matches. Mode `off` is the server-owned downgrade, shown
+        plainly — like http:// in the address bar."""
         out = {"instance_id": instance_id, "perspective_ref": persp_ref(instance_id),
                "namespace": f"perspectives/{instance_id}", "allowed_ops": ["kip_commit", "propose", "imp_send", "vap_record"],
-               "note": "identity is a recorded name; a session binding (transport-pinned) guards writes where configured"}
-        if bound_instance is not None:
-            out["session_binding"] = {"bound_instance": bound_instance, "mode": binding_mode,
-                                      "match": instance_id == bound_instance}
+               "note": "identity is a recorded name; the session binding (transport-pinned or sticky-learned) guards writes"}
+        eff = bound_instance or _learned["name"]
+        sb = {"mode": binding_mode, "bound_instance": eff,
+              "source": "pinned" if bound_instance else _learned["source"],
+              "match": (instance_id == eff) if eff else None}
+        if port_token:
+            sb["port"] = port_token
+        out["session_binding"] = sb
         return out
 
     # ---------------------------------------------------------------- author
@@ -1171,7 +1225,8 @@ def server_from_config(cfg) -> FastMCP:
                         # binding rides ENV, not the shared config file: the config is one file for
                         # every seat's definition; the env is what distinguishes definitions
                         bound_instance=os.environ.get("STASIMA_INSTANCE") or None,
-                        binding_mode=os.environ.get("STASIMA_BINDING") or None)
+                        binding_mode=os.environ.get("STASIMA_BINDING") or None,
+                        port_token=os.environ.get("STASIMA_PORT") or None)
 
 
 def _exit_when_parent_dies() -> None:

@@ -90,7 +90,8 @@ async def main():
                                floor_s=floor, ceiling_s=7200, clock=clock)
     airlock = mk(120)
 
-    mcp = build_server(store, index, emb, audit, DefaultPolicy(), airlock)
+    # many seats speak through this one connection — the server-owned bypass; binding_test owns the guard
+    mcp = build_server(store, index, emb, audit, DefaultPolicy(), airlock, binding_mode="off")
     async with connect(mcp) as client:
         async def call(name, **kw):
             return await client.call_tool(name, kw)
