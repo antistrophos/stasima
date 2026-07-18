@@ -223,7 +223,13 @@ _JSON_COLS = {"tags", "refs", "supersedes", "region_labels", "links", "recipient
 
 class SqliteMapIndex(MapIndex):
     def __init__(self, db_path: str = ":memory:"):
-        self.conn = sqlite3.connect(db_path)
+        # fleet-safety (the HTTP era): the connection crosses handler threads. The index is a
+        # rebuildable CACHE, so a raced write costs a reindex, not truth — but cross-thread use
+        # without the flag raises immediately, and the write lock keeps rows whole. Readers ride
+        # unlocked (sqlite serializes statement-level access on one connection).
+        import threading
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.write_lock = threading.Lock()
         self.conn.row_factory = sqlite3.Row
         self._init_schema()
 
@@ -449,7 +455,21 @@ class SqliteMapIndex(MapIndex):
 def index_entry(index: MapIndex, embedder: Embedder, *, ref: str, path: str, is_canon: bool,
                 authoring_instance: str, content_oid: str, envelope: dict, body: str) -> MapRow:
     """The single-process server calls this inline on each commit. Truth stays in git;
-    this writes the derived row. Cartographic prose / titles + body are what get embedded."""
+    this writes the derived row. Cartographic prose / titles + body are what get embedded.
+    Under the HTTP era's concurrency the row write serializes on the index's write lock."""
+    lock = getattr(index, "write_lock", None)
+    if lock is not None:
+        with lock:
+            return _index_entry_locked(index, embedder, ref=ref, path=path, is_canon=is_canon,
+                                       authoring_instance=authoring_instance, content_oid=content_oid,
+                                       envelope=envelope, body=body)
+    return _index_entry_locked(index, embedder, ref=ref, path=path, is_canon=is_canon,
+                               authoring_instance=authoring_instance, content_oid=content_oid,
+                               envelope=envelope, body=body)
+
+
+def _index_entry_locked(index: MapIndex, embedder: Embedder, *, ref: str, path: str, is_canon: bool,
+                        authoring_instance: str, content_oid: str, envelope: dict, body: str) -> MapRow:
     embed_text = " ".join(filter(None, [envelope.get("title", ""), body]))
     emb = embedder.embed([embed_text])[0]
     row = MapRow(
