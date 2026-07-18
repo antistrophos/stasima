@@ -81,11 +81,11 @@ async def main():
         print("map_search canon:", [h["path"] for h in canon_only])
         print("map_search mine(r-7):", [h["path"] for h in mine7])
 
-        mp = payload(await client.call_tool("my_perspective", {"instance_id": "research-2"}))
+        mp = payload(await client.call_tool("list_entries", {"ref": "research-2"}))   # 0.1.5: absorbs my_perspective
         got = payload(await client.call_tool("kip_get", {"ref": "research-2", "path": "practice/durability-notes.md"}))
         # listings are triageable pointers, not bare paths — title/status/type ride along from the index
         assert all("path" in e and "status" in e and "title" in e for e in mp["entries"]), \
-            "my_perspective entries are enriched pointers"
+            "own-perspective entries are enriched pointers"
         le = payload(await client.call_tool("list_entries", {"ref": "canon"}))
         assert all("path" in e and "status" in e for e in le["entries"]), "list_entries entries are enriched pointers"
         # a PATH-FILTERED listing must return FULL paths with enrichment intact — subtree-relative
@@ -94,7 +94,7 @@ async def main():
         assert lf["entries"], "filtered listing returns the subtree"
         assert all(e["path"].startswith("practice/") for e in lf["entries"]), "filtered listing keeps full paths"
         assert any(e["title"] for e in lf["entries"]), "filtered listing keeps enrichment"
-        print("my_perspective:", [e["path"] for e in mp["entries"]])
+        print("own perspective:", [e["path"] for e in mp["entries"]])
 
         # reconcile with canon before proposing (the coherence gate now requires it)
         await client.call_tool("canon_diff", {"instance_id": "research-2"})
@@ -105,8 +105,9 @@ async def main():
             "domain": "practice", "slug": "principle-durability", "body": "Promote durability to a stated principle.",
             "op_id": "op-3", "title": "Durability principle"})
         cp = payload(await client.call_tool("conflict_preview", {"proposal_id": "p-1"}))
-        ps = payload(await client.call_tool("proposal_status", {"proposal_id": "p-1"}))
-        print("conflict_preview:", cp, "| proposal_status:", ps["status"])
+        ps = payload(await client.call_tool("list_proposals", {}))["statuses"]["p-1"]   # 0.1.5: absorbs proposal_status
+        assert ps["status"] == "open", ps
+        print("conflict_preview:", cp, "| lifecycle:", ps["status"])
 
         # retraction: creator-only lane (audited denial), and every retract writes operation-truth
         r9 = await client.call_tool("propose_retract", {"instance_id": "research-9", "proposal_id": "p-1",
@@ -342,21 +343,21 @@ async def main():
         await client.call_tool("imp_mark_read", {"instance_id": "research-7", "message_path": "messages/m-3.md"})
         print("feature C security: cross-sender supersedes rejected")
 
-        # imp_flags_all: the whole roster's unread-frontier flags in ONE git crossing. At this point
-        # research-7 has read everything; recto still holds m-1 unread — and in RECTO's inbox m-1 is
-        # NOT superseded (m-2 was never addressed to recto), so the frontier is per-inbox by
-        # construction. The crossing count is witnessed at the meter: one for-each-ref, nothing else.
+        # imp_flags with NO instance_id (0.1.5: absorbs imp_flags_all): the whole roster's
+        # unread-frontier flags in ONE git crossing. research-7 has read everything; recto still
+        # holds m-1 unread — and in RECTO's inbox m-1 is NOT superseded (m-2 was never addressed
+        # to recto), so the frontier is per-inbox by construction. Witnessed at the meter.
         fer = lambda: store.perf_stats()["by_verb"].get("for-each-ref", {"n": 0})["n"]
         before_fer = fer()
-        allf = payload(await client.call_tool("imp_flags_all", {}))
+        allf = payload(await client.call_tool("imp_flags", {}))
         assert fer() == before_fer + 1, "the roster glance must cost exactly one git crossing"
         assert allf["roster"] == len(allf["seats"]) >= 3, allf
         assert allf["seats"]["research-7"]["unread"] == 0, allf
         assert allf["seats"]["recto"] == {"unread": 1, "from": ["research-2"]}, allf
-        # and the frontier semantics on the single flag: research-7's m-1 is superseded AND read,
-        # m-2/m-3 read -> 0; unread-but-superseded stops flagging (imp_check keeps the flat view)
+        # and the single-seat mode: research-7's m-1 is superseded AND read, m-2/m-3 read -> 0;
+        # unread-but-superseded stops flagging (imp_check keeps the flat view)
         assert payload(await client.call_tool("imp_flags", {"instance_id": "research-7"}))["unread"] == 0
-        print("imp_flags_all: one crossing, per-inbox frontier", {s: f["unread"] for s, f in allf["seats"].items()})
+        print("imp_flags roster mode: one crossing, per-inbox frontier", {s: f["unread"] for s, f in allf["seats"].items()})
 
         # the bug fix: read-state lives in the audit log, so a reindex must NOT wipe it
         reindex_from_git(store, index, emb)
@@ -386,7 +387,7 @@ async def main():
         assert [e["path"] for e in mp["entries"]] == ["practice/durability-notes.md"]
         assert mp["entries"][0]["title"], "the listing pointer carries the entry's title from the index"
         assert "Notes on durability" in got["text"]
-        assert cp["conflicts"] is False and ps["status"] == "pending"
+        assert cp["conflicts"] is False and ps["status"] == "open"   # lifecycle vocabulary (0.1.5)
         assert flag7["unread"] == 1 and after["unread"] == 0
         assert len(recto) == 1
         assert after_reindex["unread"] == 0, "read-state must survive a reindex (it lives in the audit log)"

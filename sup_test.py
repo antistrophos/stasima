@@ -112,7 +112,7 @@ async def main():
         assert not err(await call("sup_state", instance_id="r2")) and tk["oid"]
         ss = payload(await call("sup_state", instance_id="r2"))
         assert ss["ticks"].get("state/r2-tick-1a.md") == "1a", ss["ticks"]  # normalized: lowercase, no '::'
-        mpt = payload(await call("my_perspective", instance_id="r2"))
+        mpt = payload(await call("list_entries", ref="r2"))   # 0.1.5: my_perspective folded in here
         row = next(e for e in mpt["entries"] if e["path"] == "state/r2-tick-1a.md")
         assert row.get("tick") == "1a", "listing pointer carries the declared tick"
         assert all("tick" not in e for e in mpt["entries"] if e["path"] != "state/r2-tick-1a.md"), \
@@ -181,8 +181,8 @@ async def main():
         # --- symmetry reads ---
         ss = payload(await call("sup_state", instance_id="r2"))
         assert ss["current_with_canon"] and any("reconciled-" in p for p in ss["state_entries"])
-        sw = payload(await call("sup_who"))["instances"]
-        assert {"instance": "r2", "current_with_canon": True} in sw
+        sw = payload(await call("list_instances"))            # 0.1.5: sup_who folded in here
+        assert "r2" in sw["instances"] and sw["current_with_canon"]["r2"] is True, sw
         cs = payload(await call("canon_state"))
         assert cs["canon_tip"] == new_tip and len(cs["lands"]) >= 1
         print("sup_state/who/canon OK")

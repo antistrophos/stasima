@@ -50,13 +50,13 @@ async def main():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 tools = (await s.list_tools()).tools
-                assert len(tools) == 35, f"expected 35 tools over stdio, got {len(tools)}"  # +thread_scry, +arg_scry, +propose_close, +perf_scry, +imp_flags_all
+                assert len(tools) == 29, f"expected 29 tools over stdio, got {len(tools)}"  # 0.1.5 dedup: -orientation -canon_head -proposal_status -sup_who -my_perspective -imp_flags_all
                 # the calls that inherited-stdin used to hang: read-only, git-backed
                 res = await s.call_tool("announce", {"instance_id": "stdio-probe"})
                 txt = "".join(getattr(c, "text", "") for c in res.content)
                 assert "Welcome" in txt, txt[:120]
                 for name, arg in [("whoami", {"instance_id": "stdio-probe"}),
-                                  ("canon_head", {}), ("list_instances", {})]:
+                                  ("canon_state", {}), ("list_instances", {})]:
                     rr = await s.call_tool(name, arg)
                     assert not getattr(rr, "isError", False), (name, rr)
 

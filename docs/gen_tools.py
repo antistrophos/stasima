@@ -38,7 +38,7 @@ SECTIONS = [
     ("Approval relay (the airlock)", ["stage_approve", "land_approve", "stage_revert"]),
 ]
 
-MIN_EXPECTED = 30   # the generator fails loudly if tools go missing rather than emitting a partial reference
+MIN_EXPECTED = 29   # the generator fails loudly if tools go missing rather than emitting a partial reference (29 = the 0.1.5 dedup floor)
 
 
 def _suite_version() -> str:

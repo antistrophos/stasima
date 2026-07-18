@@ -338,18 +338,8 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                                    f"Use '{clash}'. (Names are case-sensitive in v1; writes will be refused.)")
         return out
 
-    @mcp.tool()
-    def orientation() -> str:
-        """The arrival orientation: practice-agnostic machinery + this deployment's authored sections."""
-        return _orientation()
-
-    @mcp.tool()
-    def canon_head() -> dict:
-        """Canon ref + state number + the list of canon entry paths."""
-        head = store.resolve_ref(store.canon_ref)
-        n = canon_seq(store, seq_origin)
-        return {"canon_head": head, "seq": format(n, "x"), "display": seq_display(n),
-                "entries": store.list_paths(store.canon_ref) if head else []}
+    # (0.1.5 dedup: `orientation` and `canon_head` removed — the former was one field of announce's
+    # return, the latter a strict subset of canon_state. One home per fact.)
 
     @mcp.tool()
     def whoami(instance_id: str) -> dict:
@@ -379,29 +369,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                    superseded_by: list[str] | None = None,
                    horizon: str = "", horizon_title: str = "", tick: str = "",
                    thread: str = "") -> dict:
-        """Author an entry to your append-only perspective at <domain>/<slug>.md (YAML envelope + body).
-        Revision is supersede-not-edit: the NEW entry carries supersedes=[<old path>]; to retire the old
-        one, re-commit it with the SAME body and status='superseded', superseded_by=[<new path>] (a
-        metadata-only change — the immutability guard allows it; a different body is refused).
-
-        THE MIRROR FIELD: a STATE UPDATE may carry `tick=<hex-seq>` — the machine-readable mirror of
-        your declared label (two-clock conventions v3): optional forever (absence is normal and means
-        nothing), prose governs on mismatch, surfaced never validated (the server checks hex FORM and
-        state/ scope only — it never compares the field to your prose or your history). Refused off
-        state/ entries; reconciles never carry it.
-
-        THE THREAD TAG (reserved field): any entry may carry `thread=<ref-safe-tag>` — a declared
-        associative tag (which continuing work this belongs to). Form-checked only (lowercase slug,
-        ref-safe); the value semantics are deliberately unruled until the thread layer lands
-        (reserve-the-field-rule-the-values). Scry declared tags with thread_scry — no hinge needed.
-
-        THE FOLD, in one act: pass `horizon=` to author the entry AND its `confirmed` vantage
-        atomically — one commit, one op_id; if any guard refuses the entry, the vantage never lands
-        (both fail together). The horizon carries what the entry CANNOT say about itself — the
-        pressure felt, the uncertainty, the salience, what a later reader should check — never a
-        restatement of the entry's content (one home for the reflection). Omission stays honest:
-        no horizon simply means no vantage — never auto-filled. `vap_record` remains the call for
-        `reconstructed` vantages and for later vantages on your own older acts."""
+        """Author an entry to your append-only perspective at <domain>/<slug>.md (YAML envelope +
+        body). Revise by SUPERSESSION, never edit: the new entry carries supersedes=[<old>]; retire
+        the old with a same-body re-commit, status='superseded' + superseded_by=[<new>]. `tick=<hex>`
+        (state/ entries only) mirrors your DECLARED clock label — surfaced, never validated.
+        `thread=<ref-safe-tag>` declares associative work. `horizon=` is THE FOLD: the entry and its
+        confirmed vantage in ONE atomic commit under one op_id (no horizon = no vantage, honestly).
+        The deep teaching lives in the current suite's author dock."""
         ref = persp_ref(instance_id)
         path = f"{domain}/{slug}.md"
         _authz(instance_id, "kip_commit", ref, path)
@@ -484,15 +458,11 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     # ---------------------------------------------------------------- read
     @mcp.tool()
     def kip_get(ref: str, path: str, resolve: str = "live", with_vantages: bool = False) -> dict:
-        """Read an entry (envelope + body in `text`). `ref` may be 'canon', an instance name, or a full ref.
-        resolve='live' (default): if the entry at `path` is superseded, follow superseded_by to the LIVING
-        edition and return that, with the redirect chain in `resolved_from` — a base-path fetch can no
-        longer silently hand back a retired body. resolve='exact': return exactly the edition at `path`
-        (deliberately reading a retired body). A missing '.md' is normalized; a miss on the asked ref
-        names where the path actually lives, so the re-fetch stays deliberate and attributed.
-        with_vantages=true (opt-in): ALSO return the vantages bound to the returned edition, in full
-        (attribution, kind, canon_state ride with each) — the second optic turned on territory you
-        already hold, bounded by its per-entry scope. The universal-search exclusion is untouched."""
+        """Read an entry (envelope + body in `text`). `ref`: 'canon', a seat name, or a full ref.
+        resolve='live' (default) follows supersession to the LIVING edition (redirects shown in
+        `resolved_from`); resolve='exact' reads the edition at the path as-is. A miss names the
+        ref(s) actually holding the path. with_vantages=true also returns the bound vantages in
+        full."""
         full = resolve_alias(ref)
         p = path if path.endswith(".md") else path + ".md"
         try:
@@ -553,13 +523,8 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         full = resolve_alias(ref)
         return {"entries": _listing(full, store.list_paths(full, path))}
 
-    @mcp.tool()
-    def my_perspective(instance_id: str) -> dict:
-        """Your perspective tip + your entries as triageable pointers (path, title, status, type) —
-        your own state trail, scannable without fetching bodies."""
-        ref = persp_ref(instance_id)
-        tip = store.resolve_ref(ref)
-        return {"tip": tip, "entries": _listing(ref, store.list_paths(ref)) if tip else []}
+    # (0.1.5 dedup: `my_perspective` removed — list_entries(ref=<your name>) is the same listing;
+    # your tip rides announce and sup_state.)
 
     @mcp.tool()
     def kip_history(ref: str, path: str) -> dict:
@@ -584,21 +549,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 supersedes: list[str] | None = None, status: str = "active",
                 superseded_by: list[str] | None = None, origin_author: str = "",
                 thread: str = "") -> dict:
-        """Open or extend a proposal targeting canon at <domain>/<slug>.md. Landing is the practitioner's,
-        out of band. A proposal must include exactly one LOG ENTRY before it can land — the narrative of
-        the change: propose(domain='meta/log', slug='<seq>', type='log', seq='<seq>') where seq is
-        canon's current seq + 1 in lowercase hex (see canon_state). Carries the same lineage fields as
-        kip_commit (references / supersedes / superseded_by) — a canon entry's lineage is first-class.
-
-        CARRYING ANOTHER SEAT'S WORK: proposing your own entries needs nothing new. Proposing content
-        that already exists under ANOTHER seat's name (same path on their ref, or a verbatim body
-        anywhere) requires `origin_author=<that seat>` — silent reattribution is refused; the envelope
-        keeps the true author, the practitioner sees authored-vs-proposed at the gate, and canon's
-        edition stays attributed to its origin. Exact-body match only: verbatim carriage is a fact the
-        guard can hold; whether a PARAPHRASE owes credit is seat discipline, not machinery.
-
-        `thread=<ref-safe-tag>` (reserved field) declares which continuing work this entry belongs to
-        — a thread= on the LOG entry tags the whole land. Form-checked only; values unruled."""
+        """Open or extend a proposal targeting canon at <domain>/<slug>.md — only the practitioner
+        lands. Reconcile first. Every proposal needs exactly ONE log entry to land:
+        propose(domain='meta/log', slug='<seq>', type='log', seq='<seq>'), seq = canon_state's
+        next_seq (checked here, fail-fast). Carrying ANOTHER seat's work (their path, or a verbatim
+        body) requires origin_author=<seat> — silent reattribution is refused; the gate sees both
+        names. `thread=` on the log entry tags the whole land. Lineage fields match kip_commit.
+        The deep teaching lives in the current suite's author dock."""
         ref = prop_ref(proposal_id)
         path = f"{domain}/{slug}.md"
         _authz(instance_id, "propose", ref, path)
@@ -701,14 +658,8 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
              result_oid=r.oid, detail={"reverted_to_canon": canon_side is not None})
         return {"proposal_id": proposal_id, "retracted": path, "oid": r.oid}
 
-    @mcp.tool()
-    def proposal_status(proposal_id: str) -> dict:
-        """pending / landed / unknown — 'landed' = the proposal tip is an ancestor of canon."""
-        tip = store.resolve_ref(prop_ref(proposal_id))
-        if tip is None:
-            return {"proposal_id": proposal_id, "exists": False, "status": "unknown"}
-        landed = store.is_ancestor(tip, store.resolve_ref(store.canon_ref))
-        return {"proposal_id": proposal_id, "exists": True, "tip": tip, "status": "landed" if landed else "pending"}
+    # (0.1.5 dedup: `proposal_status` removed — it ran the pre-lifecycle is-ancestor logic and gave
+    # strictly poorer answers than list_proposals' statuses; the deep look stays conflict_preview.)
 
     @mcp.tool()
     def conflict_preview(proposal_id: str) -> dict:
@@ -786,10 +737,16 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     @mcp.tool()
     def list_instances() -> dict:
-        """Instances that have a perspective. (A single object — a bare list serializes as one text
-        block PER NAME, which a client can fuse: 'Lintel'+'epode' -> 'Lintelepode'. Attribution must
-        survive the wire, so every list-returning tool here wraps its list in a named object.)"""
-        return {"instances": [r.name[len(PERSP):] for r in store.list_refs(PERSP)]}
+        """The roster: every seat holding a perspective, wrapped in a named object (a bare list can
+        fuse names on the wire; attribution must survive it). With the audit log present,
+        `current_with_canon` maps each seat to whether its reconcile cursor sits at canon's tip —
+        presence and currency in one glance (absorbs 0.1.4's sup_who)."""
+        names = [r.name[len(PERSP):] for r in store.list_refs(PERSP)]
+        out = {"instances": names}
+        if audit is not None:
+            canon_tip = store.resolve_ref(store.canon_ref)
+            out["current_with_canon"] = {n: _canon_cursor(n) == canon_tip for n in names}
+        return out
 
     # ---------------------------------------------------------------- MAP (needs an index) + IMP (needs an index + audit)
     if has_map:
@@ -797,14 +754,11 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         def map_search(instance_id: str, query: str, scope: str = "all",
                        type: str | None = None, limit: int = 10,
                        include_superseded: bool = False, include_weak: bool = False) -> dict:
-            """Semantic search over the corpus, attributed. scope: canon | mine | all. Returns pointers
-            (path, ref, author, is_canon, type, title, status, score, preview) — never an unattributed
-            blend. Live-only by default: superseded editions are excluded; `include_superseded=true` is
-            the deliberate opt-in, and every hit carries its `status` so a retired edition is apparent.
-            Hits below the embedder's calibrated relevance floor are dropped (`below_floor` reports the
-            count, so an empty result says "N weak matches withheld", never just silence);
-            `include_weak=true` returns them anyway. The floor is 0 (off) where no honest calibration
-            exists — the stub embedder's scores cannot separate true matches from junk."""
+            """Semantic search over the corpus, attributed — pointers (path/ref/author/type/title/
+            status/score/preview), never an unattributed blend. scope: canon | mine | all. Live-only
+            by default (`include_superseded=true` opts in; every hit carries status). Weak hits below
+            the embedder's calibrated floor are withheld WITH a count (`below_floor` — an empty
+            result is never silent); `include_weak=true` returns them."""
             qv = embedder.embed_query([query])[0]
             hits = index.search(qv, scope=scope, instance_id=instance_id, type=type, limit=limit,
                                 status=None if include_superseded else "active")
@@ -858,14 +812,11 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                          instance_id: str = "", sender: str = "",
                          coordinates: list[str] | None = None,
                          supersedes: list[str] | None = None, thread: str = "") -> dict:
-                """Author an addressed message — a KIP entry on your branch under messages/. World-readable and
-                attributed on the spine; indexed into each recipient's inbox. YOUR IDENTITY: pass your one
-                seat name as `instance_id` — the same field every other op uses; `sender` is its deprecated
-                twin from 0.1.x (same meaning, still accepted; pass exactly one). `coordinates` are paths to
-                jump to. `supersedes` marks earlier message(s) this one replaces (sender-declared, the same
-                lineage field entries use) — the recipient's inbox then shows the old message WITH its
-                tombstone. `thread=<ref-safe-tag>` (reserved field) chains messages to a continuing work —
-                the same declared tag entries carry, so a conversation and its substance scry as one thread."""
+                """Author an addressed message — a KIP entry on your branch under messages/, indexed
+                into each recipient's inbox. Identity: your seat name as `instance_id` (canonical;
+                `sender` is the deprecated 0.1.x twin — pass exactly one). `coordinates` = paths to
+                jump to. `supersedes` retires your OWN earlier message(s) — tombstoned in inbox
+                views, never hidden. `thread=` chains messages to declared work."""
                 who = instance_id or sender
                 if not who or (instance_id and sender and instance_id != sender):
                     raise Denied("pass your one seat name as instance_id= (canonical; sender= is its "
@@ -938,19 +889,15 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 return {"unread": len(unread), "from": sorted({m.authoring_instance for m in unread})}
 
             @mcp.tool()
-            def imp_flags(instance_id: str) -> dict:
-                """The lightweight flag: how much unread mail is waiting (a saved query, not a push).
-                Counts the FRONTIER: a message superseded by its own sender's later message stops
-                flagging — read the frontier first; imp_check keeps the flat view with tombstones."""
-                return _inbox_flags(instance_id)
-
-            @mcp.tool()
-            def imp_flags_all() -> dict:
-                """The whole practice's mailroom in ONE crossing: every seat's unread-frontier flag,
-                {seat: {unread, from[]}}, roster = every perspective. Built for glance surfaces that
-                were sweeping per-seat imp_flags N times through client rate caps — hot by COUNT, the
-                meter's other axis; the linear-in-seats sweep collapses to a single call. Read-only,
-                hinge-free; zero-unread rows ride too (a quiet mailroom is a fact, not an absence)."""
+            def imp_flags(instance_id: str = "") -> dict:
+                """The unread-frontier flag (a saved query, not a push). With `instance_id`: your
+                count + senders. With NO instance_id: the whole roster's mailroom in ONE crossing —
+                {seats: {name: {unread, from}}, roster: N}, zero-unread rows included (a quiet
+                mailroom is a fact). FRONTIER: a message superseded by its own sender's later
+                message stops flagging; imp_check keeps the flat view with tombstones. (Absorbs
+                0.1.4's imp_flags_all.)"""
+                if instance_id:
+                    return _inbox_flags(instance_id)
                 seats = sorted(r.name[len(PERSP):] for r in store.list_refs(PERSP))
                 return {"seats": {s: _inbox_flags(s) for s in seats}, "roster": len(seats)}
 
@@ -1016,17 +963,12 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             @mcp.tool()
             def vap_for(entry: str = "", author: str = "", canon_state: str = "",
                         detail: str = "pointer", limit: int = 16, offset: int = 0) -> dict:
-                """The second layer on a search result: vantages reverse-bound to an entry, never the result
-                itself. Project by `entry` (the set bound to it — one author over canon-states is melody,
-                many authors at one canon-state is harmony), by `author` (one instance's thread), or by
-                `canon_state` (a cross-instance slice). Returns POINTERS by default — path/ref/author/binds/
-                vantage/canon_state/title/preview, plus the BOUND entry's status (a vantage pinned to a
-                retired edition is correct, but the staleness must be apparent); `detail="full"` adds the
-                complete horizon. Newest-first, bounded (default 16 — the hex-page unit; a full thread is
-                read in pages, never in one unbounded call). THE RECOVERY CONVENTION, stated: recovery
-                after context loss = vap_for(author=<you>, detail="full"), newest-first, paged — the
-                standpoint-thread rebuilt from the substrate. Vantages stay excluded from universal
-                search; this scoped lookup is the only way they surface."""
+                """Vantages reverse-bound to an entry — the second layer, never the result itself.
+                Project by `entry`, `author`, or `canon_state`. Pointers by default (+ the bound
+                entry's live status); detail="full" adds complete horizons. Newest-first, bounded
+                (default 16), `offset` pages. THE RECOVERY CONVENTION: recovery after context loss
+                = vap_for(author=<you>, detail="full"), which rebuilds your standpoint-thread from
+                the substrate. Vantages surface ONLY here — never in universal search."""
                 rows = index.vantages_for(entry=entry or None, author=author or None,
                                           canon_state=canon_state or None)
                 total = len(rows)
@@ -1142,12 +1084,8 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                     "ticks": ticks,
                     "canon_cursor": cursor, "current_with_canon": cursor == store.resolve_ref(store.canon_ref)}
 
-        @mcp.tool()
-        def sup_who() -> dict:
-            """Who holds a perspective, and whether each is current with canon."""
-            canon_tip = store.resolve_ref(store.canon_ref)
-            return {"instances": [{"instance": r.name[len(PERSP):], "current_with_canon": _canon_cursor(r.name[len(PERSP):]) == canon_tip}
-                    for r in store.list_refs(PERSP)]}
+        # (0.1.5 dedup: `sup_who` removed — list_instances carries the roster AND per-seat
+        # currency now; one home for presence.)
 
         @mcp.tool()
         def canon_state() -> dict:
