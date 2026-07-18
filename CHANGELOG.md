@@ -27,10 +27,17 @@ Measured on the live corpus (~630 entries, modest hardware).
   `authored_via=<bound seat>` plus an audit row — nothing blocked, nothing silent), **off**/unset
   (the open trust this deployment ran on, unchanged). Reads are never guarded (pull model,
   world-readable corpus); the relay verbs are outside the guard BY SHAPE (they carry no identity
-  parameter — `approved_by` is proven by the TOTP code, not claimed). Every bound spawn declares
-  its binding into the audit log, so rekeys (env edit + restart) leave a rotation trail; console
-  rekey verbs arrive when the binding table moves server-side. `whoami` surfaces the connection's
-  binding and whether the current claim matches.
+  parameter — `approved_by` is proven by the TOTP code, not claimed). **Sticky learning is the
+  DEFAULT** (port-security with sticky MACs, the practitioner's frame): an unbound connection
+  learns its identity from its FIRST identity-claiming write and holds it for the process's life —
+  secure by doing nothing; `STASIMA_PORT=<any-unique-token>` makes the learned binding DURABLE
+  (persisted as append-only `port_binding` events — the audit ledger IS the running config), and
+  `stasima-admin binding` is the console (list the learned table; `--clear <port>` re-arms
+  learning, with the rotation history retained by construction). `off` is the explicit,
+  server-owned rip-cord — the HTTPS→HTTP downgrade, never callable from the wire. Every binding
+  event (pinned spawn, sticky learn, port restore, clear) declares itself into the audit log.
+  `whoami` always returns the connection's binding block — mode, bound name, source
+  (pinned / port / session), match — so the downgrade is as visible as http:// in an address bar.
 
 ### Changed
 - **`imp_flags` counts the frontier** — a message superseded by its own sender's later message

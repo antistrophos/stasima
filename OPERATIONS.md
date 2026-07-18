@@ -151,13 +151,21 @@ Then `reindex` once to re-embed the corpus. Swapping models is always a clean re
 Identity in Stasima is TOFU, deliberately — and the binding layer manages it the way SSH does,
 with three postures per connection:
 
-- **Pinned** (recommended for archive seats and any seat you never act-as-others through): set
+- **Pinned** (archive seats, and any seat you never act-as-others through): set
   `STASIMA_INSTANCE=<seat>` in that server definition's env. Trust comes from a config entry you
   authored — `known_hosts` pre-seeded — so there is no first-use moment at all.
-- **Open** (any definition with no `STASIMA_INSTANCE`): identity claims are trusted per call, the
-  deployment's original behavior. Right for a single-human deployment's general-purpose console.
-- (Accept-new-and-hold — classic TOFU, binding at `announce` — is the designed shape for the HTTP
-  transport, where real per-session headers exist. Not built; the design is on record.)
+- **Sticky — the DEFAULT, nothing to set** (port-security with sticky MACs): an unbound connection
+  learns its identity from the FIRST identity-claiming write and holds it for the life of the
+  process. Add `STASIMA_PORT=<any-unique-token>` to a definition and the learned binding becomes
+  DURABLE — persisted as append-only `port_binding` events in the audit log (the ledger is the
+  running config), restored at every respawn, cleared only from the console. The token is a
+  meaningless unique string, not an identity decision.
+- **Off** (`STASIMA_BINDING=off`, explicit): the rip-cord — no learning, no enforcement, the
+  HTTPS→HTTP downgrade. Deliberately server-owned: it exists only in env/console, never as
+  anything a caller could request. `whoami` shows the downgrade plainly, like http:// in the
+  address bar.
+- (Accept-new-and-hold at `announce` — classic TOFU over real per-session headers — remains the
+  designed shape for the HTTP transport. Not built; the design is on record.)
 
 `STASIMA_BINDING` picks what a bound connection does on a MISMATCHED identity-claiming write
 (reads are never guarded; the corpus is world-readable and the inbox is pull):
@@ -171,10 +179,12 @@ with three postures per connection:
   act as more than one name through one connection: nothing is blocked, and the record cannot
   silently misattribute.
 
-**Rekeying.** Today: edit the env, restart that server — every bound spawn writes a
-`session_binding` row into the audit log, so rotations leave a readable trail. When the binding
-table moves server-side (the HTTP/announce-time era), console verbs (`binding list/set/clear`)
-take over and the same trail continues. The relay path needs no exemption at any point: the
+**Rekeying.** Per source: a session-sticky binding dies with its process (rekey = close and
+reopen the chat); a port-sticky binding is cleared from the console — `stasima-admin binding`
+lists the learned table, `stasima-admin binding --clear <port>` appends a clear event and re-arms
+learning (the history is never erased — the ledger keeps every learn and clear in order); a
+pinned binding is an env edit + restart. Every binding event writes an audit row, so the whole
+rotation history is readable at any time. The relay path needs no exemption at any point: the
 approval verbs carry no identity parameter — `approved_by` is proven by the TOTP code, never
 claimed by the session.
 
