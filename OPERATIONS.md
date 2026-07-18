@@ -171,8 +171,10 @@ means first-chat-wins: the first seat to write binds the process and every other
 refuse (strict) or mis-stamp (witness — the `authored_via` would name the wrong session, so
 witness is dishonest on a shared process). Rule: **shared definitions run `off`; binding belongs
 on per-seat pinned definitions** (each enabled only in its seat's chat — the definition is the
-access port), or on the HTTP transport's per-session headers when that era arrives. Never sticky
-a trunk.
+access port), or — the resolution — on the **HTTP transport**, where each conversation is its own
+session and sticky learning lands per conversation natively (`transport = "http"`; every audit row
+gains a `session` tag there, so cross-session forensics is a query). Never sticky a trunk; on
+HTTP, there is no trunk.
 - (Accept-new-and-hold at `announce` — classic TOFU over real per-session headers — remains the
   designed shape for the HTTP transport. Not built; the design is on record.)
 

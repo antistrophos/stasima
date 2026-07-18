@@ -94,23 +94,48 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     binding_mode = (binding_mode or "strict").lower()
     if binding_mode not in ("strict", "witness", "off"):
         raise ValueError(f"binding_mode must be strict|witness|off, got {binding_mode!r}")
+    class _StdioSession:
+        pass
+
+    _STDIO_SESSION = _StdioSession()   # outside-request fallback; stdio's one pipe lands here too
+
     class _SessionBindings:
-        """Per-SESSION sticky state (A½ of the HTTP era). Under stdio one process serves one pipe,
-        so exactly one session key exists and behavior is identical to the process-sticky it
-        replaces. Under HTTP (Phase B) each streamable session gets its own key — the granularity
-        the trunk caveat wanted — and _session_key() below is the ONLY seam that changes."""
+        """Per-SESSION sticky state (Phase B, live). Keyed by the TRANSPORT's own session object —
+        weakly, so a session's binding dies with the session and a recycled object id can never
+        inherit a dead session's identity. Streamable HTTP hands each client its own ServerSession:
+        sticky learning lands per CONVERSATION — the granularity the trunk caveat wanted. Under
+        stdio the process has exactly one session, so behavior is the process-sticky it replaces."""
         def __init__(self):
-            self.by_key = {}
+            import threading
+            import weakref
+            self.by_key = weakref.WeakKeyDictionary()
+            self._lock = threading.Lock()
 
         def state(self, key):
-            return self.by_key.setdefault(key, {"name": None, "source": None})
+            with self._lock:
+                st = self.by_key.get(key)
+                if st is None:
+                    st = {"name": None, "source": None}
+                    self.by_key[key] = st
+                return st
 
     _bindings = _SessionBindings()
+    _port_restored = {"name": None}   # definition-grade durable identity, seeded into sessions lazily
 
     def _session_key():
-        # stdio: the process IS the session (one pipe). Phase B returns the transport's real
-        # per-session id here; nothing else in the binding layer moves.
-        return "stdio"
+        # THE seam: the transport session IS the identity granularity.
+        try:
+            return mcp._mcp_server.request_context.session
+        except Exception:
+            return _STDIO_SESSION
+
+    def _session_state():
+        st = _bindings.state(_session_key())
+        if st["name"] is None and _port_restored["name"] is not None:
+            # a ported definition's restored identity seeds every session (definition-grade
+            # durability — a ported service is a single-seat door, like a pin that was learned)
+            st.update(name=_port_restored["name"], source="port")
+        return st
 
     def persp_ref(iid): return PERSP + iid
     def prop_ref(pid): return PROP + pid
@@ -189,6 +214,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     def _log(actor, op, **kw):
         if audit is not None:
+            sk = _session_key()
+            if sk is not _STDIO_SESSION:
+                # session-scoped audit (the HTTP era): every row names the transport session it
+                # came from, so "commits on your branch from sessions other than yours" is a query
+                d = dict(kw.get("detail") or {})
+                d.setdefault("session", f"s{id(sk) & 0xffffff:06x}")
+                kw["detail"] = d
             audit.append(actor, op, **kw)
 
     def _authz(actor, op, ref=None, path=None):
@@ -208,7 +240,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         the op writes an envelope — the confession is never optional, only its git copy is."""
         if binding_mode == "off":
             return None                                    # the explicit, server-owned rip-cord
-        st = _bindings.state(_session_key())
+        st = _session_state()
         bound = bound_instance or st["name"]
         if bound is None:
             # sticky learn: the first identity-claiming write binds this SESSION — and, through
@@ -217,6 +249,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             detail = {"mode": binding_mode, "source": st["source"], "learned": True}
             if port_token:
                 detail["port"] = port_token
+                _port_restored["name"] = claimed   # the definition learned, not just this session
                 _log(claimed, "port_binding", detail={"port": port_token, "action": "learn",
                                                       "mode": binding_mode})
             _log(claimed, "session_binding", detail=detail)
@@ -245,7 +278,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         # a cleared port re-arms learning)
         _prior = port_bindings(audit).get(port_token, {}).get("instance")
         if _prior:
-            _bindings.state(_session_key()).update(name=_prior, source="port")
+            _port_restored["name"] = _prior   # seeds every session lazily via _session_state
             _log(_prior, "session_binding", detail={"mode": binding_mode, "source": "port",
                                                     "port": port_token, "restored": True})
 
@@ -368,7 +401,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         out = {"instance_id": instance_id, "perspective_ref": persp_ref(instance_id),
                "namespace": f"perspectives/{instance_id}", "allowed_ops": ["kip_commit", "propose", "imp_send", "vap_record"],
                "note": "identity is a recorded name; the session binding (transport-pinned or sticky-learned) guards writes"}
-        st = _bindings.state(_session_key())
+        st = _session_state()
         eff = bound_instance or st["name"]
         sb = {"mode": binding_mode, "bound_instance": eff,
               "source": "pinned" if bound_instance else st["source"],

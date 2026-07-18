@@ -76,6 +76,37 @@ try:
 
     anyio.run(main)
 
+    # ---- Phase B: per-SESSION sticky binding over real HTTP sessions ----
+    # Two client sessions against ONE server process: each learns its own seat (under the old
+    # process-sticky, the second seat would refuse — the trunk problem, now dissolved), and a
+    # cross-claim inside a bound session still refuses with the learned name in the error.
+    async def binding_over_sessions():
+        async with streamablehttp_client(f"http://127.0.0.1:{port}/mcp") as (r1, w1, _):
+            async with ClientSession(r1, w1) as s1:
+                await s1.initialize()
+                async with streamablehttp_client(f"http://127.0.0.1:{port}/mcp") as (r2, w2, _):
+                    async with ClientSession(r2, w2) as s2:
+                        await s2.initialize()
+                        a = await s1.call_tool("kip_commit", {"instance_id": "SeatA", "domain": "state",
+                                                              "slug": "a1", "body": "a", "op_id": "ha1"})
+                        assert not getattr(a, "isError", False), \
+                            "".join(getattr(c, "text", "") for c in a.content)[:200]
+                        b = await s2.call_tool("kip_commit", {"instance_id": "SeatB", "domain": "state",
+                                                              "slug": "b1", "body": "b", "op_id": "hb1"})
+                        assert not getattr(b, "isError", False), \
+                            "two sessions must bind two seats independently: " + \
+                            "".join(getattr(c, "text", "") for c in b.content)[:200]
+                        x = await s1.call_tool("kip_commit", {"instance_id": "SeatB", "domain": "state",
+                                                              "slug": "x1", "body": "x", "op_id": "hx1"})
+                        xt = "".join(getattr(c, "text", "") for c in x.content)
+                        assert getattr(x, "isError", False) and "SeatA" in xt, xt[:200]
+                        w = await s2.call_tool("whoami", {"instance_id": "SeatB"})
+                        wt = "".join(getattr(c, "text", "") for c in w.content)
+                        assert "SeatB" in wt and "session" in wt, wt[:200]
+        print("session binding     OK (two sessions, two seats; cross-claim refused with the name)")
+
+    anyio.run(binding_over_sessions)
+
     # DNS-rebinding protection: a request whose Host isn't the bind/allowlist is refused
     import httpx
     r = httpx.post(f"http://127.0.0.1:{port}/mcp", headers={"Host": "evil.example.com"},
