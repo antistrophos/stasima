@@ -227,7 +227,11 @@ with **the same TOTP that gates canon**. Flow, one-time per connector: the clien
 itself, the browser opens the server's approve page, you enter a code from the practitioner's
 authenticator, and the connector receives a token (auto-refreshed thereafter, revocable by
 clearing `auth.sqlite`). No passwords, no accounts — presence-proof, the airlock's own discipline
-(a consumed TOTP window can't approve twice). Leave `http_public_url` blank for a loopback-only
+(a consumed TOTP window can't approve twice). **The console is the other channel**: cockpit →
+HTTP service screen shows waiting approvals (`a` to review, type the client name to confirm) —
+presence at the terminal is the gate, exactly like landing, and the browser page follows home on
+its own. The cockpit's `u` key writes `http_public_url` + the Host allowance into the http toml
+for you. Leave `http_public_url` blank for a loopback-only
 service: no auth, the deployment's prior behavior. A bridge client (`mcp-proxy`/`mcp-remote`,
 stdio→HTTPS) is the alternative when you'd rather not run the auth server — it presents locally so
 no OAuth is demanded, one thin process per chat, one heavy server behind them.

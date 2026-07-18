@@ -43,9 +43,12 @@ class StasimaOAuth:
             """CREATE TABLE IF NOT EXISTS clients (client_id TEXT PRIMARY KEY, data TEXT);
                CREATE TABLE IF NOT EXISTS codes   (code TEXT PRIMARY KEY, data TEXT, expires_at REAL);
                CREATE TABLE IF NOT EXISTS tokens  (token TEXT PRIMARY KEY, kind TEXT, data TEXT,
-                                                   expires_at REAL, paired TEXT)""")
+                                                   expires_at REAL, paired TEXT);
+               CREATE TABLE IF NOT EXISTS txns    (txn TEXT PRIMARY KEY, client_id TEXT, params TEXT,
+                                                   created REAL, redirect TEXT)""")
         self.conn.commit()
-        self.txns: dict = {}   # txn -> (client_id, AuthorizationParams, created) — pending approvals
+        # pending approvals live in the DB, not memory: the cockpit is a SEPARATE process with the
+        # same file, and console approval is the same presence-channel doctrine as landing
 
     # ---- clients (DCR — the call the desktop makes first) ----
     async def get_client(self, client_id: str):
@@ -66,16 +69,46 @@ class StasimaOAuth:
     # ---- the authorize handoff (SDK redirects the browser to what we return) ----
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         now = time.time()
-        self.txns = {t: v for t, v in self.txns.items() if now - v[2] < TXN_TTL_S}
         txn = _secrets.token_urlsafe(16)
-        self.txns[txn] = (client.client_id, params, now)
+        with self._lock:
+            self.conn.execute("DELETE FROM txns WHERE created < ? AND redirect IS NULL",
+                              (now - TXN_TTL_S,))
+            self.conn.execute("INSERT INTO txns VALUES (?,?,?,?,NULL)",
+                              (txn, client.client_id, params.model_dump_json(), now))
+            self.conn.commit()
         return f"/approve?txn={txn}"
 
     def pending(self, txn: str):
-        v = self.txns.get(txn)
-        if v is None or time.time() - v[2] > TXN_TTL_S:
+        """{"client_id", "params", "created", "redirect"} — redirect non-null = already approved
+        (by either channel); None = unknown or expired."""
+        with self._lock:
+            r = self.conn.execute("SELECT client_id, params, created, redirect FROM txns "
+                                  "WHERE txn=?", (txn,)).fetchone()
+        if r is None or (r["redirect"] is None and time.time() - r["created"] > TXN_TTL_S):
             return None
-        return v
+        return {"client_id": r["client_id"],
+                "params": AuthorizationParams.model_validate_json(r["params"]),
+                "created": r["created"], "redirect": r["redirect"]}
+
+    def list_pending(self):
+        """The cockpit's view: unapproved, unexpired requests, oldest first."""
+        cutoff = time.time() - TXN_TTL_S
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT t.txn, t.client_id, t.created, c.data FROM txns t "
+                "LEFT JOIN clients c ON c.client_id = t.client_id "
+                "WHERE t.redirect IS NULL AND t.created >= ? ORDER BY t.created", (cutoff,)).fetchall()
+        out = []
+        for r in rows:
+            name = ""
+            if r["data"]:
+                try:
+                    name = OAuthClientInformationFull.model_validate_json(r["data"]).client_name or ""
+                except Exception:
+                    name = ""
+            out.append({"txn": r["txn"], "client_id": r["client_id"], "client_name": name,
+                        "age_s": int(time.time() - r["created"])})
+        return out
 
     def totp_window(self, code: str):
         """The airlock's discipline, applied to the door: verify against the SAME secret, and a
@@ -99,22 +132,39 @@ class StasimaOAuth:
         return w
 
     def grant(self, txn: str, window: int) -> str:
-        """Mint the single-use code and send the browser home. Called only after totp_window."""
-        client_id, params, _ = self.txns.pop(txn)
-        code = _secrets.token_urlsafe(32)
-        ac = AuthorizationCode(code=code, scopes=params.scopes or [], expires_at=time.time() + CODE_TTL_S,
-                               client_id=client_id, code_challenge=params.code_challenge,
-                               redirect_uri=params.redirect_uri,
-                               redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
-                               resource=params.resource, subject="practitioner")
+        """TOTP-channel approval: mint the single-use code, send the browser home."""
+        return self._mint(txn, "totp", {"window": window})
+
+    def console_grant(self, txn: str) -> str:
+        """Console-channel approval (the cockpit): presence at the terminal IS the gate — the same
+        doctrine as landing. No code; the channel rides the audit row instead."""
+        return self._mint(txn, "console", {})
+
+    def _mint(self, txn: str, channel: str, extra: dict) -> str:
         with self._lock:
+            r = self.conn.execute("SELECT client_id, params, redirect FROM txns WHERE txn=?",
+                                  (txn,)).fetchone()
+            if r is None:
+                raise KeyError("unknown txn")
+            if r["redirect"] is not None:
+                return r["redirect"]          # already approved by the other channel — idempotent
+            params = AuthorizationParams.model_validate_json(r["params"])
+            code = _secrets.token_urlsafe(32)
+            ac = AuthorizationCode(code=code, scopes=params.scopes or [],
+                                   expires_at=time.time() + CODE_TTL_S,
+                                   client_id=r["client_id"], code_challenge=params.code_challenge,
+                                   redirect_uri=params.redirect_uri,
+                                   redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
+                                   resource=params.resource, subject="practitioner")
+            redirect = construct_redirect_uri(str(params.redirect_uri), code=code, state=params.state)
             self.conn.execute("INSERT INTO codes VALUES (?,?,?)",
                               (code, ac.model_dump_json(), ac.expires_at))
+            self.conn.execute("UPDATE txns SET redirect=? WHERE txn=?", (redirect, txn))
             self.conn.commit()
         if self.audit is not None:
             self.audit.append("practitioner", "oauth_approve",
-                              detail={"client_id": client_id, "window": window})
-        return construct_redirect_uri(str(params.redirect_uri), code=code, state=params.state)
+                              detail={"client_id": r["client_id"], "channel": channel, **extra})
+        return redirect
 
     # ---- codes -> tokens (PKCE verified by the SDK's token handler before exchange) ----
     async def load_authorization_code(self, client, authorization_code: str):
@@ -181,12 +231,14 @@ class StasimaOAuth:
 
 def approve_page(txn: str, error: str = "") -> str:
     err = f'<p style="color:#b00">{error}</p>' if error else ""
+    refresh = "" if error else f'<meta http-equiv="refresh" content="2;url=/approve?txn={txn}">'
     return f"""<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stasima — approve connector</title>
+{refresh}<title>Stasima — approve connector</title>
 <body style="font-family:system-ui;max-width:26rem;margin:4rem auto;padding:0 1rem">
 <h2>Approve this connector?</h2>
 <p>A client is requesting access to the Stasima server. Enter a code from the practitioner's
-authenticator — the same one that gates canon. If you did not initiate this, close the page.</p>
+authenticator — the same one that gates canon — <b>or approve from the cockpit</b> (HTTP service
+screen; this page follows on its own). If you did not initiate this, close the page.</p>
 {err}
 <form method="post" action="/approve">
 <input type="hidden" name="txn" value="{txn}">

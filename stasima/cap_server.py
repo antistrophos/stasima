@@ -1195,14 +1195,20 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         async def _approve(request: Request):
             if request.method == "GET":
                 txn = request.query_params.get("txn", "")
-                if oauth_provider.pending(txn) is None:
+                p = oauth_provider.pending(txn)
+                if p is None:
                     return HTMLResponse("this approval request expired — retry from the client",
                                         status_code=400)
+                if p["redirect"]:   # approved from the console — the polling page follows home
+                    return RedirectResponse(p["redirect"], status_code=302)
                 return HTMLResponse(approve_page(txn))
             form = await request.form()
             txn = str(form.get("txn", ""))
-            if oauth_provider.pending(txn) is None:
+            p = oauth_provider.pending(txn)
+            if p is None:
                 return HTMLResponse("expired — retry from the client", status_code=400)
+            if p["redirect"]:
+                return RedirectResponse(p["redirect"], status_code=302)
             w = oauth_provider.totp_window(str(form.get("code", "")))
             if w is None:
                 return HTMLResponse(approve_page(txn, "code refused (wrong, or its window was "

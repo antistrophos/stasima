@@ -338,9 +338,59 @@ def _http_service(config):
             pid = None
     print(f"  status   {GREEN('UP') if up else RED('DOWN')}   "
           f"{DIM(f'127.0.0.1:{port}/mcp')}   {DIM('pid ' + str(pid) if pid else '')}")
-    print(DIM("  connector: desktop Settings → Connectors → custom → "
-              f"http://127.0.0.1:{port}/mcp (enable per conversation)"))
-    act = _prompt("\ns to start · x to stop · Enter to go back: ").lower()
+    toml_text = open(http_cfg, encoding="utf-8").read()
+    pub = _re.search(r'(?m)^\s*http_public_url\s*=\s*"([^"]+)"', toml_text)
+    if pub:
+        print(f"  auth     {GREEN('ON')}   {DIM('issuer ' + pub.group(1) + ' — connector URL: ' + pub.group(1).rstrip('/') + '/mcp')}")
+    else:
+        print(f"  auth     {DIM('off (loopback trust)')}   "
+              f"{DIM(f'connector: http://127.0.0.1:{port}/mcp · u sets the public URL + turns OAuth on')}")
+    n_pending = 0
+    if pub:
+        try:
+            from .audit_log import SqliteAuditLog
+            from .oauth import StasimaOAuth
+            _cfg = Config.load(http_cfg)
+            _oa = StasimaOAuth(os.path.join(os.path.dirname(_cfg.resolved_audit_db()), "auth.sqlite"),
+                               _cfg.resolved_airlock_secret(), audit=SqliteAuditLog(_cfg.resolved_audit_db()))
+            n_pending = len(_oa.list_pending())
+        except Exception as e:
+            print(RED(f"  (auth store unreadable: {e})"))
+            _oa = None
+        if n_pending:
+            print(YELLOW(f"  {n_pending} connector approval(s) WAITING — a to review"))
+    act = _prompt("\ns start · x stop · u public URL (OAuth) · a approvals · Enter back: ").lower()
+    if act == "u":
+        url = _prompt("public https URL (e.g. https://host.tailXXXX.ts.net): ").strip().rstrip("/")
+        if not url or url == "\x00":
+            print(DIM("cancelled.")); return
+        host = _re.sub(r"^https?://", "", url).split("/")[0]
+        text = _re.sub(r'(?m)^\s*(http_public_url|http_allowed_hosts)\s*=.*\n?', "", toml_text).rstrip()
+        with open(http_cfg, "w", encoding="utf-8") as f:
+            f.write(text + f'\nhttp_public_url = "{url}"\nhttp_allowed_hosts = ["{host}"]\n')
+        print(GREEN(f"✓ auth ON — issuer {url}, Host allowance {host}")
+              + DIM("  (restart the service from this screen; connector URL is " + url + "/mcp)"))
+        return
+    if act == "a":
+        if not pub or _oa is None:
+            print(DIM("auth is off — u first.")); return
+        pend = _oa.list_pending()
+        if not pend:
+            print(DIM("no approvals waiting.")); return
+        print(BOLD("\nPending connector approvals") + DIM("  (console channel: presence is the gate)"))
+        for i, p in enumerate(pend, 1):
+            label = p["client_name"] or p["client_id"]
+            print(f"  {i:>2}  {CYAN(label)}   {DIM(p['client_id'])}   {DIM(str(p['age_s']) + 's ago')}")
+        pick = _prompt("\nNumber to APPROVE (Enter cancels): ")
+        if pick.isdigit() and 1 <= int(pick) <= len(pend):
+            p = pend[int(pick) - 1]
+            label = p["client_name"] or p["client_id"]
+            conf = _prompt(f"Type the client name to confirm approving {CYAN(label)} (Enter cancels): ")
+            if conf != label:
+                print(DIM("cancelled — nothing approved.")); return
+            _oa.console_grant(p["txn"])
+            print(GREEN(f"✓ approved {label}") + DIM(" — its browser page follows home on its next poll"))
+        return
     if act == "s":
         if up:
             print(DIM("already up — nothing started.")); return

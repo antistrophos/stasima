@@ -164,12 +164,30 @@ try:
     replay = c.post("/approve", data={"txn": txn2, "code": totp_at(secret, int(time.time() // 30))})
     assert replay.status_code == 401, "a consumed TOTP window must not approve twice: " + str(replay.status_code)
     print("4. TOTP replay guard OK (a consumed window is refused a second time)")
+
+    # 5. the CONSOLE channel: a separate process (the cockpit) approves the still-pending txn2
+    # through the shared auth store — no code; presence is the gate — and the browser's polling
+    # page follows home on its next GET
+    from stasima.oauth import StasimaOAuth
+    cockpit = StasimaOAuth(os.path.join(w2, "auth.sqlite"), os.path.join(w2, "totp.secret"))
+    pend = cockpit.list_pending()
+    assert any(p["txn"] == txn2 for p in pend), pend
+    cockpit.console_grant(txn2)
+    followed = c.get("/approve", params={"txn": txn2}, follow_redirects=False)
+    assert followed.status_code == 302 and "code=" in followed.headers["location"], \
+        (followed.status_code, followed.headers.get("location", ""))
+    code2 = urllib.parse.parse_qs(urllib.parse.urlparse(followed.headers["location"]).query)["code"][0]
+    tok2 = c.post(asm["token_endpoint"], data={
+        "grant_type": "authorization_code", "code": code2, "client_id": cid,
+        "redirect_uri": "http://127.0.0.1:9/cb", "code_verifier": verifier2}).json()
+    assert tok2.get("access_token"), tok2
+    print("5. console channel   OK (cockpit approves cross-process; the polling page follows; PKCE still exchanges)")
     c.close()
 finally:
     if proc is not None:
         proc.terminate(); proc.wait(timeout=10)
 
-# 5. no-auth mode still opens /mcp (the regression guard)
+# 6. no-auth mode still opens /mcp (the regression guard)
 w3, p3, proc3 = boot("")
 try:
     r = httpx.post(f"http://127.0.0.1:{p3}/mcp",
@@ -178,7 +196,7 @@ try:
                          "params": {"protocolVersion": "2025-06-18", "capabilities": {},
                                     "clientInfo": {"name": "t", "version": "1"}}}, timeout=15)
     assert r.status_code == 200, (r.status_code, r.text[:160])
-    print("5. no-auth mode      OK (/mcp open when http_public_url is unset — loopback trust intact)")
+    print("6. no-auth mode      OK (/mcp open when http_public_url is unset — loopback trust intact)")
 finally:
     proc3.terminate(); proc3.wait(timeout=10)
 
