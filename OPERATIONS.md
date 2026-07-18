@@ -190,6 +190,35 @@ HTTP, there is no trunk.
   act as more than one name through one connection: nothing is blocked, and the record cannot
   silently misattribute.
 
+## Running the HTTP service (the fleet server)
+
+One long-running process serves every seat; each conversation is its own transport session, so
+sticky binding is per-conversation natively and one meter/memo/sidecar warms for the whole fleet.
+
+**Config — a SEPARATE toml for the service.** Do not flip the shared stdio toml to
+`transport = "http"`: stdio definitions spawn children that read the same file and would each try
+to serve HTTP. Copy it (e.g. `stasima-http.toml`), same `git_dir` and derived DB paths, plus:
+
+    transport = "http"
+    http_port = 8787          # loopback-only binds are enforced until 1.1 auth
+
+**Start it** (console): set `STASIMA_CONFIG` to the http toml and run `python -m
+stasima.cap_server` — the window IS the service; Ctrl+C stops it. To survive logins, put a
+one-line `.cmd` (set the env, start the module) in the Startup folder or a Task Scheduler
+logon task. Run the fleet service UNPINNED (no `STASIMA_INSTANCE`) — sessions self-bind;
+a pinned or ported env would make the whole service a single-seat door.
+
+**Connect the client**: desktop Settings → Connectors → add custom connector
+`http://127.0.0.1:8787/mcp`; enable it per conversation exactly like the stdio definition.
+Migration is per-seat and reversible — stdio definitions keep working unchanged throughout
+(their spawned children and the service share git via CAS and the SQLite files via file
+locking, the same multi-process reality the stdio fleet always had). Rollback = stop the
+service; seats reopen on stdio.
+
+**Verify**: `whoami` in any conversation shows the session binding block (per-conversation
+learn); audit rows from HTTP sessions carry a `session` tag; `perf_scry` becomes the whole
+fleet's one ledger.
+
 **Rekeying.** Per source: a session-sticky binding dies with its process (rekey = close and
 reopen the chat); a port-sticky binding is cleared from the console — `stasima-admin binding`
 lists the learned table, `stasima-admin binding --clear <port>` appends a clear event and re-arms
