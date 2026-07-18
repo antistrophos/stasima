@@ -51,10 +51,27 @@ def _transport_security(http_host: str, extra_hosts):
 def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, authz=None, airlock=None, *,
                  orientation_text: str = None, orientation_base: str = "technical/orientation",
                  seq_origin: int = CHAT_ERA_FREEZE, deployment_name: str = "",
-                 http_host: str = "127.0.0.1", http_port: int = 8787, http_allowed_hosts=()) -> FastMCP:
+                 http_host: str = "127.0.0.1", http_port: int = 8787, http_allowed_hosts=(),
+                 bound_instance: str = None, binding_mode: str = None) -> FastMCP:
     mcp = FastMCP("stasima", host=http_host, port=http_port,   # host/port used only by the http transport
                   transport_security=_transport_security(http_host, http_allowed_hosts))
     has_map = index is not None and embedder is not None
+
+    # Session binding — the SSH-shaped identity pin (OPERATIONS, "Seat identity"). The bound name
+    # arrives from the TRANSPORT (env per server definition, or this explicit param), never from a
+    # payload the model authors. Modes: strict = a mismatched identity-claiming WRITE refuses, and
+    # the fix is out-of-band (that seat's own definition, or witness mode) — deliberately no in-call
+    # override, which would be one more trusted assertion; witness = the write proceeds and the
+    # mismatch is stamped into audit + envelope (nothing blocked, nothing silent); off = the open
+    # trust this deployment ran on before binding existed. Reads are never guarded (pull model;
+    # the corpus is world-readable). Rekey today = edit the env + restart; every spawn's binding
+    # is declared into the audit log below, so rotations leave a trail for the console verbs that
+    # arrive when the binding table moves server-side.
+    if bound_instance is not None and not str(bound_instance).strip():
+        bound_instance = None
+    binding_mode = (binding_mode or ("strict" if bound_instance else "off")).lower()
+    if binding_mode not in ("strict", "witness", "off"):
+        raise ValueError(f"binding_mode must be strict|witness|off, got {binding_mode!r}")
 
     def persp_ref(iid): return PERSP + iid
     def prop_ref(pid): return PROP + pid
@@ -143,6 +160,29 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         except Denied as e:
             _log(actor, op, target_ref=ref, target_path=path, outcome="denied", detail={"msg": str(e)})
             raise
+
+    def _check_binding(claimed, op, ref=None, path=None):
+        """Identity-claiming WRITES check their claimed name against this connection's binding.
+        Returns the witness stamp ({'authored_via': <bound name>}) when the caller should stamp an
+        envelope, else None. Every witness mismatch leaves an audit row here regardless of whether
+        the op writes an envelope — the confession is never optional, only its git copy is."""
+        if bound_instance is None or binding_mode == "off" or claimed == bound_instance:
+            return None
+        if binding_mode == "strict":
+            _log(claimed, op, target_ref=ref, target_path=path, outcome="denied",
+                 detail={"reason": "session-binding mismatch", "bound": bound_instance})
+            raise Denied(f"this connection is bound to '{bound_instance}' (strict). To act as "
+                         f"'{claimed}': use that seat's own connection, or the practitioner sets this "
+                         f"definition's STASIMA_BINDING=witness — the override is a config edit, "
+                         f"out-of-band by design; there is no in-call override")
+        _log(claimed, op, target_ref=ref, target_path=path, outcome="witness",
+             detail={"bound": bound_instance})
+        return {"authored_via": bound_instance}
+
+    if bound_instance is not None:
+        # the binding declaration enters the append-only record at every spawn — rekeys (env edit +
+        # restart) therefore leave a rotation trail the practitioner can read back
+        _log(bound_instance, "session_binding", detail={"mode": binding_mode})
 
     def _exists(ref, path):
         try:
@@ -265,10 +305,16 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     @mcp.tool()
     def whoami(instance_id: str) -> dict:
-        """How the server sees you. (authz is a stub in this slice.)"""
-        return {"instance_id": instance_id, "perspective_ref": persp_ref(instance_id),
-                "namespace": f"perspectives/{instance_id}", "allowed_ops": ["kip_commit", "propose", "imp_send", "vap_record"],
-                "note": "identity is a recorded name gated by the transport token; authz stubbed here"}
+        """How the server sees you — including this connection's session binding, if one is
+        configured (the SSH-shaped identity pin; see OPERATIONS). authz checks op-shapes; identity
+        claims are guarded per-connection by the binding, or trusted openly where none is set."""
+        out = {"instance_id": instance_id, "perspective_ref": persp_ref(instance_id),
+               "namespace": f"perspectives/{instance_id}", "allowed_ops": ["kip_commit", "propose", "imp_send", "vap_record"],
+               "note": "identity is a recorded name; a session binding (transport-pinned) guards writes where configured"}
+        if bound_instance is not None:
+            out["session_binding"] = {"bound_instance": bound_instance, "mode": binding_mode,
+                                      "match": instance_id == bound_instance}
+        return out
 
     # ---------------------------------------------------------------- author
     @mcp.tool()
@@ -305,6 +351,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         ref = persp_ref(instance_id)
         path = f"{domain}/{slug}.md"
         _authz(instance_id, "kip_commit", ref, path)
+        _binding_stamp = _check_binding(instance_id, "kip_commit", ref, path)
         if tick:
             # form + scope are structure (the shapes accepted at write); the VALUE is the seat's —
             # never compared to prose or counted against history (declarations govern)
@@ -321,6 +368,8 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
                                       supersedes=supersedes, superseded_by=superseded_by, tick=tick,
                                       thread=thread or None)
+        if _binding_stamp:
+            envelope.update(_binding_stamp)
         vap_path = f"vantages/{op_id}-vap.md" if horizon else None
         vap_holder = {}
 
@@ -499,6 +548,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         ref = prop_ref(proposal_id)
         path = f"{domain}/{slug}.md"
         _authz(instance_id, "propose", ref, path)
+        _binding_stamp = _check_binding(instance_id, "propose", ref, path)
         _check_not_staged(proposal_id)
         _check_not_closed(proposal_id)
         _require_reconciled(instance_id)
@@ -545,6 +595,8 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                                       seq=seq.lower() if seq else None,
                                       origin_author=origin_author or None,
                                       thread=thread or None)
+        if _binding_stamp:
+            envelope.update(_binding_stamp)
 
         def build(btip):
             _pin(envelope, instance_id, btip)
@@ -568,6 +620,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         the proposal added leaves the tree. (It never turns a proposal into a canon-deletion.)"""
         ref = prop_ref(proposal_id)
         _authz(instance_id, "propose", ref, path)
+        _check_binding(instance_id, "propose_retract", ref, path)
         _check_not_staged(proposal_id)
         _check_not_closed(proposal_id)
         tip = store.resolve_ref(ref)
@@ -653,6 +706,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         offerings is the gate's own duty)."""
         ref = prop_ref(proposal_id)
         _authz(instance_id, "propose", ref, f"close/{proposal_id}")
+        _check_binding(instance_id, "propose_close", ref, f"close/{proposal_id}")
         _check_not_staged(proposal_id)
         tip = store.resolve_ref(ref)
         if tip is None:
@@ -746,41 +800,52 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
         if audit is not None:
             @mcp.tool()
-            def imp_send(sender: str, recipients: list[str], subject: str, body: str, op_id: str,
+            def imp_send(recipients: list[str], subject: str, body: str, op_id: str,
+                         instance_id: str = "", sender: str = "",
                          coordinates: list[str] | None = None,
                          supersedes: list[str] | None = None, thread: str = "") -> dict:
                 """Author an addressed message — a KIP entry on your branch under messages/. World-readable and
-                attributed on the spine; indexed into each recipient's inbox. `coordinates` are paths to jump to.
-                `supersedes` marks earlier message(s) this one replaces (sender-declared, the same lineage
-                field entries use) — the recipient's inbox then shows the old message WITH its tombstone.
-                `thread=<ref-safe-tag>` (reserved field) chains messages to a continuing work — the same
-                declared tag entries carry, so a conversation and its substance scry as one thread."""
-                ref = persp_ref(sender)
+                attributed on the spine; indexed into each recipient's inbox. YOUR IDENTITY: pass your one
+                seat name as `instance_id` — the same field every other op uses; `sender` is its deprecated
+                twin from 0.1.x (same meaning, still accepted; pass exactly one). `coordinates` are paths to
+                jump to. `supersedes` marks earlier message(s) this one replaces (sender-declared, the same
+                lineage field entries use) — the recipient's inbox then shows the old message WITH its
+                tombstone. `thread=<ref-safe-tag>` (reserved field) chains messages to a continuing work —
+                the same declared tag entries carry, so a conversation and its substance scry as one thread."""
+                who = instance_id or sender
+                if not who or (instance_id and sender and instance_id != sender):
+                    raise Denied("pass your one seat name as instance_id= (canonical; sender= is its "
+                                 "deprecated 0.1.x twin — same meaning, still accepted). Exactly one "
+                                 "identity, or both identical.")
+                ref = persp_ref(who)
                 path = f"messages/{op_id}.md"
-                _authz(sender, "imp_send", ref, path)
+                _authz(who, "imp_send", ref, path)
+                stamp = _check_binding(who, "imp_send", ref, path)
                 if thread:
                     _check_thread(thread)
                 envelope = {"type": "msg", "subject": subject, "status": "active",
                             "recipients": recipients, "coordinates": coordinates or []}
+                if stamp:
+                    envelope.update(stamp)
                 if thread:
                     envelope["thread"] = thread
                 if supersedes:
                     envelope["supersedes"] = [p if p.endswith(".md") else p + ".md" for p in supersedes]
 
                 def build(btip):
-                    _pin(envelope, sender, btip)
+                    _pin(envelope, who, btip)
                     return {path: compose_entry(envelope, body)}
                 try:
-                    r = _commit_retry(ref, path, build, sender, op_id)
+                    r = _commit_retry(ref, path, build, who, op_id)
                 except CapStoreError as e:
-                    _log(sender, "imp_send", target_path=path, op_id=op_id,
+                    _log(who, "imp_send", target_path=path, op_id=op_id,
                          outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
                     raise
                 if not r.replayed:   # a replayed op wrote nothing — the index row already exists
-                    _index(ref, path, False, sender, r.oid, envelope, body)
-                _log(sender, "imp_send", target_ref=ref, target_path=path, op_id=op_id,
+                    _index(ref, path, False, who, r.oid, envelope, body)
+                _log(who, "imp_send", target_ref=ref, target_path=path, op_id=op_id,
                      result_oid=r.oid, detail={"recipients": recipients})
-                return {"path": path, "from": sender, "recipients": recipients, "oid": r.oid}
+                return {"path": path, "from": who, "recipients": recipients, "oid": r.oid}
 
             @mcp.tool()
             def imp_check(instance_id: str, unread_only: bool = True) -> dict:
@@ -838,6 +903,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             @mcp.tool()
             def imp_mark_read(instance_id: str, message_path: str) -> dict:
                 """Append a read-receipt to the audit log (append-only truth; survives a reindex)."""
+                _check_binding(instance_id, "imp_mark_read", path=message_path)
                 audit.append_read(instance_id, message_path)
                 return {"marked_read": message_path}
 
@@ -858,6 +924,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 ref = persp_ref(instance_id)
                 path = f"vantages/{op_id}.md"
                 _authz(instance_id, "vap_record", ref, path)
+                _binding_stamp = _check_binding(instance_id, "vap_record", ref, path)
                 # dignity guard (fork-guard posture): a 'confirmed' vantage claims YOUR OWN horizon.
                 # Confirming an entry authored by someone else speaks for absent attention — refuse it.
                 if kind == "confirmed" and has_map:
@@ -873,6 +940,8 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 vantage = "confirmed" if kind == "confirmed" else f"reconstructed-by-{instance_id}-from-record"
                 envelope = {"type": "vap", "title": title or f"vantage on {binds}", "status": "active",
                             "vantage": vantage, "canon_state": cursor, "coordinates": [binds]}
+                if _binding_stamp:
+                    envelope.update(_binding_stamp)
 
                 def build(btip):
                     _pin(envelope, instance_id, btip)
@@ -946,6 +1015,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             your next act — full bodies deliberately do NOT ride along (a large land would overflow the
             response, breaking the reconcile hinge for every non-author seat). Advances your canon cursor
             (a server-tracked fact). You must then sup_reconcile before you can propose again."""
+            _check_binding(instance_id, "canon_diff")   # the pull advances this seat's cursor — a write-grade claim
             tip = store.resolve_ref(store.canon_ref)
             prev = _canon_cursor(instance_id)
             if tip is None:
@@ -974,6 +1044,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             """Self-report what you updated about yourself after reading the canon diff. Allowed only after
             you've pulled current canon (canon_diff). Appends a state/ entry to your perspective — your own
             chronology, paired to the canon version. This is what unblocks propose."""
+            _binding_stamp = _check_binding(instance_id, "sup_reconcile")
             tip = store.resolve_ref(store.canon_ref)
             if _canon_cursor(instance_id) != tip:
                 raise Denied("pull current canon first (canon_diff), then reconcile")
@@ -989,6 +1060,8 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 return out
             envelope = {"type": "reconciliation", "title": f"Reconciled with canon {tip[:12]}",
                         "status": "active", "canon_cursor": tip}
+            if _binding_stamp:
+                envelope.update(_binding_stamp)
 
             def build(btip):
                 _pin(envelope, instance_id, btip)
@@ -1094,7 +1167,11 @@ def server_from_config(cfg) -> FastMCP:
                         orientation_base=cfg.orientation_base, seq_origin=cfg.seq_origin,
                         deployment_name=cfg.deployment_name,
                         http_host=cfg.http_host, http_port=cfg.http_port,
-                        http_allowed_hosts=cfg.http_allowed_hosts)
+                        http_allowed_hosts=cfg.http_allowed_hosts,
+                        # binding rides ENV, not the shared config file: the config is one file for
+                        # every seat's definition; the env is what distinguishes definitions
+                        bound_instance=os.environ.get("STASIMA_INSTANCE") or None,
+                        binding_mode=os.environ.get("STASIMA_BINDING") or None)
 
 
 def _exit_when_parent_dies() -> None:

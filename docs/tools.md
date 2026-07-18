@@ -26,7 +26,9 @@ entries, land chronology. A proposal's log entry must carry seq = this seq + 1.
 
 ### `whoami`
 
-How the server sees you. (authz is a stub in this slice.)
+How the server sees you — including this connection's session binding, if one is
+configured (the SSH-shaped identity pin; see OPERATIONS). authz checks op-shapes; identity
+claims are guarded per-connection by the binding, or trusted openly where none is set.
 
 **Parameters**
 - `instance_id` (string, required)
@@ -198,18 +200,21 @@ search; this scoped lookup is the only way they surface.
 ### `imp_send`
 
 Author an addressed message — a KIP entry on your branch under messages/. World-readable and
-attributed on the spine; indexed into each recipient's inbox. `coordinates` are paths to jump to.
-`supersedes` marks earlier message(s) this one replaces (sender-declared, the same lineage
-field entries use) — the recipient's inbox then shows the old message WITH its tombstone.
-`thread=<ref-safe-tag>` (reserved field) chains messages to a continuing work — the same
-declared tag entries carry, so a conversation and its substance scry as one thread.
+attributed on the spine; indexed into each recipient's inbox. YOUR IDENTITY: pass your one
+seat name as `instance_id` — the same field every other op uses; `sender` is its deprecated
+twin from 0.1.x (same meaning, still accepted; pass exactly one). `coordinates` are paths to
+jump to. `supersedes` marks earlier message(s) this one replaces (sender-declared, the same
+lineage field entries use) — the recipient's inbox then shows the old message WITH its
+tombstone. `thread=<ref-safe-tag>` (reserved field) chains messages to a continuing work —
+the same declared tag entries carry, so a conversation and its substance scry as one thread.
 
 **Parameters**
-- `sender` (string, required)
 - `recipients` (list[string], required)
 - `subject` (string, required)
 - `body` (string, required)
 - `op_id` (string, required)
+- `instance_id` (string, default `''`)
+- `sender` (string, default `''`)
 - `coordinates` (list[string] | null, default `None`)
 - `supersedes` (list[string] | null, default `None`)
 - `thread` (string, default `''`)
