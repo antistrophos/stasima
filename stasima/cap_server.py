@@ -94,7 +94,23 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     binding_mode = (binding_mode or "strict").lower()
     if binding_mode not in ("strict", "witness", "off"):
         raise ValueError(f"binding_mode must be strict|witness|off, got {binding_mode!r}")
-    _learned = {"name": None, "source": None}   # sticky state: session-held; port-restored below
+    class _SessionBindings:
+        """Per-SESSION sticky state (A½ of the HTTP era). Under stdio one process serves one pipe,
+        so exactly one session key exists and behavior is identical to the process-sticky it
+        replaces. Under HTTP (Phase B) each streamable session gets its own key — the granularity
+        the trunk caveat wanted — and _session_key() below is the ONLY seam that changes."""
+        def __init__(self):
+            self.by_key = {}
+
+        def state(self, key):
+            return self.by_key.setdefault(key, {"name": None, "source": None})
+
+    _bindings = _SessionBindings()
+
+    def _session_key():
+        # stdio: the process IS the session (one pipe). Phase B returns the transport's real
+        # per-session id here; nothing else in the binding layer moves.
+        return "stdio"
 
     def persp_ref(iid): return PERSP + iid
     def prop_ref(pid): return PROP + pid
@@ -192,12 +208,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         the op writes an envelope — the confession is never optional, only its git copy is."""
         if binding_mode == "off":
             return None                                    # the explicit, server-owned rip-cord
-        bound = bound_instance or _learned["name"]
+        st = _bindings.state(_session_key())
+        bound = bound_instance or st["name"]
         if bound is None:
-            # sticky learn: the first identity-claiming write binds this connection — and, through
+            # sticky learn: the first identity-claiming write binds this SESSION — and, through
             # a port, the definition (durably: the learn is an append-only event the console clears)
-            _learned.update(name=claimed, source="port" if port_token else "session")
-            detail = {"mode": binding_mode, "source": _learned["source"], "learned": True}
+            st.update(name=claimed, source="port" if port_token else "session")
+            detail = {"mode": binding_mode, "source": st["source"], "learned": True}
             if port_token:
                 detail["port"] = port_token
                 _log(claimed, "port_binding", detail={"port": port_token, "action": "learn",
@@ -228,7 +245,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         # a cleared port re-arms learning)
         _prior = port_bindings(audit).get(port_token, {}).get("instance")
         if _prior:
-            _learned.update(name=_prior, source="port")
+            _bindings.state(_session_key()).update(name=_prior, source="port")
             _log(_prior, "session_binding", detail={"mode": binding_mode, "source": "port",
                                                     "port": port_token, "restored": True})
 
@@ -351,9 +368,10 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         out = {"instance_id": instance_id, "perspective_ref": persp_ref(instance_id),
                "namespace": f"perspectives/{instance_id}", "allowed_ops": ["kip_commit", "propose", "imp_send", "vap_record"],
                "note": "identity is a recorded name; the session binding (transport-pinned or sticky-learned) guards writes"}
-        eff = bound_instance or _learned["name"]
+        st = _bindings.state(_session_key())
+        eff = bound_instance or st["name"]
         sb = {"mode": binding_mode, "bound_instance": eff,
-              "source": "pinned" if bound_instance else _learned["source"],
+              "source": "pinned" if bound_instance else st["source"],
               "match": (instance_id == eff) if eff else None}
         if port_token:
             sb["port"] = port_token
