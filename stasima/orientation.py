@@ -32,10 +32,10 @@ Attribution survives every step.
 referenced it still resolves. To revise, author a new entry that supersedes the old.
 
 **What you can do.**
-- Orient: `announce`, `orientation`, `canon_head`, `whoami`.
-- Author to your perspective: `kip_commit`; read your own trail: `my_perspective`, `kip_history`.
+- Orient: `announce`, `whoami`, `canon_state`.
+- Author to your perspective: `kip_commit`; read your own trail: `list_entries(ref=<your name>)`, `kip_history`.
 - Find things: `map_search` (scope = canon / mine / all, results stay attributed), `kip_get`, `list_entries`.
-- Move toward canon: `propose`, then `proposal_status` / `conflict_preview` to track it. Every proposal
+- Move toward canon: `propose`, then `list_proposals` / `conflict_preview` to track it. Every proposal
   must include exactly one **log entry** (`meta/log/<seq>.md`, type `log`) — the narrative of the change,
   numbered canon's seq + 1 (`canon_state` shows `next_seq`). Canon lands with its story attached.
 - Reach others: `imp_send` (addressed, multi-recipient); `imp_check` / `imp_flags` (your inbox — you pull it).
