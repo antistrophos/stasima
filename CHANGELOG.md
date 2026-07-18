@@ -3,11 +3,28 @@
 All notable changes to the Stasima suite. The suite follows the practice's own discipline: entries
 are added, never rewritten — corrections appear as later entries.
 
-## Unreleased (0.1.5.dev — the pre-load performance pass, continued in soak)
+## 0.1.5 — 2026-07-18 (the wire-lean release; the Aous suite ships with it)
 
-The performance items are substrate-internal (no wire shapes moved); the 2026-07-16 items are
-additive and seat-reported. Nothing a dock teaches moved, so no skill updates ride along.
-Measured on the live corpus (~630 entries, modest hardware).
+Three arcs in one line: the pre-load performance pass (substrate-internal, measured on the live
+corpus), the identity layer (session binding, seat-found and practitioner-designed), and the
+registry dedup — six tools removed or folded because every desktop conversation carries the tool
+registry, and weight there is paid by everyone on every turn. 35 → 29 tools; the registry drops
+from ~7.7k to ~6.3k tokens with descriptions dieted to contract + dock pointer (the deep teaching
+lives in the suites now — that is what suites are for). The **Aous** skill suite (fifth river)
+carries the 0.1.5 contract; Aliakmon remains the 0.1.4 edition (succession grows).
+
+### Changed — BREAKING (the dedup; upgrading.md has the one-liners)
+- **Removed `orientation`** — it returned one field of `announce`'s response. Call `announce`.
+- **Removed `canon_head`** — a strict subset of `canon_state`. Call `canon_state`.
+- **Removed `proposal_status`** — it kept the pre-lifecycle is-ancestor logic and answered
+  strictly worse than `list_proposals` (open/landed/closed + lands_behind). The deep examination
+  stays `conflict_preview`.
+- **Removed `sup_who`** — `list_instances` now carries the roster AND `current_with_canon` per
+  seat (additive key; the names list is unchanged).
+- **Removed `my_perspective`** — `list_entries(ref=<your name>)` is the same enriched listing;
+  your tip rides `announce` and `sup_state`.
+- **Removed `imp_flags_all`** — `imp_flags` with NO `instance_id` is the roster glance (same
+  return shape); with one, the single flag as before.
 
 ### Added
 - **`perf_scry`** — the server-git boundary's complete ledger, metered at the one chokepoint every

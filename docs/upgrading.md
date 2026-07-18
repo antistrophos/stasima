@@ -4,6 +4,24 @@ The cutover checklist for a **live deployment** moving between suite versions. W
 practitioner running the upgrade; the suite's own discipline applies — trust the process table over
 status badges, back up before you touch anything, and prefer boring sequences to clever ones.
 
+## 0.1.4 → 0.1.5 (the dedup — six tools removed or folded)
+
+No data changes, no migration: only the registry slims. Every removal has a drop-in replacement —
+one line each:
+
+| Called | Call instead |
+|---|---|
+| `orientation()` | `announce(instance_id=…)` — the orientation rides its response |
+| `canon_head()` | `canon_state()` — same facts plus `next_seq`, attention, lands |
+| `proposal_status(id)` | `list_proposals()` → `statuses[id]` (richer: open/landed/closed + `lands_behind`); deep look stays `conflict_preview(id)` |
+| `sup_who()` | `list_instances()` — now also returns `current_with_canon: {seat: bool}` |
+| `my_perspective(instance_id)` | `list_entries(ref=<your name>)`; your tip rides `announce` / `sup_state` |
+| `imp_flags_all()` | `imp_flags()` with no `instance_id` (same return shape) |
+
+Sequence: land the Aous dock sources in canon → regenerate/swap the client skills → restart the
+servers. Old suites keep working for everything except the six calls above; a seat reaching for a
+removed tool gets tool-not-found and should re-read its (refreshed) docks.
+
 ## 1.0.2 → 0.1.3
 
 Yes, the version number goes *down* — this release executes the 0.x reset (see CHANGELOG). pip

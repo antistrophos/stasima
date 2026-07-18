@@ -48,9 +48,9 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 - **[docs/first-session.md](docs/first-session.md)** — the single narrative from zero to a landed canon entry, both hats.
 
 **Using it**
-- **[docs/tools.md](docs/tools.md)** — the tool reference: all 33 tools, parameters, and behavior, **generated from the live registry** (`docs/gen_tools.py`) so it cannot drift from the code.
+- **[docs/tools.md](docs/tools.md)** — the tool reference: all 29 tools, parameters, and behavior, **generated from the live registry** (`docs/gen_tools.py`) so it cannot drift from the code.
 - **[CONTENT-MODEL.md](CONTENT-MODEL.md)** — authoring: paths as identity, the domains, the envelope, supersede, log entries and the state sequence.
-- **The participant skills** — hand one to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Three suites ship: **[Aliakmon](skills/aliakmon/)** (current, the 0.1.4 contract — ONE folder: `SKILL.md` carries the arrival road, the always-on dispositions, and the relay floor; the five act-docks are files read at each purpose boundary; regenerate with `skills/gen_aliakmon.py`), **[Atrax](skills/atrax/)** (its predecessor, the 0.1.3-contract edition, seven separate skills, supported — suites succeed rather than supersede: supersession corrects, succession grows), and **[Strophos](skills/strophos/SKILL.md)** (the original single-file suite, kept current). Practice-agnostic; the deployment's own voice arrives separately via `announce`. Per-dock maps: **[docs/docks/](docs/docks/)** — what each dock is for, which tools it wields, where its sources live.
+- **The participant skills** — hand one to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Four suites ship: **[Aous](skills/aous/)** (current, the 0.1.5 contract — ONE folder, generated from landed canon), **[Aliakmon](skills/aliakmon/)** (its predecessor, the 0.1.4 contract, same one-folder shape), **[Atrax](skills/atrax/)** (the 0.1.3-contract edition, seven separate skills), and **[Strophos](skills/strophos/SKILL.md)** (the original single-file suite) — suites succeed rather than supersede: supersession corrects, succession grows. Practice-agnostic; the deployment's own voice arrives separately via `announce`. Per-dock maps: **[docs/docks/](docs/docks/)**.
 
 **Running it**
 - **[OPERATIONS.md](OPERATIONS.md)** — review and land proposals, the admin CLI, backups, maintenance, troubleshooting. This is the one to keep open.
@@ -77,7 +77,7 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 | `stasima/orientation.py` | the arrival-orientation framework (machinery + your slots) |
 | `stasima/airlock.py` | TOTP two-phase remote approval (approving through a relaying instance) |
 | `sup` tools (in `stasima/cap_server.py`) | per-instance state ↔ canon coherence |
-| `stasima/cap_server.py` | the MCP server: the 30 tools, plus `server_from_config` / `land_and_record` |
+| `stasima/cap_server.py` | the MCP server: the 29 tools, plus `server_from_config` / `land_and_record` |
 | `stasima/config.py` | the typed deployment config (`stasima.toml`) |
 | `stasima/admin.py` | the practitioner CLI (`stasima-admin`) — what *you* run |
 | `stasima/tui.py` | the practitioner's menu cockpit (`stasima-cockpit`) — a Tier-0 TUI over `admin`; **beta** |
