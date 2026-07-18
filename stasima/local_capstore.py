@@ -136,6 +136,9 @@ class LocalCapStore:
         self._counts: dict = {}  # oid -> ancestor count; immutable facts, so never stale — only missing
         self._cat = None         # the cat-file --batch sidecar (lazy; dies with us on stdin EOF)
         self._refs: dict = {}    # ref -> (oid|None, monotonic stamp); TTL'd — refs are MUTABLE facts
+        import threading
+        self._cat_lock = threading.Lock()   # the sidecar protocol is sequential; interleaved
+        # requests from concurrent handler threads (the HTTP era) would cross-read responses
 
     # ---- low-level git invocation ----
     def _run(self, *args: str, input: Optional[bytes] = None, extra_env: Optional[dict] = None,
@@ -266,7 +269,12 @@ class LocalCapStore:
         return c
 
     def _batch_read(self, name: str) -> Optional[bytes]:
-        """One request on the sidecar: bytes on hit, None on miss, exception → caller falls back."""
+        """One request on the sidecar: bytes on hit, None on miss, exception → caller falls back.
+        Locked: the request/response protocol is strictly sequential per child."""
+        with self._cat_lock:
+            return self._batch_read_locked(name)
+
+    def _batch_read_locked(self, name: str) -> Optional[bytes]:
         _t0 = _time.perf_counter()
         c = self._batch_sidecar()
         c.stdin.write(name.encode("utf-8") + b"\n")

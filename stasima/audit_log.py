@@ -63,7 +63,13 @@ class AuditLog(ABC):
 
 class SqliteAuditLog(AuditLog):
     def __init__(self, db_path: str = ":memory:"):
-        self.conn = sqlite3.connect(db_path)
+        # fleet-safety (the HTTP era serves every seat from ONE process): the connection is shared
+        # across handler threads, and append is a read-modify-write chain (seq, prev_hash, INSERT)
+        # — the lock keeps the hash chain linear; a race here would FORK the chain, which verify()
+        # would catch but never forgive
+        import threading
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._lock = threading.Lock()
         self.conn.row_factory = sqlite3.Row
         self.conn.execute(
             """CREATE TABLE IF NOT EXISTS audit_events (
@@ -79,6 +85,12 @@ class SqliteAuditLog(AuditLog):
 
     def append(self, actor, op, *, target_ref=None, target_path=None,
                op_id=None, result_oid=None, outcome="ok", detail=None) -> dict:
+        with self._lock:
+            return self._append(actor, op, target_ref=target_ref, target_path=target_path,
+                                op_id=op_id, result_oid=result_oid, outcome=outcome, detail=detail)
+
+    def _append(self, actor, op, *, target_ref=None, target_path=None,
+                op_id=None, result_oid=None, outcome="ok", detail=None) -> dict:
         ev = {"seq": self.count() + 1,
               "ts": datetime.now(timezone.utc).isoformat(),
               "actor": actor, "op": op, "target_ref": target_ref, "target_path": target_path,
