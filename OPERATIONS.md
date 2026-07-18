@@ -164,6 +164,15 @@ with three postures per connection:
   HTTPS→HTTP downgrade. Deliberately server-owned: it exists only in env/console, never as
   anything a caller could request. `whoami` shows the downgrade plainly, like http:// in the
   address bar.
+
+**The trunk caveat (field-found, 2026-07-18).** Some clients share ONE server process across many
+chats — the Claude desktop app does. A shared definition there is a TRUNK, and sticky on a trunk
+means first-chat-wins: the first seat to write binds the process and every other seat's writes
+refuse (strict) or mis-stamp (witness — the `authored_via` would name the wrong session, so
+witness is dishonest on a shared process). Rule: **shared definitions run `off`; binding belongs
+on per-seat pinned definitions** (each enabled only in its seat's chat — the definition is the
+access port), or on the HTTP transport's per-session headers when that era arrives. Never sticky
+a trunk.
 - (Accept-new-and-hold at `announce` — classic TOFU over real per-session headers — remains the
   designed shape for the HTTP transport. Not built; the design is on record.)
 
