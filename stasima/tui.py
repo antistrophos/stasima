@@ -351,7 +351,7 @@ def _http_service(config):
             from .audit_log import SqliteAuditLog
             from .oauth import StasimaOAuth
             _cfg = Config.load(http_cfg)
-            _oa = StasimaOAuth(os.path.join(os.path.dirname(_cfg.resolved_audit_db()), "auth.sqlite"),
+            _oa = StasimaOAuth(_cfg.resolved_auth_db(),
                                _cfg.resolved_airlock_secret(), audit=SqliteAuditLog(_cfg.resolved_audit_db()))
             n_pending = len(_oa.list_pending())
         except Exception as e:

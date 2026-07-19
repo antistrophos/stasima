@@ -144,6 +144,25 @@ class Config:
             if not (0 < self.http_port < 65536):
                 raise ConfigError("http_port must be 1-65535")
             self._check_bind_address(self.http_host)
+        if self.http_public_url:
+            # the OAuth door's public identity: only meaningful under http, must be a real URL, and
+            # https unless it's a loopback dev endpoint (a TLS terminator — tailscale serve/funnel —
+            # fronts a real deployment). Reconcile it into the Host allowlist so the hardening
+            # middleware accepts the proxied Host it will arrive under.
+            if self.transport != "http":
+                raise ConfigError("http_public_url is only meaningful with transport='http' — it "
+                                  "turns the OAuth authorization server on; remove it or switch transport")
+            from urllib.parse import urlparse
+            u = urlparse(self.http_public_url)
+            if u.scheme not in ("http", "https") or not u.hostname:
+                raise ConfigError(f"http_public_url must be a full URL (e.g. "
+                                  f"https://host.tailXXXX.ts.net), got {self.http_public_url!r}")
+            loopback = u.hostname in ("127.0.0.1", "::1", "localhost")
+            if u.scheme != "https" and not loopback:
+                raise ConfigError(f"http_public_url must be https for a non-loopback host "
+                                  f"({u.hostname!r}) — the connector rides TLS; got scheme {u.scheme!r}")
+            if u.hostname not in self.http_allowed_hosts:
+                self.http_allowed_hosts = list(self.http_allowed_hosts) + [u.hostname]
         if self.git_timeout < 0:
             raise ConfigError("git_timeout must be >= 0 (0 = auto by transport: 2s stdio / 20s http)")
         if self.git_network_timeout <= 0:
@@ -156,9 +175,10 @@ class Config:
 
     @staticmethod
     def _check_bind_address(host: str) -> None:
-        """Structural enforcement of the v1 exposure decision: with no transport auth yet, the
-        server may listen only on loopback or a Tailscale tailnet address (CGNAT 100.64.0.0/10).
-        Wider binds (LAN, 0.0.0.0, public) arrive with transport auth in 1.1."""
+        """Defense-in-depth on the LISTEN address: the process binds only loopback or a Tailscale
+        tailnet address (CGNAT 100.64.0.0/10). Public reach is via a TLS terminator (tailscale
+        serve/funnel) proxying to loopback, and the OAuth door (http_public_url) is the auth
+        perimeter — this bind restriction sits behind it, not instead of it."""
         import ipaddress
         if host == "localhost":
             return
@@ -169,15 +189,20 @@ class Config:
         if ip.is_loopback or ip in ipaddress.ip_network("100.64.0.0/10"):
             return
         raise ConfigError(
-            f"http_host {host!r} would listen beyond loopback/tailnet, and transport auth does not "
-            f"exist yet (planned for 1.1). Bind 127.0.0.1 and use `tailscale serve` to reach it "
-            f"from your devices, or bind your machine's Tailscale 100.x address directly.")
+            f"http_host {host!r} would listen beyond loopback/tailnet. Bind 127.0.0.1 and expose it "
+            f"with `tailscale serve` (auth via the OAuth door, http_public_url), or bind your "
+            f"machine's Tailscale 100.x address directly. A wider raw bind is not supported.")
 
     def resolved_map_db(self) -> str:
         return self.map_db or os.path.join(os.path.dirname(self.git_dir), "map_index.sqlite")
 
     def resolved_audit_db(self) -> str:
         return self.audit_db or os.path.join(os.path.dirname(self.git_dir), "audit.sqlite")
+
+    def resolved_auth_db(self) -> str:
+        """The OAuth store, beside the audit log — one home for the derived path (was open-coded in
+        the server and the cockpit; drift there is a silent console-approval outage)."""
+        return os.path.join(os.path.dirname(self.resolved_audit_db()), "auth.sqlite")
 
     def resolved_airlock_secret(self) -> str:
         return self.airlock_secret_path or os.path.join(os.path.dirname(self.git_dir), "totp.secret")

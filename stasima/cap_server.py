@@ -1193,6 +1193,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
         from .oauth import approve_page
 
+        async def _approve_target(p):
+            # what the practitioner must see before approving: the requesting client and the exact
+            # redirect the code will be sent to (the confused-deputy check)
+            client = await oauth_provider.get_client(p["client_id"])
+            name = (client.client_name if client and client.client_name else p["client_id"])
+            return name, str(p["params"].redirect_uri)
+
         @mcp.custom_route("/approve", methods=["GET", "POST"])
         async def _approve(request: Request):
             if request.method == "GET":
@@ -1203,7 +1210,8 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                                         status_code=400)
                 if p["redirect"]:   # approved from the console — the polling page follows home
                     return RedirectResponse(p["redirect"], status_code=302)
-                return HTMLResponse(approve_page(txn))
+                name, ruri = await _approve_target(p)
+                return HTMLResponse(approve_page(txn, name, ruri))
             form = await request.form()
             txn = str(form.get("txn", ""))
             p = oauth_provider.pending(txn)
@@ -1217,9 +1225,10 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 if left <= 0:
                     return HTMLResponse("too many wrong codes — this request is closed; retry from "
                                         "the client for a fresh one", status_code=429)
-                return HTMLResponse(approve_page(txn, f"code refused — {left} attempt(s) left before "
-                                                      f"this request closes; try the NEXT code"),
-                                    status_code=401)
+                name, ruri = await _approve_target(p)
+                return HTMLResponse(approve_page(txn, name, ruri,
+                                    error=f"code refused — {left} attempt(s) left before this "
+                                          f"request closes; try the NEXT code"), status_code=401)
             return RedirectResponse(oauth_provider.grant(txn, w), status_code=302)
 
     return mcp
@@ -1260,9 +1269,8 @@ def server_from_config(cfg) -> FastMCP:
     oauth_provider = None
     if getattr(cfg, "http_public_url", ""):
         from .oauth import StasimaOAuth
-        oauth_provider = StasimaOAuth(
-            os.path.join(os.path.dirname(cfg.resolved_audit_db()), "auth.sqlite"),
-            cfg.resolved_airlock_secret(), audit=audit)
+        oauth_provider = StasimaOAuth(cfg.resolved_auth_db(),
+                                      cfg.resolved_airlock_secret(), audit=audit)
     return build_server(store, index, embedder, audit, authz, airlock,
                         oauth_provider=oauth_provider,
                         public_url=cfg.http_public_url or None,

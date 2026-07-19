@@ -40,6 +40,9 @@ class StasimaOAuth:
         self.audit = audit
         self._lock = threading.Lock()
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        if db_path != ":memory:" and os.path.exists(db_path):
+            from .airlock import chmod_600
+            chmod_600(db_path)   # bearer + refresh tokens live here in the clear — owner-only
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(
             """CREATE TABLE IF NOT EXISTS clients (client_id TEXT PRIMARY KEY, data TEXT);
@@ -268,19 +271,31 @@ class StasimaOAuth:
             self.conn.commit()
 
 
-def approve_page(txn: str, error: str = "") -> str:
-    err = f'<p style="color:#b00">{error}</p>' if error else ""
-    refresh = "" if error else f'<meta http-equiv="refresh" content="2;url=/approve?txn={txn}">'
+def _esc(s: str) -> str:
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace('"', "&quot;"))
+
+
+def approve_page(txn: str, client_name: str = "", redirect_uri: str = "", error: str = "") -> str:
+    err = f'<p style="color:#b00">{_esc(error)}</p>' if error else ""
+    refresh = "" if error else f'<meta http-equiv="refresh" content="2;url=/approve?txn={_esc(txn)}">'
+    # show WHERE the code will go, not just the (attacker-chosen) name — a confused-deputy check:
+    # if this redirect target is not the client you meant to connect, do NOT approve.
+    target = (f'<p style="font-size:.9rem">Requesting client: <b>{_esc(client_name) or "(unnamed)"}</b><br>'
+              f'Code will be sent to: <code style="word-break:break-all">{_esc(redirect_uri)}</code></p>')
     return f"""<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">
 {refresh}<title>Stasima — approve connector</title>
 <body style="font-family:system-ui;max-width:26rem;margin:4rem auto;padding:0 1rem">
 <h2>Approve this connector?</h2>
 <p>A client is requesting access to the Stasima server. Enter a code from the practitioner's
 authenticator — the same one that gates canon — <b>or approve from the cockpit</b> (HTTP service
-screen; this page follows on its own). If you did not initiate this, close the page.</p>
+screen; this page follows on its own).</p>
+{target}
+<p style="font-size:.9rem;color:#555">If you did not initiate this, or the target above is not
+what you expect, close the page.</p>
 {err}
 <form method="post" action="/approve">
-<input type="hidden" name="txn" value="{txn}">
+<input type="hidden" name="txn" value="{_esc(txn)}">
 <input name="code" inputmode="numeric" autocomplete="one-time-code" autofocus
        placeholder="123456" style="font-size:1.4rem;width:8rem;text-align:center">
 <button style="font-size:1.1rem;margin-left:.6rem">Approve</button>

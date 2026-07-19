@@ -47,6 +47,16 @@ class AirlockError(Exception):
 
 
 # ---------------------------------------------------------------- TOTP (RFC 6238, stdlib only)
+def chmod_600(path: str) -> None:
+    """Restrict a secret-bearing file to the owner (0600). No-op where the OS lacks POSIX perms
+    (Windows honors only the read-only bit) — defense-in-depth on a multi-user host, harmless on a
+    single-user one. Best-effort: a failure here must never crash provisioning or startup."""
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
 def generate_secret() -> str:
     return base64.b32encode(os.urandom(20)).decode()
 

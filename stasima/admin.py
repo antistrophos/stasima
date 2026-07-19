@@ -40,7 +40,7 @@ from .canon import (reindex_from_git, land_and_record, canon_seq, seq_display, L
                     proposal_statuses, close_proposal)
 from .audit_log import reconcile_from_git, anchor_audit_head, verify_against_anchor
 from .local_capstore import Approval, MergeConflict, CanonAppendOnly, PERSP_PREFIX as PERSP, PROP_PREFIX as PROP
-from .airlock import generate_secret, otpauth_uri, verify_code, totp_at, STEP
+from .airlock import generate_secret, otpauth_uri, verify_code, totp_at, STEP, chmod_600
 
 
 def _first_heading(text: str):
@@ -87,6 +87,7 @@ def run(args) -> dict:
         secret = generate_secret()
         with open(path, "w", encoding="utf-8") as f:
             f.write(secret + "\n")
+        chmod_600(path)   # the airlock key — owner-only (also gates every OAuth approval)
         if args.qr:
             qr = _qr_ascii(uri(secret))
             print(qr if qr else "(pip install qrcode for a scannable QR)")

@@ -56,6 +56,20 @@ assert raises(lambda: Config.load(write('git_dir="/x/r.git"\nembed_dimm=768\n'),
 assert raises(lambda: Config.load("/no/such/file.toml", env={})), "missing file should fail"
 print("validation:      OK")
 
+# http_public_url (the OAuth door): non-loopback must be https, requires http transport, and its
+# host is auto-added to the allowlist so the hardening middleware accepts the proxied Host
+base = 'git_dir="/x/r.git"\ntransport="http"\nhttp_host="127.0.0.1"\n'
+assert raises(lambda: Config.load(write(base + 'http_public_url="http://host.tailXXXX.ts.net"\n'), env={})), \
+    "non-loopback public_url must be https"
+assert raises(lambda: Config.load(write('git_dir="/x/r.git"\nhttp_public_url="https://h.ts.net"\n'), env={})), \
+    "public_url without http transport must fail"
+cfg_pub = Config.load(write(base + 'http_public_url="https://host.tail1a2b.ts.net"\n'), env={})
+assert "host.tail1a2b.ts.net" in cfg_pub.http_allowed_hosts, "public_url host auto-added to allowlist"
+cfg_lo = Config.load(write(base + 'http_public_url="http://127.0.0.1:8787"\n'), env={})   # loopback http OK
+assert "127.0.0.1" in cfg_lo.http_allowed_hosts
+assert cfg_pub.resolved_auth_db().endswith("auth.sqlite")
+print("oauth config:    OK")
+
 # assembly: a real server from a config
 work = tempfile.mkdtemp()
 gd = os.path.join(work, "stasima.git")
