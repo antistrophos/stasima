@@ -26,6 +26,15 @@ import httpx
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from stasima.airlock import generate_secret, totp_at
+from stasima.http_guard import RateLimiter
+
+# ---- unit: the sliding-window rate limiter (deterministic clock) ----
+rl = RateLimiter(limit=3, window_s=10)
+assert all(rl.allow("ip-a", t) for t in (0.0, 1.0, 2.0)), "first 3 within window allowed"
+assert not rl.allow("ip-a", 3.0), "4th within window denied"
+assert rl.allow("ip-b", 3.0), "a different key is independent"
+assert rl.allow("ip-a", 11.0), "the window slid — oldest hit aged out, allowed again"
+print("0. rate limiter      OK (window fills, denies, slides; keys independent)")
 
 
 def free_port():
@@ -73,7 +82,7 @@ try:
     cfgpath = os.path.join(w2, "stasima.toml")
     with open(cfgpath, "w", encoding="utf-8") as f:
         f.write(f'git_dir = "{gd.replace(os.sep, "/")}"\ntransport = "http"\nhttp_port = {port}\n'
-                f'http_public_url = "{public}"\n')
+                f'http_public_url = "{public}"\nhttp_allowed_hosts = ["127.0.0.1"]\n')
     proc = sp.Popen([sys.executable, "-m", "stasima.cap_server"],
                     env=dict(os.environ, STASIMA_CONFIG=cfgpath), cwd=HERE,
                     stdout=sp.DEVNULL, stderr=sp.DEVNULL)
@@ -182,12 +191,37 @@ try:
         "redirect_uri": "http://127.0.0.1:9/cb", "code_verifier": verifier2}).json()
     assert tok2.get("access_token"), tok2
     print("5. console channel   OK (cockpit approves cross-process; the polling page follows; PKCE still exchanges)")
+
+    # 6. brute-force burn: a fresh txn tolerates a few wrong codes, then CLOSES (429) — the per-txn
+    # half of the defense (the per-IP throttle is the middleware, unit-tested above)
+    verifier3 = secrets.token_urlsafe(48)
+    challenge3 = base64.urlsafe_b64encode(hashlib.sha256(verifier3.encode()).digest()).decode().rstrip("=")
+    auth3 = c.get(asm["authorization_endpoint"], params={
+        "response_type": "code", "client_id": cid, "redirect_uri": "http://127.0.0.1:9/cb",
+        "code_challenge": challenge3, "code_challenge_method": "S256", "state": "z3"})
+    txn3 = urllib.parse.parse_qs(urllib.parse.urlparse(auth3.headers["location"]).query)["txn"][0]
+    codes_seen = [c.post("/approve", data={"txn": txn3, "code": "000000"}).status_code for _ in range(5)]
+    assert codes_seen[:4] == [401, 401, 401, 401], codes_seen
+    assert codes_seen[4] == 429, ("txn must burn after the miss cap", codes_seen)
+    assert c.get("/approve", params={"txn": txn3}).status_code == 400, "burned txn is gone"
+    print("6. brute-force burn  OK (wrong codes tolerated then the txn is burned at the cap)")
+
+    # 7. hardening middleware: bad Host rejected app-wide (not just /mcp); oversized body rejected
+    badhost = c.post("/register", headers={"Host": "evil.example.com"},
+                     json={"client_name": "x", "redirect_uris": ["http://127.0.0.1:9/cb"]})
+    assert badhost.status_code == 421, ("Host allowlist must cover the credential routes", badhost.status_code)
+    toobig = c.post("/register", content=b"x" * (128 * 1024),
+                    headers={"Content-Type": "application/json"})
+    assert toobig.status_code == 413, ("body cap must reject oversized POST", toobig.status_code)
+    hdrs = c.get("/.well-known/oauth-authorization-server").headers
+    assert "content-security-policy" in hdrs and hdrs.get("x-content-type-options") == "nosniff", dict(hdrs)
+    print("7. hardening mw      OK (bad Host 421, oversized 413, security headers present)")
     c.close()
 finally:
     if proc is not None:
         proc.terminate(); proc.wait(timeout=10)
 
-# 6. no-auth mode still opens /mcp (the regression guard)
+# 8. no-auth mode still opens /mcp (the regression guard)
 w3, p3, proc3 = boot("")
 try:
     r = httpx.post(f"http://127.0.0.1:{p3}/mcp",
@@ -196,7 +230,7 @@ try:
                          "params": {"protocolVersion": "2025-06-18", "capabilities": {},
                                     "clientInfo": {"name": "t", "version": "1"}}}, timeout=15)
     assert r.status_code == 200, (r.status_code, r.text[:160])
-    print("6. no-auth mode      OK (/mcp open when http_public_url is unset — loopback trust intact)")
+    print("8. no-auth mode      OK (/mcp open when http_public_url is unset — loopback trust intact)")
 finally:
     proc3.terminate(); proc3.wait(timeout=10)
 

@@ -28,6 +28,8 @@ CODE_TTL_S = 300          # authorization codes: minutes, single-use
 TXN_TTL_S = 600           # pending approvals: the practitioner's walk to the authenticator
 ACCESS_TTL_S = 24 * 3600  # a day per access token; the connector refreshes silently
 REFRESH_TTL_S = 30 * 24 * 3600
+TXN_MISS_CAP = 5          # wrong TOTP codes before a pending approval is burned (brute-force cap)
+CLIENT_CAP = 512          # dynamically-registered clients kept before pruning token-less ones
 
 
 class StasimaOAuth:
@@ -46,6 +48,10 @@ class StasimaOAuth:
                                                    expires_at REAL, paired TEXT);
                CREATE TABLE IF NOT EXISTS txns    (txn TEXT PRIMARY KEY, client_id TEXT, params TEXT,
                                                    created REAL, redirect TEXT)""")
+        try:   # per-txn wrong-code counter (the brute-force burn); additive migration
+            self.conn.execute("ALTER TABLE txns ADD COLUMN misses INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass   # column already present
         self.conn.commit()
         # pending approvals live in the DB, not memory: the cockpit is a SEPARATE process with the
         # same file, and console approval is the same presence-channel doctrine as landing
@@ -57,7 +63,17 @@ class StasimaOAuth:
         return OAuthClientInformationFull.model_validate_json(r["data"]) if r else None
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        # DCR is unauthenticated by spec; cap the table so a public flood can't grow auth.sqlite
+        # without bound. Prune ABANDONED clients first (no live token references), oldest by
+        # insertion — a token-holding connector is never evicted.
         with self._lock:
+            n = self.conn.execute("SELECT COUNT(*) c FROM clients").fetchone()["c"]
+            if n >= CLIENT_CAP:
+                self.conn.execute(
+                    "DELETE FROM clients WHERE client_id IN ("
+                    "  SELECT client_id FROM clients WHERE client_id NOT IN "
+                    "    (SELECT DISTINCT json_extract(data,'$.client_id') FROM tokens) "
+                    "  ORDER BY rowid LIMIT ?)", (max(1, n - CLIENT_CAP + 1),))
             self.conn.execute("INSERT OR REPLACE INTO clients VALUES (?,?)",
                               (client_info.client_id, client_info.model_dump_json()))
             self.conn.commit()
@@ -66,6 +82,27 @@ class StasimaOAuth:
                               detail={"client_id": client_info.client_id,
                                       "name": client_info.client_name or ""})
 
+    def record_miss(self, txn: str) -> int:
+        """A wrong TOTP code on a pending approval: increment its miss counter and BURN the txn once
+        the cap is hit (the per-txn half of the brute-force defense; the per-IP throttle is the
+        middleware's). Returns remaining attempts (0 = burned)."""
+        with self._lock:
+            r = self.conn.execute("SELECT misses FROM txns WHERE txn=? AND redirect IS NULL",
+                                  (txn,)).fetchone()
+            if r is None:
+                return 0
+            misses = (r["misses"] or 0) + 1
+            if misses >= TXN_MISS_CAP:
+                self.conn.execute("DELETE FROM txns WHERE txn=?", (txn,))
+                self.conn.commit()
+                if self.audit is not None:
+                    self.audit.append("system", "oauth_txn_burned",
+                                      detail={"reason": "too many wrong codes", "misses": misses})
+                return 0
+            self.conn.execute("UPDATE txns SET misses=? WHERE txn=?", (misses, txn))
+            self.conn.commit()
+            return TXN_MISS_CAP - misses
+
     # ---- the authorize handoff (SDK redirects the browser to what we return) ----
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         now = time.time()
@@ -73,8 +110,10 @@ class StasimaOAuth:
         with self._lock:
             self.conn.execute("DELETE FROM txns WHERE created < ? AND redirect IS NULL",
                               (now - TXN_TTL_S,))
-            self.conn.execute("INSERT INTO txns VALUES (?,?,?,?,NULL)",
-                              (txn, client.client_id, params.model_dump_json(), now))
+            self.conn.execute(
+                "INSERT INTO txns (txn, client_id, params, created, redirect, misses) "
+                "VALUES (?,?,?,?,NULL,0)",
+                (txn, client.client_id, params.model_dump_json(), now))
             self.conn.commit()
         return f"/approve?txn={txn}"
 

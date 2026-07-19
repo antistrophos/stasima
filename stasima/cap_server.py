@@ -1213,8 +1213,12 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 return RedirectResponse(p["redirect"], status_code=302)
             w = oauth_provider.totp_window(str(form.get("code", "")))
             if w is None:
-                return HTMLResponse(approve_page(txn, "code refused (wrong, or its window was "
-                                                      "already used) — try the NEXT code"),
+                left = oauth_provider.record_miss(txn)   # burn the txn after too many wrong codes
+                if left <= 0:
+                    return HTMLResponse("too many wrong codes — this request is closed; retry from "
+                                        "the client for a fresh one", status_code=429)
+                return HTMLResponse(approve_page(txn, f"code refused — {left} attempt(s) left before "
+                                                      f"this request closes; try the NEXT code"),
                                     status_code=401)
             return RedirectResponse(oauth_provider.grant(txn, w), status_code=302)
 
@@ -1310,9 +1314,19 @@ def main() -> None:
     _srv = server_from_config(_cfg)
     if _cfg.transport == "http":
         # One continuously-running server; clients connect to http://<host>:<port>/mcp.
-        # Config validation already restricted the bind to loopback/tailnet (no transport auth
-        # until 1.1); reach it from other devices via `tailscale serve` proxying to loopback.
-        _srv.run(transport="streamable-http")
+        # The loopback/tailnet bind is defense-in-depth; the OAuth door (when http_public_url is
+        # set) is the real perimeter, reached via `tailscale serve`/`funnel` proxying to loopback.
+        if getattr(_cfg, "http_public_url", ""):
+            # public/authed: wrap the whole app in the hardening middleware (Host allowlist over
+            # the credential routes, body cap, per-IP rate limit, security headers) — the SDK's
+            # transport-security guards only /mcp. Then run uvicorn on the wrapped app.
+            import uvicorn
+            from .http_guard import harden
+            app = harden(_srv.streamable_http_app(), allowed_hosts=_cfg.http_allowed_hosts)
+            uvicorn.Server(uvicorn.Config(app, host=_cfg.http_host, port=_cfg.http_port,
+                                          log_level="info")).run()
+        else:
+            _srv.run(transport="streamable-http")
     else:
         _exit_when_parent_dies()   # stdio: the client spawned us; if it dies, don't orphan
         _srv.run()                 # stdio: the connecting client spawns this process
