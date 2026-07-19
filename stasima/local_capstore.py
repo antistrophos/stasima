@@ -140,6 +140,11 @@ class LocalCapStore:
         self._cat_lock = threading.Lock()   # the sidecar protocol is sequential; interleaved
         # requests from concurrent handler threads (the HTTP era) would cross-read responses
 
+    # A detached/GUI-parented server (the http fleet service started without a console) would let
+    # each git child ALLOCATE ITS OWN console window — visible CMD flashes per query. CREATE_NO_WINDOW
+    # suppresses it; 0 elsewhere and on non-Windows, so console/stdio parents are unaffected.
+    _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+
     # ---- low-level git invocation ----
     def _run(self, *args: str, input: Optional[bytes] = None, extra_env: Optional[dict] = None,
              timeout: Optional[float] = None):
@@ -151,7 +156,8 @@ class LocalCapStore:
         # Under the MCP stdio transport on Windows our stdin is the JSON-RPC pipe the event loop is
         # reading; an inherited handle stalls that pipe and hangs every read-only tool. (Console
         # stdin is harmless to inherit, which is why this never showed outside the stdio server.)
-        kwargs = dict(stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        kwargs = dict(stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+                      creationflags=self._NO_WINDOW)
         if input is None:
             kwargs["stdin"] = subprocess.DEVNULL
         else:
@@ -264,7 +270,8 @@ class LocalCapStore:
             env["GIT_DIR"] = self.git_dir
             c = subprocess.Popen([self.git_bin, "cat-file", "--batch"],
                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL, env=env)
+                                 stderr=subprocess.DEVNULL, env=env,
+                                 creationflags=self._NO_WINDOW)
             self._cat = c
         return c
 
