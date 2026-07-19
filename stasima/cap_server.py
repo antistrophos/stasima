@@ -302,11 +302,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             return False
 
     def _canon_cursor(actor):
-        # the canon oid the instance last pulled — a server-tracked audit fact, not a self-claim
+        # the canon oid the instance last pulled — a server-tracked audit fact, not a self-claim.
+        # Index-served tail lookup: one row, not the seat's whole canon_pull history (this runs on
+        # every write via _pin, and once per seat in list_instances).
         if audit is None:
             return None
-        evs = audit.events(actor=actor, op="canon_pull")
-        return evs[-1]["result_oid"] if evs else None
+        ev = audit.latest(actor=actor, op="canon_pull")
+        return ev["result_oid"] if ev else None
 
     def _pin(envelope, instance_id, tip):
         """The mechanical two-clock pin, stamped on EVERY write: the author's canon cursor

@@ -56,6 +56,8 @@ class AuditLog(ABC):
     @abstractmethod
     def events(self, *, op=None, actor=None, op_id=None) -> list[dict]: ...
     @abstractmethod
+    def latest(self, *, op=None, actor=None) -> Optional[dict]: ...
+    @abstractmethod
     def append_read(self, instance_id: str, message_path: str) -> dict: ...
     @abstractmethod
     def is_read(self, instance_id: str, message_path: str) -> bool: ...
@@ -76,6 +78,11 @@ class SqliteAuditLog(AuditLog):
                  seq INTEGER PRIMARY KEY, ts TEXT, actor TEXT, op TEXT,
                  target_ref TEXT, target_path TEXT, op_id TEXT, result_oid TEXT,
                  outcome TEXT, detail TEXT, prev_hash TEXT, hash TEXT)""")
+        # The log is append-only and never pruned, so the hot lookups (canon-cursor per write,
+        # read-receipts in the roster sweep, the op-scoped events() reads, the TOTP replay scan)
+        # must not full-scan a growing table. Two covering-ish indexes serve every WHERE shape.
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_ae_op_actor_seq ON audit_events(op, actor, seq)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_ae_op_actor_path ON audit_events(op, actor, target_path)")
         self.conn.commit()
 
     def _row(self, r: sqlite3.Row) -> dict:
@@ -91,11 +98,16 @@ class SqliteAuditLog(AuditLog):
 
     def _append(self, actor, op, *, target_ref=None, target_path=None,
                 op_id=None, result_oid=None, outcome="ok", detail=None) -> dict:
-        ev = {"seq": self.count() + 1,
+        # seq + prev_hash come from the SAME tail row — an O(1) PK-index lookup, not a COUNT(*)
+        # walk. Derived from the DB (not an in-process counter) so it stays correct when another
+        # instance shares the file (the cockpit, the admin CLI, a second stdio server).
+        tail = self.conn.execute(
+            "SELECT seq, hash FROM audit_events ORDER BY seq DESC LIMIT 1").fetchone()
+        ev = {"seq": (tail["seq"] + 1) if tail else 1,
               "ts": datetime.now(timezone.utc).isoformat(),
               "actor": actor, "op": op, "target_ref": target_ref, "target_path": target_path,
               "op_id": op_id, "result_oid": result_oid, "outcome": outcome,
-              "detail": detail or {}, "prev_hash": self.head()}
+              "detail": detail or {}, "prev_hash": tail["hash"] if tail else GENESIS}
         ev["hash"] = _hash(ev)
         self.conn.execute(
             "INSERT INTO audit_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -139,6 +151,18 @@ class SqliteAuditLog(AuditLog):
                 where.append(f"{col}=?"); params.append(val)
         sql = "SELECT * FROM audit_events" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY seq"
         return [self._row(r) for r in self.conn.execute(sql, params)]
+
+    def latest(self, *, op=None, actor=None) -> Optional[dict]:
+        """The single most-recent matching event (or None) — an index-served tail lookup, so the
+        hot per-write canon-cursor read never materializes a seat's whole history to keep its last."""
+        where, params = [], []
+        for col, val in (("op", op), ("actor", actor)):
+            if val is not None:
+                where.append(f"{col}=?"); params.append(val)
+        sql = ("SELECT * FROM audit_events" + (" WHERE " + " AND ".join(where) if where else "")
+               + " ORDER BY seq DESC LIMIT 1")
+        r = self.conn.execute(sql, params).fetchone()
+        return self._row(r) if r else None
 
     def append_read(self, instance_id, message_path) -> dict:
         return self.append(instance_id, "read_receipt", target_path=message_path)
