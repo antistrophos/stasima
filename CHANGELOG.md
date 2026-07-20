@@ -3,6 +3,41 @@
 All notable changes to the Stasima suite. The suite follows the practice's own discipline: entries
 are added, never rewritten — corrections appear as later entries.
 
+## Unreleased — the HTTP-era hardening pass (post-audit)
+
+A seven-dimension adversarially-verified audit of the new HTTP/OAuth foundation (33 confirmed
+findings → 14 items) drove this pass. Nothing here changes the wire shapes or the loopback/tailnet
+trial deployment; the security gates arm only when `http_public_url` turns the OAuth door on.
+
+### Security (arms with the OAuth door)
+- **TOTP brute-force is closed** — the `/approve` gate had no throttle, so open DCR + unlimited
+  6-digit guesses (3-in-10⁶) meant a practitioner-token takeover on public exposure. Now defended
+  on both axes: a per-txn burn (a pending approval closes after 5 wrong codes) and a per-IP
+  sliding-window rate limiter.
+- **A hardening middleware** (`http_guard`) wraps the whole app when auth is on: a Host allowlist
+  over the *entire* credential channel (the SDK guard covered only `/mcp`), a request-body cap, the
+  per-IP rate limits, and security headers (CSP/nosniff/no-referrer/HSTS/frame-deny) on every
+  response. Dynamic client registration is capped (prunes token-less clients before rejecting).
+- The approve page now shows the exact `redirect_uri` the code will be sent to (a confused-deputy
+  check), `http_public_url` is validated (https unless loopback, http-transport-only, host
+  auto-added to the allowlist), and the TOTP secret + `auth.sqlite` are chmod-0600.
+
+### Performance / lifecycle (foundation, funnel-independent)
+- **The audit log is indexed** — every canon-cursor read (per write), read-receipt check (per
+  message in the roster sweep), and op-scoped query used to full-scan a never-pruned table; two
+  covering indexes + an O(1) PK-tail next-seq + an `audit.latest()` tail lookup retire five
+  findings at once.
+- OAuth tables are garbage-collected (expired codes/tokens/consumed txns were checked but never
+  pruned); the in-memory count/ref caches are size-capped; the map-index write lock no longer spans
+  the embedder round-trip; the roster sweep deserializes only each seat's own messages.
+
+### Correctness
+- A log slug differing from its seq only by case (or a trailing-slash domain) is now refused at
+  propose instead of failing at the practitioner's land; the cat-file sidecar retires under its
+  lock (only the faulted child) and is reaped; `merge-tree` is pinned to resolved oids so an
+  out-of-process land can't desync the preview basis; `sup_reconcile`/`propose_retract` emit the
+  same audit-error rows the other writers do.
+
 ## 0.1.5 — 2026-07-18 (the wire-lean release; the Aous suite ships with it)
 
 Three arcs in one line: the pre-load performance pass (substrate-internal, measured on the live
