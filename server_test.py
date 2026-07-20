@@ -109,6 +109,16 @@ async def main():
         assert ps["status"] == "open", ps
         print("conflict_preview:", cp, "| lifecycle:", ps["status"])
 
+        # A3: a log slug that only differs from its seq by CASE (or a trailing-slash domain) passes
+        # a lenient propose but fails at land — the practitioner-as-error-relay. Rejected at propose:
+        up = await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1",
+            "domain": "meta/log", "slug": "3C", "type": "log", "seq": "3c", "body": "x", "op_id": "op-up"})
+        assert getattr(up, "isError", False), "uppercase log slug must be refused at propose"
+        sl = await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1",
+            "domain": "meta/log/", "slug": "3c", "type": "log", "seq": "3c", "body": "x", "op_id": "op-sl"})
+        assert getattr(sl, "isError", False), "trailing-slash domain must be refused at propose"
+        print("A3: case/slash log coordinates refused at propose (not relayed to the land)")
+
         # retraction: creator-only lane (audited denial), and every retract writes operation-truth
         r9 = await client.call_tool("propose_retract", {"instance_id": "research-9", "proposal_id": "p-1",
                                                         "path": "practice/principle-durability.md", "op_id": "rx-1"})

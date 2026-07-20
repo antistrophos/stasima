@@ -140,6 +140,16 @@ class LocalCapStore:
         self._cat_lock = threading.Lock()   # the sidecar protocol is sequential; interleaved
         # requests from concurrent handler threads (the HTTP era) would cross-read responses
 
+    _CACHE_CAP = 50000   # per-cache soft cap; both are recomputable from git, so eviction is free
+
+    @staticmethod
+    def _cap(d: dict) -> None:
+        # bound a monotonically-growing cache in a weeks-long process; evict oldest by insertion
+        # order (dicts preserve it). pop-None so a concurrent delete never raises.
+        if len(d) > LocalCapStore._CACHE_CAP:
+            for k in list(d)[: len(d) - LocalCapStore._CACHE_CAP]:
+                d.pop(k, None)
+
     # A detached/GUI-parented server (the http fleet service started without a console) would let
     # each git child ALLOCATE ITS OWN console window — visible CMD flashes per query. CREATE_NO_WINDOW
     # suppresses it; 0 elsewhere and on non-Windows, so console/stdio parents are unaffected.
@@ -230,6 +240,7 @@ class LocalCapStore:
         if n is None:
             n = int(self._git("rev-list", "--count", oid).decode().strip())
             self._counts[oid] = n
+            self._cap(self._counts)
         return n
 
     def rev_list(self, oid: str, first_parent: bool = True) -> list:
@@ -257,6 +268,7 @@ class LocalCapStore:
         oid = out.decode().strip()
         val = oid if rc == 0 and oid else None
         self._refs[ref] = (val, _time.monotonic())
+        self._cap(self._refs)
         return val
 
     def _batch_sidecar(self):

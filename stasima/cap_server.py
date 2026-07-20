@@ -622,13 +622,18 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         names. `thread=` on the log entry tags the whole land. Lineage fields match kip_commit.
         The deep teaching lives in the current suite's author dock."""
         ref = prop_ref(proposal_id)
+        if domain != domain.strip("/") or "//" in f"{domain}/{slug}":
+            # a trailing/leading slash builds meta/log//<seq>.md — passes propose, fails at land on
+            # the stem mismatch; reject the malformed coordinate here where the seat can fix it
+            raise Denied(f"domain {domain!r} must not start or end with '/' (the entry lands at "
+                         f"<domain>/<slug>.md); got a path that would contain a double slash")
         path = f"{domain}/{slug}.md"
         _authz(instance_id, "propose", ref, path)
         _binding_stamp = _check_binding(instance_id, "propose", ref, path)
         _check_not_staged(proposal_id)
         _check_not_closed(proposal_id)
         _require_reconciled(instance_id)
-        if domain.rstrip("/") == "meta/log":
+        if domain == "meta/log":
             # fail-fast at the seat that can fix it: without this, a malformed log entry sails
             # through propose and the guard fires at LAND — making the practitioner the error-relay
             # for a defect only the proposer can repair (Lintel's soak finding)
@@ -638,8 +643,12 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             except ValueError:
                 raise Denied(f"a meta/log entry needs `seq` as lowercase hex at propose-time (got {seq!r}) "
                              f"— canon_state shows next_seq; the land would refuse this later, so refuse it here")
-            if slug.lower() != s:
-                raise Denied(f"log slug {slug!r} must equal its seq {s!r} (the entry lands at meta/log/<seq>.md)")
+            if slug != s:
+                # case-sensitive: the land validator compares the filename stem to the (lowercased)
+                # envelope seq, so 'meta/log/2F' with seq '2f' passes propose but fails at land —
+                # exactly the practitioner-as-error-relay the fail-fast exists to prevent
+                raise Denied(f"log slug {slug!r} must equal its lowercase-hex seq {s!r} (the entry "
+                             f"lands at meta/log/{s}.md; uppercase or display '::' forms fail at land)")
         if index is not None:
             # the cross-propose attribution guard: carrying another seat's work toward canon is a
             # legitimate flow (curation) — carrying it SILENTLY is not. Two axes, both facts: the

@@ -218,6 +218,16 @@ class StasimaOAuth:
         ac = AuthorizationCode.model_validate_json(r["data"])
         return ac if ac.client_id == client.client_id else None
 
+    def _gc_expired(self):
+        """Prune rows past their life — expired codes/tokens, and consumed or timed-out txns. The
+        store only CHECKED expiry before; unpruned these grow forever (and auth.sqlite rides the
+        backup path). Caller holds self._lock; piggy-backed on the mint paths so it self-limits."""
+        now = time.time()
+        self.conn.execute("DELETE FROM codes WHERE expires_at < ?", (now,))
+        self.conn.execute("DELETE FROM tokens WHERE expires_at < ?", (now,))
+        self.conn.execute("DELETE FROM txns WHERE redirect IS NOT NULL OR created < ?",
+                          (now - TXN_TTL_S,))
+
     def _mint_pair(self, client_id: str, scopes: list, subject) -> OAuthToken:
         now = time.time()
         at = AccessToken(token=_secrets.token_urlsafe(32), client_id=client_id, scopes=scopes,
@@ -225,6 +235,7 @@ class StasimaOAuth:
         rt = RefreshToken(token=_secrets.token_urlsafe(32), client_id=client_id, scopes=scopes,
                           expires_at=int(now + REFRESH_TTL_S), subject=subject)
         with self._lock:
+            self._gc_expired()   # opportunistic sweep on the mint path
             self.conn.execute("INSERT INTO tokens VALUES (?,?,?,?,?)",
                               (at.token, "access", at.model_dump_json(), float(at.expires_at), rt.token))
             self.conn.execute("INSERT INTO tokens VALUES (?,?,?,?,?)",
