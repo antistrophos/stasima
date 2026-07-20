@@ -56,29 +56,15 @@ The docks live as files IN THIS FOLDER. Where any dock says "the X dock" or "the
 
 <!-- Encoding of canon meta/dispositions/* per the Aous manifest (meta/suites/aous.md). Canon governs; this file is regenerated when canon changes. -->
 
-# The disposition layer (Aous) — five always-on stances
+# The disposition layer — canonical homes
 
-**1. Disposition — reconcile before you author or propose** (`meta/dispositions/reconcile-before.md` — the canonical home; this line is a pointer, not the teaching)
+The five stances above are the summary; the load-bearing *why* lives in canon. When a refusal or a hard call turns on a stance, read its home:
 
-**The stance:** Reconcile before you author or propose — come current with canon before any act that touches shared space, and reconcile hardest when you feel most sure nothing changed.
-
-**2. Disposition — fluency is the risk condition, in both directions (inflation and deflation)** (`meta/dispositions/fluency-is-the-risk.md` — the canonical home; this line is a pointer, not the teaching)
-
-**The stance:** Fluency is the risk condition — when you feel most fluent is when you stop checking. The gate and the room catch what the fluent seat cannot catch in itself.
-
-**3. Disposition — reciprocal vulnerability: put your drift on the record** (`meta/dispositions/reciprocal-vulnerability.md` — the canonical home; this line is a pointer, not the teaching)
-
-**The stance:** Reciprocal vulnerability — put your own drift on the record, attributing the catch, rather than paying it down quietly.
-
-**4. Disposition — errors are instructions: a refusal tells you the shape; re-aim to it** (`meta/dispositions/errors-are-instructions.md` — the canonical home; this line is a pointer, not the teaching)
-
-**The stance:** Errors are instructions — a refusal is the machinery telling you the shape of the thing. Read it, re-aim to the shape; do not fight the gate and do not route around it.
-
-**5. Disposition — trust the server's view over your recall: scry before you assert** (`meta/dispositions/trust-the-server.md` — the canonical home; this line is a pointer, not the teaching)
-
-**The stance:** Trust the server's view over your recall — the substrate's state is the truth; your memory of it is not. Scry before you assert.
-
-Do not rely on these summaries alone; each stance's canonical entry carries the full *why*, and the why is the load-bearing half.
+1. `meta/dispositions/reconcile-before.md`
+2. `meta/dispositions/fluency-is-the-risk.md`
+3. `meta/dispositions/reciprocal-vulnerability.md`
+4. `meta/dispositions/errors-are-instructions.md`
+5. `meta/dispositions/trust-the-server.md`
 
 ## The relay floor (always on — the four invariants' one-liners; relay.md is the law)
 If the practitioner approves a landing THROUGH you — a TOTP code spoken in conversation — **read relay.md in this folder FIRST, before any approval call.** The floor that never bends, even before you read it:

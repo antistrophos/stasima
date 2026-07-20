@@ -70,28 +70,19 @@ def dock_body(gd, slug):
 
 
 def dispositions_body(gd):
-    """The always-on layer: the five stances, each pointing at its canonical home (never copied)."""
-    lines = [f"<!-- Encoding of canon meta/dispositions/* per the Aous manifest ({MANIFEST}). "
-             f"Canon governs; this file is regenerated when canon changes. -->", "",
-             "# The disposition layer (Aous) — five always-on stances", ""]
-    manifest = blob(gd, MANIFEST)
-    scope = re.search(r"\*\*Scope\*\*.*?(?=\n\n)", manifest, re.S)
+    """The always-on layer as a POINTER INDEX. The arrival road above already carries the five
+    one-liners, the scope, and the caveat — so this half adds only the canonical HOMES (numbered
+    to match the road) and never a second copy of the stance text. Each home is blob-checked so a
+    structural canon change (a renamed/removed disposition) still fails the generator loudly."""
+    lines = []
     for i, slug in enumerate(DISPOSITIONS, 1):
-        src = blob(gd, f"meta/dispositions/{slug}.md")
-        title = re.search(r"^title:\s*(.+)$", src, re.M)
-        first_para = src.split("---", 2)[-1].strip().split("\n\n")[0].strip()
-        lines.append(f"**{i}. {title.group(1).strip() if title else slug}** "
-                     f"(`meta/dispositions/{slug}.md` — the canonical home; this line is a pointer, "
-                     f"not the teaching)")
-        lines.append("")
-        lines.append(first_para)
-        lines.append("")
-    if scope:
-        lines.append(" ".join(scope.group(0).split()))
-        lines.append("")
-    lines.append("Do not rely on these summaries alone; each stance's canonical entry carries the "
-                 "full *why*, and the why is the load-bearing half.")
-    return "\n".join(lines)
+        blob(gd, f"meta/dispositions/{slug}.md")   # existence check; the body lives at the home
+        lines.append(f"{i}. `meta/dispositions/{slug}.md`")
+    return (f"<!-- Encoding of canon meta/dispositions/* per the Aous manifest ({MANIFEST}). "
+            f"Canon governs; this file is regenerated when canon changes. -->\n\n"
+            f"# The disposition layer — canonical homes\n\n"
+            f"The five stances above are the summary; the load-bearing *why* lives in canon. When a "
+            f"refusal or a hard call turns on a stance, read its home:\n\n" + "\n".join(lines))
 
 
 def main():
