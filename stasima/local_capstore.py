@@ -315,17 +315,26 @@ class LocalCapStore:
         s[2] = max(s[2], dt_ms)
         return out
 
-    def read_blob_at(self, commit: Oid, path: str) -> bytes:
-        try:
-            out = self._batch_read(f"{commit}:{path}")
-        except Exception:
-            # any sidecar irregularity: retire it and take the one-shot road — never worse than before
-            if self._cat is not None:
+    def _retire_sidecar(self, dead) -> None:
+        # retire UNDER the lock, and only if the handle is still the one that faulted — else a
+        # concurrent reader that already respawned a healthy child would have it killed under it
+        # (kill/respawn storm). wait() reaps the process so a long-lived server sheds no zombies.
+        with self._cat_lock:
+            if self._cat is dead and dead is not None:
                 try:
-                    self._cat.kill()
+                    dead.kill()
+                    dead.wait(timeout=2)
                 except Exception:
                     pass
                 self._cat = None
+
+    def read_blob_at(self, commit: Oid, path: str) -> bytes:
+        child = self._cat   # the handle live before this read; retire only THIS one if it faults
+        try:
+            out = self._batch_read(f"{commit}:{path}")
+        except Exception:
+            # any sidecar irregularity: retire THAT child and take the one-shot road — never worse
+            self._retire_sidecar(child)
             rc, out1, err = self._run("cat-file", "blob", f"{commit}:{path}")
             if rc != 0:
                 raise PathNotFound(f"{path} @ {commit}: {err.strip()}")
@@ -457,7 +466,10 @@ class LocalCapStore:
         prop_tip = self.resolve_ref(proposal_ref)
         if prop_tip is None:
             raise RefNotFound(proposal_ref)
-        rc, out, err = self._run("merge-tree", "--write-tree", into, proposal_ref)
+        # merge against the RESOLVED oids, not the ref names: into_tip may be a memo hit (≤3s) while
+        # the live ref advanced (an out-of-process land), which would merge one snapshot but diff and
+        # parent another. Pinning both operands makes tree, parents, and diff-basis one snapshot.
+        rc, out, err = self._run("merge-tree", "--write-tree", into_tip, prop_tip)
         text = out.decode()
         if rc not in (0, 1):
             raise BackendUnavailable(f"merge-tree -> {rc}: {err.strip()}")
@@ -600,7 +612,10 @@ class LocalCapStore:
         if prop_tip is None:
             raise RefNotFound(proposal_ref)
 
-        rc, out, err = self._run("merge-tree", "--write-tree", into, proposal_ref)
+        # merge against the RESOLVED oids, not the ref names: into_tip may be a memo hit (≤3s) while
+        # the live ref advanced (an out-of-process land), which would merge one snapshot but diff and
+        # parent another. Pinning both operands makes tree, parents, and diff-basis one snapshot.
+        rc, out, err = self._run("merge-tree", "--write-tree", into_tip, prop_tip)
         text = out.decode()
         if rc == 1:  # conflict: line 0 is the (conflicted) tree, the rest names conflicts
             conflicts = [l for l in text.splitlines()[1:] if l.strip()]

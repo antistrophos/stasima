@@ -726,8 +726,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             canon_side = store.read_blob(store.canon_ref, path)
         except (PathNotFound, RefNotFound):
             canon_side = None
-        r = store.commit(ref, {path: canon_side}, f"retract {path}",
-                         Identity(instance_id), expected_parent=tip, op_id=op_id)
+        try:
+            r = store.commit(ref, {path: canon_side}, f"retract {path}",
+                             Identity(instance_id), expected_parent=tip, op_id=op_id)
+        except CapStoreError as e:   # forensic parity with the other writers (audit C7)
+            _log(instance_id, "propose_retract", target_ref=ref, target_path=path, op_id=op_id,
+                 outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
+            raise
         _log(instance_id, "propose_retract", target_ref=ref, target_path=path, op_id=op_id,
              result_oid=r.oid, detail={"reverted_to_canon": canon_side is not None})
         return {"proposal_id": proposal_id, "retracted": path, "oid": r.oid}
@@ -1136,7 +1141,12 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             def build(btip):
                 _pin(envelope, instance_id, btip)
                 return {path: compose_entry(envelope, body)}
-            r = _commit_retry(ref, path, build, instance_id, f"reconcile-{tip[:12]}")
+            try:
+                r = _commit_retry(ref, path, build, instance_id, f"reconcile-{tip[:12]}")
+            except CapStoreError as e:   # forensic parity with the other writers (audit C7)
+                _log(instance_id, "sup_reconcile", target_ref=ref, target_path=path,
+                     outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
+                raise
             if not r.replayed:
                 _index(ref, path, False, instance_id, r.oid, envelope, body)
             _log(instance_id, "reconcile_report", target_ref=ref, target_path=path, result_oid=r.oid,

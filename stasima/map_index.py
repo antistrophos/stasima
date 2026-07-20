@@ -319,8 +319,14 @@ class SqliteMapIndex(MapIndex):
         return [r for r in rows if target_path in r.links]
 
     def inbox(self, instance_id):
-        rows = [self._row(r) for r in self.conn.execute("SELECT * FROM map_entries WHERE type='msg'").fetchall()]
-        return [r for r in rows if instance_id in r.recipients]   # read-state lives in the audit log
+        # Pre-filter in SQL on the quoted JSON token ("name") so the roster sweep (imp_flags over
+        # every seat) deserializes only THIS seat's messages, not every message once per seat. The
+        # quoted form avoids substring false-matches ("al" vs "alice"); the Python membership check
+        # stays authoritative. read-state lives in the audit log.
+        pat = f'%"{instance_id}"%'
+        rows = [self._row(r) for r in self.conn.execute(
+            "SELECT * FROM map_entries WHERE type='msg' AND recipients LIKE ?", (pat,)).fetchall()]
+        return [r for r in rows if instance_id in r.recipients]
 
     def vantages_for(self, *, entry=None, author=None, canon_state=None):
         """Reverse-bound projection over vantages (type='vap') — the second layer on a search result.
@@ -456,23 +462,26 @@ def index_entry(index: MapIndex, embedder: Embedder, *, ref: str, path: str, is_
                 authoring_instance: str, content_oid: str, envelope: dict, body: str) -> MapRow:
     """The single-process server calls this inline on each commit. Truth stays in git;
     this writes the derived row. Cartographic prose / titles + body are what get embedded.
-    Under the HTTP era's concurrency the row write serializes on the index's write lock."""
+    Under the HTTP era's concurrency only the row WRITE serializes on the index's write lock — the
+    embedding is computed BEFORE the lock (it reads no shared state and, for a real local-server
+    embedder, is an up-to-60s network round-trip that must not serialize the whole fleet's writes)."""
+    row = _build_row(embedder, ref=ref, path=path, is_canon=is_canon,
+                     authoring_instance=authoring_instance, content_oid=content_oid,
+                     envelope=envelope, body=body)
     lock = getattr(index, "write_lock", None)
     if lock is not None:
         with lock:
-            return _index_entry_locked(index, embedder, ref=ref, path=path, is_canon=is_canon,
-                                       authoring_instance=authoring_instance, content_oid=content_oid,
-                                       envelope=envelope, body=body)
-    return _index_entry_locked(index, embedder, ref=ref, path=path, is_canon=is_canon,
-                               authoring_instance=authoring_instance, content_oid=content_oid,
-                               envelope=envelope, body=body)
+            index.upsert(row)
+    else:
+        index.upsert(row)
+    return row
 
 
-def _index_entry_locked(index: MapIndex, embedder: Embedder, *, ref: str, path: str, is_canon: bool,
-                        authoring_instance: str, content_oid: str, envelope: dict, body: str) -> MapRow:
+def _build_row(embedder: Embedder, *, ref: str, path: str, is_canon: bool,
+               authoring_instance: str, content_oid: str, envelope: dict, body: str) -> MapRow:
     embed_text = " ".join(filter(None, [envelope.get("title", ""), body]))
     emb = embedder.embed([embed_text])[0]
-    row = MapRow(
+    return MapRow(
         ref=ref, path=path, is_canon=is_canon, authoring_instance=authoring_instance, content_oid=content_oid,
         type=envelope.get("type", ""), title=envelope.get("title", ""), status=envelope.get("status", "active"),
         tags=envelope.get("tags", []), refs=envelope.get("references", []),
@@ -487,5 +496,3 @@ def _index_entry_locked(index: MapIndex, embedder: Embedder, *, ref: str, path: 
         thread=str(envelope.get("thread", "") or ""),                 # the reserved associative tag
         body_text=body, embedding=emb, model_id=embedder.model_id,
     )
-    index.upsert(row)
-    return row
