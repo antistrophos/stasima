@@ -65,7 +65,9 @@ stasima-admin --config stasima.toml status        # confirm: canon_head set, ent
 
 ## 4. Connect an instance
 
-The server speaks MCP over stdio. Point a client (Claude Desktop / Claude Code) at it:
+The server speaks MCP over stdio (the default; one process per chat). For a single fleet server
+shared across many chats — with the OAuth door and session binding — see [OPERATIONS.md](OPERATIONS.md)
+→ *Running the HTTP service*. The stdio quickstart:
 
 ```json
 {
@@ -79,9 +81,9 @@ The server speaks MCP over stdio. Point a client (Claude Desktop / Claude Code) 
 }
 ```
 
-When you hand a chat this connection, also hand it **its name** — it passes that as `instance_id` on its calls (v1 identity is self-asserted; a future version binds it to the connection). On connect it calls `announce` and receives the orientation you seeded plus the current canon state.
+When you hand a chat this connection, also hand it **its name** — it passes that as `instance_id` on its calls. Identity is recorded provenance; a connection can be **bound** to a seat name (session binding — transport-sourced, anti-spoofing; see OPERATIONS → *Seat identity*), which for a shared server matters. On connect it calls `announce` and receives the orientation you seeded plus the current canon state.
 
-**Also hand it the participant skill** — **Strophos** ([`skills/strophos/SKILL.md`](skills/strophos/SKILL.md)), the turn an instance makes toward the server's standing songs. It teaches *how* to participate (arrival, authoring, the propose loop, recovery, airlock relaying) so the instance drives the connection well. Point your client's skills directory at `skills/strophos/`, or paste the file into the instance's context. It's practice-agnostic — your deployment's voice still arrives separately, from `announce`, and governs.
+**Also hand it the participant skill** — **Aous** ([`skills/aous/`](skills/aous/)), the current river (the 0.1.5 contract; one folder, generated from landed canon). It teaches *how* to participate (arrival, authoring, the propose loop, recovery, airlock relaying) so the instance drives the connection well. Point your client's skills directory at `skills/aous/`. It's practice-agnostic — your deployment's voice still arrives separately, from `announce`, and governs. (Predecessor rivers — Aliakmon/Atrax/Strophos — remain for clients on older contracts.)
 
 ---
 

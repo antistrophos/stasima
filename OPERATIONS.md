@@ -200,7 +200,8 @@ sticky binding is per-conversation natively and one meter/memo/sidecar warms for
 to serve HTTP. Copy it (e.g. `stasima-http.toml`), same `git_dir` and derived DB paths, plus:
 
     transport = "http"
-    http_port = 8787          # loopback-only binds are enforced until 1.1 auth
+    http_port = 8787          # bind stays loopback/tailnet (defense-in-depth); auth is the OAuth
+                              # door (http_public_url), not the bind — see "The OAuth door" above
 
 **Start it** (console): set `STASIMA_CONFIG` to the http toml and run `python -m
 stasima.cap_server` — the window IS the service; Ctrl+C stops it. To survive logins, put a
