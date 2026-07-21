@@ -63,6 +63,16 @@ class AuditLog(ABC):
     def is_read(self, instance_id: str, message_path: str) -> bool: ...
 
 
+def _wal(conn, db_path):
+    """WAL + a busy timeout for a file-backed sqlite opened by more than one process (the fleet
+    service holds it open for life; the cockpit and admin CLI open the same file). WAL lets readers
+    and the single writer proceed instead of the rollback-journal whole-db exclusive lock that
+    stalls cross-process writers (the arrival-hang class). Unsupported on :memory:, so skip there."""
+    conn.execute("PRAGMA busy_timeout=5000")
+    if db_path != ":memory:":
+        conn.execute("PRAGMA journal_mode=WAL")
+
+
 class SqliteAuditLog(AuditLog):
     def __init__(self, db_path: str = ":memory:"):
         # fleet-safety (the HTTP era serves every seat from ONE process): the connection is shared
@@ -73,6 +83,8 @@ class SqliteAuditLog(AuditLog):
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self._lock = threading.Lock()
         self.conn.row_factory = sqlite3.Row
+        _wal(self.conn, db_path)   # cross-process safety: the fleet service, cockpit, and CLI all
+        # open this file — WAL lets readers + one writer proceed instead of whole-db exclusive locks
         self.conn.execute(
             """CREATE TABLE IF NOT EXISTS audit_events (
                  seq INTEGER PRIMARY KEY, ts TEXT, actor TEXT, op TEXT,

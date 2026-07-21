@@ -40,6 +40,8 @@ class StasimaOAuth:
         self.audit = audit
         self._lock = threading.Lock()
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        from .audit_log import _wal
+        _wal(self.conn, db_path)   # cross-process safety: server + cockpit both open auth.sqlite
         if db_path != ":memory:" and os.path.exists(db_path):
             from .airlock import chmod_600
             chmod_600(db_path)   # bearer + refresh tokens live here in the clear — owner-only

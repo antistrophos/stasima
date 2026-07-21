@@ -231,6 +231,8 @@ class SqliteMapIndex(MapIndex):
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.write_lock = threading.Lock()
         self.conn.row_factory = sqlite3.Row
+        from .audit_log import _wal
+        _wal(self.conn, db_path)   # cross-process safety (see audit_log._wal)
         self._init_schema()
 
     def _init_schema(self) -> None:
