@@ -245,9 +245,28 @@ Migration is per-seat and reversible — stdio definitions keep working unchange
 locking, the same multi-process reality the stdio fleet always had). Rollback = stop the
 service; seats reopen on stdio.
 
-**Verify**: `whoami` in any conversation shows the session binding block (per-conversation
-learn); audit rows from HTTP sessions carry a `session` tag; `perf_scry` becomes the whole
-fleet's one ledger.
+**Verify**: `whoami` in any conversation shows the session binding block; audit rows from HTTP
+sessions carry a `session` tag; `perf_scry` becomes the whole fleet's one ledger.
+
+**Restart sequence (bridge deployments — READ THIS).** When clients reach the server through the
+`mcp-proxy` bridge, the bridge holds ONE upstream transport session and **does not reconnect if the
+service restarts** — the old session goes stale and every seat's next tool call terminates
+("Server transport closed unexpectedly"). So the order is a rule, not a preference:
+
+1. **Restart the HTTP service first** (cockpit → HTTP service → stop, start) — for any config change.
+2. **Then bounce the desktop client** (fully quit and relaunch) so it respawns fresh bridges
+   against the now-running service.
+
+Doing it the other way — or restarting the service under live bridges — leaves every open seat
+with a dead bridge until the client is bounced. There is no partial fix; the client bounce is what
+respawns the bridges.
+
+**Binding over the bridge — set `binding_mode = "off"`.** The bridge multiplexes every conversation
+onto ONE transport session per bridge process, so per-session binding binds the *bridge* (a trunk),
+not the conversation: two seats that share a bridge collide (one binds it, the other's writes
+refuse). Don't sticky a trunk — put `binding_mode = "off"` in the http toml. Attribution still
+rides every write; per-conversation binding (and its anti-spoofing) returns with native HTTP + OAuth,
+where each conversation is its own session.
 
 **Rekeying.** Per source: a session-sticky binding dies with its process (rekey = close and
 reopen the chat); a port-sticky binding is cleared from the console — `stasima-admin binding`
