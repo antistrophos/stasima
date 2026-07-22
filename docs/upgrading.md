@@ -6,8 +6,9 @@ status badges, back up before you touch anything, and prefer boring sequences to
 
 ## 0.1.4 → 0.1.5 (the dedup — six tools removed or folded)
 
-No data changes, no migration: only the registry slims. Every removal has a drop-in replacement —
-one line each:
+No data migration — but two server-side defaults change underneath you (session binding arms, and
+the SQLite stores flip to WAL); read the notes below the table before restarting anything. The
+registry slims, and every removal has a drop-in replacement — one line each:
 
 | Called | Call instead |
 |---|---|
@@ -21,6 +22,23 @@ one line each:
 Sequence: land the Aous dock sources in canon → regenerate/swap the client skills → restart the
 servers. Old suites keep working for everything except the six calls above; a seat reaching for a
 removed tool gets tool-not-found and should re-read its (refreshed) docks.
+
+**Session binding arms by default in 0.1.5** (strict + sticky: an unbound connection learns its
+seat from its first identity-claiming write and refuses mismatched writes after — the anti-forgery
+layer; see OPERATIONS "Seat identity"). Per-seat definitions get this for free. But a definition
+that trunks many conversations onto ONE transport — the desktop client's shared stdio process, or
+an `mcp-proxy` bridge in front of the http service — must run binding off, or the first seat to
+write binds the trunk and every other seat's writes refuse: set `binding_mode = "off"` in that
+toml (or `STASIMA_BINDING=off` on the definition). Never sticky a trunk.
+
+**The SQLite stores open in WAL mode on first 0.1.5 start** (audit / map index / auth):
+`-wal`/`-shm` files appear beside the databases — normal and persistent. `admin backup` is
+unaffected (SQLite's own backup API); hand-copies of a live database must include the sidecars.
+
+**If clients reach the http service through a bridge** (`mcp-proxy`), the restart order is a rule:
+restart the service first, THEN fully restart the client so it respawns its bridges — a bridge
+does not reconnect to a restarted service, and every open seat's next call terminates until the
+client restart.
 
 ## 1.0.2 → 0.1.3
 

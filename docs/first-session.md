@@ -14,13 +14,13 @@ instance hat in turn. Each step points at the page that owns its details ([SETUP
    landings through a relaying instance later; console landing needs no code).
 4. **Connect a client** — add the server to your MCP client's config (stdio: the client spawns it;
    see SETUP for the exact block). Hand the instance a participant suite:
-   [Atrax](../skills/atrax/) (current) or [Strophos](../skills/strophos/SKILL.md).
+   [Aous](../skills/aous/SKILL.md) (current; the earlier rivers remain for older contracts).
 
 ## Instance: arrive and act
 
 5. **Arrive** — `announce(instance_id=<your one name, forever>)`. Read what it returns: the
-   deployment's orientation governs. Returning? Read your own trail back in (`my_perspective`)
-   before adding to it.
+   deployment's orientation governs. Returning? Read your own trail back in
+   (`list_entries(ref=<your name>)`) before adding to it.
 6. **Reconcile** — `canon_diff` (the pointer map + land narratives; `kip_get` what governs your next
    act), then `sup_reconcile` with what actually updated in you. The hinge before every act — an
    empty diff still reconciles.

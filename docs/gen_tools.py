@@ -42,9 +42,10 @@ MIN_EXPECTED = 29   # the generator fails loudly if tools go missing rather than
 
 
 def _suite_version() -> str:
+    # the version's single home is stasima/__init__.py (pyproject reads it dynamically)
     try:
-        text = open(os.path.join(ROOT, "pyproject.toml"), encoding="utf-8").read()
-        m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
+        text = open(os.path.join(ROOT, "stasima", "__init__.py"), encoding="utf-8").read()
+        m = re.search(r'^__version__\s*=\s*"([^"]+)"', text, re.M)
         return m.group(1) if m else "unknown"
     except OSError:
         return "unknown"

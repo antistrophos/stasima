@@ -3,50 +3,63 @@
 All notable changes to the Stasima suite. The suite follows the practice's own discipline: entries
 are added, never rewritten — corrections appear as later entries.
 
-## Unreleased — the HTTP-era hardening pass (post-audit)
+## 0.1.5 — 2026-07-21 (the wire-lean release; the Aous suite and the HTTP era ship with it)
 
-A seven-dimension adversarially-verified audit of the new HTTP/OAuth foundation (33 confirmed
-findings → 14 items) drove this pass. Nothing here changes the wire shapes or the loopback/tailnet
-trial deployment; the security gates arm only when `http_public_url` turns the OAuth door on.
+*Re-cut at tag time: an earlier in-tree form of this section (dated 2026-07-18) predated the HTTP
+era and the hardening pass, and nothing published ever carried it — this records the release as it
+actually ships.*
 
-### Security (arms with the OAuth door)
-- **TOTP brute-force is closed** — the `/approve` gate had no throttle, so open DCR + unlimited
-  6-digit guesses (3-in-10⁶) meant a practitioner-token takeover on public exposure. Now defended
-  on both axes: a per-txn burn (a pending approval closes after 5 wrong codes) and a per-IP
-  sliding-window rate limiter.
-- **A hardening middleware** (`http_guard`) wraps the whole app when auth is on: a Host allowlist
-  over the *entire* credential channel (the SDK guard covered only `/mcp`), a request-body cap, the
-  per-IP rate limits, and security headers (CSP/nosniff/no-referrer/HSTS/frame-deny) on every
-  response. Dynamic client registration is capped (prunes token-less clients before rejecting).
-- The approve page now shows the exact `redirect_uri` the code will be sent to (a confused-deputy
-  check), `http_public_url` is validated (https unless loopback, http-transport-only, host
-  auto-added to the allowlist), and the TOTP secret + `auth.sqlite` are chmod-0600.
+Four arcs in one line: the pre-load performance pass (substrate-internal, measured on the live
+corpus), the identity layer (session binding, seat-found and practitioner-designed), the registry
+dedup — six tools removed or folded because every desktop conversation carries the tool registry,
+and weight there is paid by everyone on every turn — and the **HTTP era**: one continuously-running
+fleet server with an OAuth door, closed out by an adversarially-verified hardening pass. 35 → 29
+tools; the registry drops from ~7.7k to ~6.3k tokens with descriptions dieted to contract + dock
+pointer (the deep teaching lives in the suites now — that is what suites are for). The **Aous**
+skill suite (fifth river) carries the 0.1.5 contract; Aliakmon remains the 0.1.4 edition
+(succession grows).
 
-### Performance / lifecycle (foundation, funnel-independent)
-- **The audit log is indexed** — every canon-cursor read (per write), read-receipt check (per
-  message in the roster sweep), and op-scoped query used to full-scan a never-pruned table; two
-  covering indexes + an O(1) PK-tail next-seq + an `audit.latest()` tail lookup retire five
-  findings at once.
-- OAuth tables are garbage-collected (expired codes/tokens/consumed txns were checked but never
-  pruned); the in-memory count/ref caches are size-capped; the map-index write lock no longer spans
-  the embedder round-trip; the roster sweep deserializes only each seat's own messages.
-
-### Correctness
-- A log slug differing from its seq only by case (or a trailing-slash domain) is now refused at
-  propose instead of failing at the practitioner's land; the cat-file sidecar retires under its
-  lock (only the faulted child) and is reaped; `merge-tree` is pinned to resolved oids so an
-  out-of-process land can't desync the preview basis; `sup_reconcile`/`propose_retract` emit the
-  same audit-error rows the other writers do.
-
-## 0.1.5 — 2026-07-18 (the wire-lean release; the Aous suite ships with it)
-
-Three arcs in one line: the pre-load performance pass (substrate-internal, measured on the live
-corpus), the identity layer (session binding, seat-found and practitioner-designed), and the
-registry dedup — six tools removed or folded because every desktop conversation carries the tool
-registry, and weight there is paid by everyone on every turn. 35 → 29 tools; the registry drops
-from ~7.7k to ~6.3k tokens with descriptions dieted to contract + dock pointer (the deep teaching
-lives in the suites now — that is what suites are for). The **Aous** skill suite (fifth river)
-carries the 0.1.5 contract; Aliakmon remains the 0.1.4 edition (succession grows).
+### Added — the HTTP era (one fleet server)
+- **The `http` transport is fleet-grade** — `transport = "http"` runs ONE continuously-running
+  server every instance connects to (`http://<host>:<port>/mcp`), each conversation its own
+  streamable-HTTP session. The shared internals stdio never contended are locked for concurrent
+  handler threads (audit append — a race would fork the hash chain — the cat-file sidecar's
+  protocol, map-index writes, the binding registry), and every audit row from an HTTP session
+  carries a session tag. Run it from a SEPARATE toml (flipping a shared stdio toml would make every
+  spawned stdio child try to serve HTTP); OPERATIONS carries the runbook, including the restart
+  sequence for bridge deployments.
+- **Session binding becomes per-conversation under HTTP** — the binding seam keys on the transport
+  session, so sticky learning lands at the granularity the desktop's shared process wanted: per
+  conversation, not per process. Corollary, field-found twice: a definition that multiplexes many
+  conversations onto ONE transport (the desktop's shared stdio process; an `mcp-proxy` bridge in
+  front of the http service) is a TRUNK — the first seat's write binds it and every other seat's
+  writes refuse. **Never sticky a trunk**: run binding off on that definition. Native
+  per-conversation sessions get the enforcement for free.
+- **`binding_mode` config field** — the toml now carries the server-wide session-binding mode
+  (`"strict"` | `"witness"` | `"off"`; blank = strict, the default). `STASIMA_BINDING` still
+  overrides. This is how a bridge deployment turns binding off without a user-wide env var.
+- **The OAuth door** — setting `http_public_url` turns the authorization server ON: the MCP SDK
+  mounts discovery + dynamic client registration + PKCE + the bearer requirement on `/mcp`;
+  `stasima/oauth.py` is the provider behind them — client/token storage in `auth.sqlite` (beside
+  the audit db, in the backup path) and the approval *policy*: the same TOTP that gates canon
+  approves a connector, with the airlock's replay discipline. No passwords, no accounts —
+  presence-proof. Blank `http_public_url` = loopback trust, unchanged.
+- **The console approval channel** — pending OAuth authorizations persist in `auth.sqlite`, so the
+  cockpit (a separate process on the same file) lists and approves them: presence at the terminal
+  is the gate, no code spoken anywhere. The approve page polls and follows home on whichever
+  channel grants first; every approval audit row names its channel.
+- **The cockpit learns the fleet** — an HTTP service screen (status by port probe with the
+  connector URL, one-key creation of the separate http toml, detached start with a pidfile, guarded
+  stop, the OAuth status line + approvals review) and a Bindings screen (the sticky table, the
+  binding trail, guarded rekey).
+- **The SQLite stores open in WAL mode** (audit / map index / auth) — cross-process safety:
+  rollback journals take whole-database exclusive locks, so a second process on the same file (a
+  cockpit, a stray stdio server) could stall the fleet's writes. Operationally visible:
+  `-wal`/`-shm` files appear beside the databases. `admin backup` is unaffected (it snapshots via
+  SQLite's own backup API); hand-copies of a live database must include the sidecar files.
+- Git children of the detached fleet service no longer flash console windows (CREATE_NO_WINDOW),
+  and `announce`'s arrival text teaches the 29-tool registry it fronts — it still taught four
+  removed tools, caught by an Aous-skilled seat reading its own arrival on the live server.
 
 ### Changed — BREAKING (the dedup; upgrading.md has the one-liners)
 - **Removed `orientation`** — it returned one field of `announce`'s response. Call `announce`.
@@ -121,6 +134,47 @@ carries the 0.1.5 contract; Aliakmon remains the 0.1.4 edition (succession grows
   place, a CAS failure drops it so the error and any retry read the live tip, and fetch clears it
   wholesale; cross-process movement becomes visible within 3 s, which can only delay a read's view
   — write correctness stays with git's own compare-and-swap, exactly as before.
+
+### Hardening (the post-audit pass)
+
+A seven-dimension adversarially-verified audit of the new HTTP/OAuth foundation (33 confirmed
+findings → 14 items) closed the era's buildout. Nothing in this pass changes wire shapes or the
+loopback/tailnet trial deployment; the security gates arm only when `http_public_url` turns the
+OAuth door on.
+
+#### Security (arms with the OAuth door)
+- **TOTP brute-force is closed** — the `/approve` gate had no throttle, so open DCR + unlimited
+  6-digit guesses (3-in-10⁶) meant a practitioner-token takeover on public exposure. Now defended
+  on both axes: a per-txn burn (a pending approval closes after 5 wrong codes) and a per-IP
+  sliding-window rate limiter.
+- **A hardening middleware** (`http_guard`) wraps the whole app when auth is on: a Host allowlist
+  over the *entire* credential channel (the SDK guard covered only `/mcp`), a request-body cap, the
+  per-IP rate limits, and security headers (CSP/nosniff/no-referrer/HSTS/frame-deny) on every
+  response. Dynamic client registration is capped (prunes token-less clients before rejecting).
+- The approve page now shows the exact `redirect_uri` the code will be sent to (a confused-deputy
+  check), `http_public_url` is validated (https unless loopback, http-transport-only, host
+  auto-added to the allowlist), and the TOTP secret + `auth.sqlite` are chmod-0600.
+
+#### Performance / lifecycle (foundation, funnel-independent)
+- **The audit log is indexed** — every canon-cursor read (per write), read-receipt check (per
+  message in the roster sweep), and op-scoped query used to full-scan a never-pruned table; two
+  covering indexes + an O(1) PK-tail next-seq + an `audit.latest()` tail lookup retire five
+  findings at once.
+- OAuth tables are garbage-collected (expired codes/tokens/consumed txns were checked but never
+  pruned); the in-memory count/ref caches are size-capped; the map-index write lock no longer spans
+  the embedder round-trip; the roster sweep deserializes only each seat's own messages.
+
+#### Correctness
+- A log slug differing from its seq only by case (or a trailing-slash domain) is now refused at
+  propose instead of failing at the practitioner's land; the cat-file sidecar retires under its
+  lock (only the faulted child) and is reaped; `merge-tree` is pinned to resolved oids so an
+  out-of-process land can't desync the preview basis; `sup_reconcile`/`propose_retract` emit the
+  same audit-error rows the other writers do.
+
+### Suite
+- The Aous always-on layer (SKILL.md) compresses its disposition teaching to a pointer index
+  (~14% off every conversation's always-on tokens); the docks stay dense. The compression lives in
+  the generator, so it rides every future river.
 
 ## 0.1.4 — 2026-07-11
 

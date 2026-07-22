@@ -1,6 +1,6 @@
 # Tool reference
 
-*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **unknown**. 29 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
+*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **0.1.5**. 29 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting instance receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
 
 ## Arrive & orient
 

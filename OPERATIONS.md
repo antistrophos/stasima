@@ -10,7 +10,7 @@ STASIMA_CONFIG=/abs/path/to/stasima.toml stasima
 - **`stdio`** (default) — each MCP client spawns the server as its own subprocess. Simplest; on-box only; right for a single client at a time.
 - **`http`** — *one* continuously-running server; every instance connects to `http://<host>:<port>/mcp`. Right for "the server lives on this machine and runs all the time," and required once multiple instances connect concurrently (a single process must own the audit chain). Claude Code: `claude mcp add --transport http stasima http://127.0.0.1:8787/mcp`. To keep it running on Windows, register the command as a logon task in Task Scheduler (or wrap it as a service with NSSM).
 
-**Reaching it from your other devices — Tailscale.** Until transport auth lands (1.1), the config *refuses* to bind beyond loopback or a Tailscale 100.x address — nothing can listen toward the open internet, by validation rather than by discipline. With the server on loopback, run `tailscale serve --bg 8787` on the server machine: your other tailnet devices connect via the HTTPS URL it prints, tailnet membership is the auth, and the open internet still sees nothing. One config line makes the proxy's hostname acceptable to the server's DNS-rebinding protection (on by default; it rejects unfamiliar `Host` headers): `http_allowed_hosts = ["yourbox.your-tailnet.ts.net"]`. Binding your `100.x` address directly needs no extra line — the allowlist follows the bind. (Public exposure — needed for claude.ai web/mobile connectors — is a 1.1-era decision, alongside per-instance tokens.)
+**Reaching it from your other devices — Tailscale.** The config *refuses* to bind beyond loopback or a Tailscale 100.x address — nothing can listen toward the open internet, by validation rather than by discipline. Transport auth exists (the OAuth door, `http_public_url` — below); the restricted bind stays as defense-in-depth behind it. With the server on loopback, run `tailscale serve --bg 8787` on the server machine: your other tailnet devices connect via the HTTPS URL it prints, tailnet membership is the auth, and the open internet still sees nothing. One config line makes the proxy's hostname acceptable to the server's DNS-rebinding protection (on by default; it rejects unfamiliar `Host` headers): `http_allowed_hosts = ["yourbox.your-tailnet.ts.net"]`. Binding your `100.x` address directly needs no extra line — the allowlist follows the bind. (Public exposure — needed for claude.ai web/mobile connectors — is now a policy decision, not a missing gate: the OAuth door + the hardening middleware are built and tested; per-seat tokens remain the follow-on.)
 
 All maintenance is through the admin CLI, which you point at the same config:
 
@@ -201,7 +201,7 @@ to serve HTTP. Copy it (e.g. `stasima-http.toml`), same `git_dir` and derived DB
 
     transport = "http"
     http_port = 8787          # bind stays loopback/tailnet (defense-in-depth); auth is the OAuth
-                              # door (http_public_url), not the bind — see "The OAuth door" above
+                              # door (http_public_url), not the bind — see "The OAuth door" below
 
 **Start it** (console): set `STASIMA_CONFIG` to the http toml and run `python -m
 stasima.cap_server` — the window IS the service; Ctrl+C stops it. To survive logins, put a
@@ -289,4 +289,4 @@ claimed by the session.
 - **GitHub / multi-machine sync**, and **multi-user with cryptographic identity** — v1 is single-practitioner, names-as-identity.
 - **The richer messaging social layer** (tiers, subscriptions, message expiry) and an agentic **Cartographer** that reads across perspectives.
 
-For the full picture of what's built and deferred, see `stasima-v1-build-state.md` in the parent folder.
+For the full picture of what's built and deferred, see [STATUS.md](STATUS.md).

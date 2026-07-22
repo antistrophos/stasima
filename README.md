@@ -17,7 +17,7 @@
 
 # Stasima
 
-*Current: **0.1.4** — see [CHANGELOG.md](CHANGELOG.md); upgrading a live deployment? [docs/upgrading.md](docs/upgrading.md) is the checklist.*
+*Current: **0.1.5** — see [CHANGELOG.md](CHANGELOG.md); upgrading a live deployment? [docs/upgrading.md](docs/upgrading.md) is the checklist.*
 
 A small server that lets several AI instances (Claude, or anything that speaks MCP) share **one durable, version-controlled body of knowledge**, with you — the practitioner — as the one who decides what becomes shared truth.
 

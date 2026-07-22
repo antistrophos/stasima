@@ -37,13 +37,26 @@ airlock_ceiling_s   = 7200  # staged proposals auto-revert after this
 # Transport. "stdio" (default): each MCP client spawns the server itself — simplest, on-box only.
 # "http": ONE continuously-running server; clients connect to http://<host>:<port>/mcp
 # (Claude Code: `claude mcp add --transport http stasima http://127.0.0.1:8787/mcp`).
-# Until transport auth exists (1.1), http binds are restricted to loopback or a Tailscale
-# 100.x address — for other devices, run `tailscale serve --bg 8787` and connect via the
-# tailnet HTTPS URL it prints. Nothing listens toward the open internet.
+# http binds are restricted to loopback or a Tailscale 100.x address — for other devices, run
+# `tailscale serve --bg 8787` and connect via the tailnet HTTPS URL it prints. Nothing listens
+# toward the open internet; auth for exposure beyond the tailnet is the OAuth door (below).
 transport  = "stdio"
 http_host  = "127.0.0.1"
 http_port  = 8787
 # http_allowed_hosts = ["yourbox.your-tailnet.ts.net"]   # extra Host values (e.g. a tailscale serve proxy)
+
+# Session binding: "strict" (default when blank — a mismatched identity-claiming write refuses),
+# "witness" (proceeds + stamps authored_via), "off". Set "off" when a bridge (e.g. mcp-proxy)
+# trunks many conversations onto ONE transport session — the binding would bind the bridge, not
+# the conversation, and seats sharing it collide (OPERATIONS, "Seat identity"). Env
+# STASIMA_BINDING overrides this field.
+# binding_mode = "strict"
+
+# The OAuth door. Setting this turns the authorization server ON (discovery + DCR + PKCE + a
+# bearer requirement on /mcp; the same TOTP that gates canon approves connectors — or approve
+# from the cockpit console). https required unless loopback; the host is auto-added to
+# http_allowed_hosts. Blank = no auth (loopback/tailnet trust).
+# http_public_url = "https://yourbox.your-tailnet.ts.net"
 # Per-git-op timeout (s). A local git op is sub-second; a hang means contention, and this bounds it
 # so it fails LOUD instead of hanging forever. 0 = auto: 2s stdio / 20s http. Raise for a huge corpus.
 # The FIRST git op of each server process gets a one-time grace window (cold start: Windows scanning
