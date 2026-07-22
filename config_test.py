@@ -70,6 +70,12 @@ assert "127.0.0.1" in cfg_lo.http_allowed_hosts
 assert cfg_pub.resolved_auth_db().endswith("auth.sqlite")
 print("oauth config:    OK")
 
+# binding_mode: a bridge deployment sets "off" in the toml; bad values are refused
+cfg_off = Config.load(write('git_dir="/x/r.git"\nbinding_mode="off"\n'), env={})
+assert cfg_off.binding_mode == "off"
+assert raises(lambda: Config.load(write('git_dir="/x/r.git"\nbinding_mode="loose"\n'), env={})), "bad binding_mode refused"
+print("binding_mode:    OK")
+
 # assembly: a real server from a config
 work = tempfile.mkdtemp()
 gd = os.path.join(work, "stasima.git")

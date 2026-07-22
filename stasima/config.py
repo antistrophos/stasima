@@ -74,6 +74,12 @@ class Config:
     # address + localhost automatically). Needed when a proxy forwards with its own Host —
     # e.g. tailscale serve: http_allowed_hosts = ["yourbox.your-tailnet.ts.net"]
     http_allowed_hosts: list = field(default_factory=list)
+    # Session-binding mode for the whole server: "strict" (default), "witness", or "off". Blank =
+    # the built-in default (strict). Set "off" when clients reach the server through a bridge that
+    # multiplexes many conversations onto ONE transport session (e.g. mcp-proxy): per-session
+    # binding then binds the BRIDGE (a trunk), not the conversation, so two seats sharing a bridge
+    # collide — don't sticky a trunk. The STASIMA_BINDING env var overrides this if set.
+    binding_mode: str = ""
     # Per-git-op timeout (seconds). A local git op on a text corpus is sub-second; a hang means
     # contention (e.g. a second server process on the repo). 0 = auto by transport: 2s for stdio
     # (one client, no queuing) / 20s for http (concurrent clients can briefly queue). Raise it if a
@@ -144,6 +150,9 @@ class Config:
             if not (0 < self.http_port < 65536):
                 raise ConfigError("http_port must be 1-65535")
             self._check_bind_address(self.http_host)
+        if self.binding_mode and self.binding_mode not in ("strict", "witness", "off"):
+            raise ConfigError(f"binding_mode must be 'strict', 'witness', or 'off' (or blank for "
+                              f"the default), got {self.binding_mode!r}")
         if self.http_public_url:
             # the OAuth door's public identity: only meaningful under http, must be a real URL, and
             # https unless it's a loopback dev endpoint (a TLS terminator — tailscale serve/funnel —

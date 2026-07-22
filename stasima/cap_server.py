@@ -1300,7 +1300,9 @@ def server_from_config(cfg) -> FastMCP:
                         # binding rides ENV, not the shared config file: the config is one file for
                         # every seat's definition; the env is what distinguishes definitions
                         bound_instance=os.environ.get("STASIMA_INSTANCE") or None,
-                        binding_mode=os.environ.get("STASIMA_BINDING") or None,
+                        # env overrides the config field; config lets the http toml carry it (a
+                        # bridge deployment sets binding_mode = "off" — don't sticky a trunk)
+                        binding_mode=os.environ.get("STASIMA_BINDING") or getattr(cfg, "binding_mode", "") or None,
                         port_token=os.environ.get("STASIMA_PORT") or None)
 
 
