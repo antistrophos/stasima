@@ -38,7 +38,14 @@ cfgpath = os.path.join(work, "stasima.toml")
 with open(cfgpath, "w", encoding="utf-8") as f:
     f.write(f'git_dir = "{gd.replace(os.sep, "/")}"\n')
 
-canon = lambda: store.resolve_ref("refs/heads/main")
+# The cockpit lands through its OWN store instance (built from the config), so this handle's ref
+# memo may serve a tip up to REF_MEMO_TTL stale — the documented cross-process contract
+# (log_test witnesses it; fast CI runners land inside the TTL, slow local spawns age it out).
+# Drop the memo before every read: each canon() is live, so the guard asserts below can neither
+# false-fail on a real land nor be masked into passing by a stale base.
+def canon():
+    store._refs.clear()
+    return store.resolve_ref("refs/heads/main")
 
 
 def drive(*lines):

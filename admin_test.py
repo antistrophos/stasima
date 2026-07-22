@@ -89,6 +89,7 @@ dest = os.path.join(work, "backup")
 bk = run("backup", dest)
 assert bk["git_sync_ok"] and bk["audit_events"] >= 1, bk
 mirror = LocalCapStore(os.path.join(dest, "stasima-mirror.git"), approvers={"x"})
+store._refs.clear()   # the admin CLI landed through its own store; read live, not this handle's memo
 assert mirror.resolve_ref("refs/heads/main") == store.resolve_ref("refs/heads/main")
 assert mirror.resolve_ref("refs/tags/state/3c"), "state tag rode the backup"
 assert os.path.exists(os.path.join(dest, "audit.sqlite"))
@@ -102,6 +103,7 @@ sp.run(["git", "init", "--bare", "-q", remote], check=True)
 mr = run("mirror", remote)
 assert mr["git_sync_ok"] and mr["audit_events"] >= 1, mr
 rem = LocalCapStore(remote, approvers={"x"})
+store._refs.clear()   # same live-read discipline as the backup compare above
 assert rem.resolve_ref("refs/heads/main") == store.resolve_ref("refs/heads/main"), "content mirrored"
 assert rem.resolve_ref("refs/tags/state/3c"), "state tag mirrored"
 audit_oid = rem.resolve_ref("refs/backup/audit")
