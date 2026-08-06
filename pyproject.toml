@@ -20,10 +20,20 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Software Development :: Version Control :: Git",
 ]
-dependencies = ["mcp>=1.10"]
+# mcp is the substrate; the next three are DIRECT imports of the http transport (cap_server spawns
+# uvicorn and builds starlette routes; map_index calls httpx for the local-server embedder). They
+# arrive transitively via mcp today, but a direct import deserves a direct declaration — if mcp
+# ever slims its dependency tree, the fleet's primary transport must not break silently.
+dependencies = [
+    "mcp>=1.10",
+    "uvicorn>=0.23",
+    "starlette>=0.27",
+    "httpx>=0.27",
+]
 
 [project.optional-dependencies]
 qr = ["qrcode"]   # scannable QR during airlock TOTP provisioning
+test = ["anyio>=4"]   # the suite's async harness (7 test files); CI installs .[test]
 
 [project.scripts]
 stasima = "stasima.cap_server:main"          # the MCP server (STASIMA_CONFIG points at the toml)

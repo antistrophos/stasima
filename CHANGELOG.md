@@ -3,6 +3,15 @@
 All notable changes to the Stasima suite. The suite follows the practice's own discipline: entries
 are added, never rewritten — corrections appear as later entries.
 
+## Unreleased
+
+- **The HTTP transport's dependencies are declared** — `uvicorn`, `starlette`, and `httpx` are
+  direct imports (the fleet server, its routes, the local-server embedder) that previously arrived
+  only transitively via `mcp`; a direct import deserves a direct declaration, so an upstream
+  dependency-tree change can never silently break the fleet's primary transport. The test suite's
+  async harness gains a `[test]` extra (`anyio`), and CI installs it explicitly instead of
+  inheriting it by luck.
+
 ## 0.1.5 — 2026-07-21 (the wire-lean release; the Aous suite and the HTTP era ship with it)
 
 *Re-cut at tag time: an earlier in-tree form of this section (dated 2026-07-18) predated the HTTP
