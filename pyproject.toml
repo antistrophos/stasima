@@ -24,8 +24,12 @@ classifiers = [
 # uvicorn and builds starlette routes; map_index calls httpx for the local-server embedder). They
 # arrive transitively via mcp today, but a direct import deserves a direct declaration — if mcp
 # ever slims its dependency tree, the fleet's primary transport must not break silently.
+# mcp is pinned <2: the 2.0 SDK (2026-07-28) renames FastMCP to MCPServer and rebuilds the
+# low-level server around a new dispatcher — cap_server's session-binding seam (_session_key
+# on the streamable-HTTP ServerSession) does not survive it. The v2 port is a deliberate
+# migration (stateless protocol, token-carried identity), not a resolver accident.
 dependencies = [
-    "mcp>=1.10",
+    "mcp>=1.10,<2",
     "uvicorn>=0.23",
     "starlette>=0.27",
     "httpx>=0.27",

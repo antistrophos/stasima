@@ -5,6 +5,14 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
+- **`mcp` is pinned below 2.0** (`mcp>=1.10,<2`). The MCP 2026-07-28 protocol revision removed
+  protocol-level sessions and the initialize handshake, and the SDK's same-day 2.0 release renames
+  `FastMCP` to `MCPServer` and rebuilds the low-level server — the session-binding seam this suite
+  attaches to does not survive it. Fresh installs were one resolver decision away from an import
+  error; now they can't be. The v2 port is future deliberate work (stateless protocol,
+  token-carried identity, CIMD authorization), tracked on the board — not something a floor
+  constraint should be allowed to spring on an installer.
+
 - **The HTTP transport's dependencies are declared** — `uvicorn`, `starlette`, and `httpx` are
   direct imports (the fleet server, its routes, the local-server embedder) that previously arrived
   only transitively via `mcp`; a direct import deserves a direct declaration, so an upstream
