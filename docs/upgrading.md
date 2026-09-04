@@ -4,6 +4,29 @@ The cutover checklist for a **live deployment** moving between suite versions. W
 practitioner running the upgrade; the suite's own discipline applies — trust the process table over
 status badges, back up before you touch anything, and prefer boring sequences to clever ones.
 
+## 0.1.5 → 0.2.0 (the MCP v2 port — SDK 2.1, protocol 2026-07-28)
+
+No data migration: git, the audit log, the map index, and `auth.sqlite` are untouched, and the
+29-tool registry, its parameters, and its refusal texts are unchanged. Every earlier protocol
+revision is still served, so existing clients — the desktop app's `mcp-proxy` bridge included —
+connect exactly as before. What changes is the server's own environment and one `whoami` field:
+
+- **The SDK floor moves to `mcp>=2.1`.** Install the new version into its **own venv** and run the
+  service from there. Do NOT upgrade `mcp` in an interpreter that also runs `mcp-proxy`: the bridge
+  declares `mcp>=1.17.0` with no ceiling and predates the v2 SDK, so the resolver would accept the
+  upgrade and every seat's connector would break at once.
+- **A shared http service must run `binding_mode = "off"`** (or be pinned with `STASIMA_INSTANCE`).
+  The protocol has no per-conversation session any more, so the server refuses to start an http
+  service that could sticky-learn — the error names the fix. Deployments already running `off`
+  behind a bridge (the recommended 0.1.5 shape) need no change.
+- **`whoami`'s `session_binding` block is now `binding`**, with a `grain` field (`process`); the
+  learned-binding `source` reads `process` where it read `session`. Audit op names are unchanged.
+
+Sequence: build the venv → start the new service on the old port with the old toml → restart the
+client so bridges respawn (the bridge rule below) → `whoami` in one conversation shows
+`"grain": "process"`. Rollback is the reverse: stop the new service, start the old one from the
+old interpreter, restart the client.
+
 ## 0.1.4 → 0.1.5 (the dedup — six tools removed or folded)
 
 No data migration — but two server-side defaults change underneath you (session binding arms, and

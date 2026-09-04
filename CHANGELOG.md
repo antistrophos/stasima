@@ -5,6 +5,30 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
+- **The MCP v2 port, phase two (first half): binding demotes to PROCESS grain — the ruling
+  ("demote deliberately", 2026-08-02) made code.** The protocol has no per-conversation session to
+  bind: 2026-07-28 removed sessions, and phase one found that even a handshake-era client is handed
+  a fresh session object per request. So the per-session sticky table phase one carried across is
+  gone, and binding keeps exactly the grains where enforcement always worked — a pinned definition,
+  a ported definition (durable sticky), and the process itself (stdio: the client spawned it, so
+  that IS one conversation). Consequences, all shipped:
+  - **A shared http service refuses to start if it could learn** (`strict`/`witness` with no
+    `STASIMA_INSTANCE`): a service that learned would bind the whole fleet to its first writer —
+    the trunk problem, now structural rather than a caution. The error names the fix (`off`, or
+    pin). The fleet's own toml already runs `off`, so the live deployment needs no change.
+  - **`whoami`'s block is `binding` (was `session_binding`) and carries `grain: "process"`**; a
+    learned binding's `source` reads `process` (was `session`). Audit op names (`session_binding`,
+    `port_binding`) are ledger vocabulary and stay, so the rotation trail reads as one history.
+  - **The transport session survives as an audit LABEL, never as identity**: rows from the http
+    transport carry `session: s<id>` for a legacy client and `stateless` for the modern protocol,
+    so "writes on your branch from conversations other than yours" stays a query.
+  - The http test now proves the three honest shared-service shapes end to end: `off` (two
+    conversations, two seats, both write, attribution rides each envelope), strict-unpinned
+    (refused at startup with the instruction), and pinned (one seat's door enforced over the
+    modern protocol with no session at all). OPERATIONS and `docs/upgrading.md` (0.1.5 → 0.2.0)
+    say the same thing the code does. Per-request identity for a shared service is the token door
+    — the port's auth phase, not this one.
+
 - **The MCP v2 port, phase one: the server runs on SDK 2.1 (`mcp>=2.1,<3`) — protocol
   2026-07-28 — and still serves every earlier revision.** The pin below is lifted. `FastMCP`
   becomes `MCPServer`; the bind address and the DNS-rebinding allowlist become transport options

@@ -146,10 +146,11 @@ Then `reindex` once to re-embed the corpus. Swapping models is always a clean re
   `rev-parse(memo)` rows in the ledger are hits, not subprocess crossings — a healthy burst shows
   few `rev-parse` spawns and many memo hits.)
 
-## Seat identity and session binding (the SSH shape)
+## Seat identity and binding (the SSH shape)
 
 Identity in Stasima is TOFU, deliberately — and the binding layer manages it the way SSH does,
-with three postures per connection:
+with three postures per server process (binding lives at **process grain**: the MCP protocol since
+2026-07-28 has no per-conversation session for anything to bind to — see the trunk caveat below):
 
 - **Pinned** (archive seats, and any seat you never act-as-others through): set
   `STASIMA_INSTANCE=<seat>` in that server definition's env. Trust comes from a config entry you
@@ -168,15 +169,20 @@ with three postures per connection:
 **The trunk caveat (field-found, 2026-07-18).** Some clients share ONE server process across many
 chats — the Claude desktop app does. A shared definition there is a TRUNK, and sticky on a trunk
 means first-chat-wins: the first seat to write binds the process and every other seat's writes
-refuse (strict) or mis-stamp (witness — the `authored_via` would name the wrong session, so
-witness is dishonest on a shared process). Rule: **shared definitions run `off`; binding belongs
-on per-seat pinned definitions** (each enabled only in its seat's chat — the definition is the
-access port), or — the resolution — on the **HTTP transport**, where each conversation is its own
-session and sticky learning lands per conversation natively (`transport = "http"`; every audit row
-gains a `session` tag there, so cross-session forensics is a query). Never sticky a trunk; on
-HTTP, there is no trunk.
-- (Accept-new-and-hold at `announce` — classic TOFU over real per-session headers — remains the
-  designed shape for the HTTP transport. Not built; the design is on record.)
+refuse (strict) or mis-stamp (witness — the `authored_via` would name the wrong chat, so witness
+is dishonest on a shared process). Rule: **shared definitions run `off`; binding belongs on
+per-seat pinned definitions** (each enabled only in its seat's chat — the definition is the access
+port). The HTTP fleet service is a shared process by nature, and the protocol gives it nothing
+finer to bind: MCP 2026-07-28 removed protocol sessions (even a handshake-era client is handed a
+fresh session object per request). So the service runs `off` — attribution still rides every
+write, and every audit row from the http transport carries a `session` label (a legacy client's
+transport-session id, or `stateless`) so cross-conversation forensics stays a query — or it is
+**pinned** to one seat and becomes that seat's own door. The server **refuses to start** an http
+service that could learn (`strict`/`witness` with no `STASIMA_INSTANCE`): a shared service that
+learned would bind the whole fleet to its first writer. Never sticky a trunk.
+- Per-request identity for a shared service is the **token door** (the OAuth layer, below): the
+  seat's credential rides each request, and adoption mints the credential together with the name.
+  That is the designed shape; the binding modes above are the process-grain guard until it lands.
 
 `STASIMA_BINDING` picks what a bound connection does on a MISMATCHED identity-claiming write
 (reads are never guarded; the corpus is world-readable and the inbox is pull):
@@ -192,8 +198,8 @@ HTTP, there is no trunk.
 
 ## Running the HTTP service (the fleet server)
 
-One long-running process serves every seat; each conversation is its own transport session, so
-sticky binding is per-conversation natively and one meter/memo/sidecar warms for the whole fleet.
+One long-running process serves every seat, and one meter/memo/sidecar warms for the whole fleet.
+It is a shared process, so it runs with binding `off` (or pinned to one seat) — see "Seat identity".
 
 **Config — a SEPARATE toml for the service.** Do not flip the shared stdio toml to
 `transport = "http"`: stdio definitions spawn children that read the same file and would each try
@@ -206,8 +212,9 @@ to serve HTTP. Copy it (e.g. `stasima-http.toml`), same `git_dir` and derived DB
 **Start it** (console): set `STASIMA_CONFIG` to the http toml and run `python -m
 stasima.cap_server` — the window IS the service; Ctrl+C stops it. To survive logins, put a
 one-line `.cmd` (set the env, start the module) in the Startup folder or a Task Scheduler
-logon task. Run the fleet service UNPINNED (no `STASIMA_INSTANCE`) — sessions self-bind;
-a pinned or ported env would make the whole service a single-seat door.
+logon task. Run the fleet service with `binding_mode = "off"` in its toml (the server refuses to
+start a shared service that could learn); `STASIMA_INSTANCE` in its env would make the whole
+service a single-seat door — legitimate, but only if that is what you mean.
 
 **HTTPS for the desktop connector (the client requires TLS on remote connectors).** Terminate
 TLS in front of the loopback service — `tailscale serve --bg 8787` gives a real cert on your
@@ -245,8 +252,9 @@ Migration is per-seat and reversible — stdio definitions keep working unchange
 locking, the same multi-process reality the stdio fleet always had). Rollback = stop the
 service; seats reopen on stdio.
 
-**Verify**: `whoami` in any conversation shows the session binding block; audit rows from HTTP
-sessions carry a `session` tag; `perf_scry` becomes the whole fleet's one ledger.
+**Verify**: `whoami` in any conversation shows the `binding` block (`grain: process`, `mode: off`
+on a shared service); audit rows from the http transport carry a `session` label; `perf_scry`
+becomes the whole fleet's one ledger.
 
 **Restart sequence (bridge deployments — READ THIS).** When clients reach the server through the
 `mcp-proxy` bridge, the bridge holds ONE upstream transport session and **does not reconnect if the
@@ -261,12 +269,13 @@ Doing it the other way — or restarting the service under live bridges — leav
 with a dead bridge until the client is bounced. There is no partial fix; the client bounce is what
 respawns the bridges.
 
-**Binding over the bridge — set `binding_mode = "off"`.** The bridge multiplexes every conversation
-onto ONE transport session per bridge process, so per-session binding binds the *bridge* (a trunk),
-not the conversation: two seats that share a bridge collide (one binds it, the other's writes
-refuse). Don't sticky a trunk — put `binding_mode = "off"` in the http toml. Attribution still
-rides every write; per-conversation binding (and its anti-spoofing) returns with native HTTP + OAuth,
-where each conversation is its own session.
+**Binding over the bridge — `binding_mode = "off"`, as for any shared service.** The bridge
+multiplexes every conversation onto ONE transport session per bridge process, so even in the era
+when binding keyed on transport sessions it would have bound the *bridge* (a trunk), not the
+conversation: two seats that share a bridge collide (one binds it, the other's writes refuse).
+Today the server refuses to start a shared service that could learn, so the toml carries `off`.
+Attribution still rides every write; per-request identity (and its anti-spoofing) returns with the
+token door, where each request carries the seat's credential.
 
 **Rekeying.** Per source: a session-sticky binding dies with its process (rekey = close and
 reopen the chat); a port-sticky binding is cleared from the console — `stasima-admin binding`

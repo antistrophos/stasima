@@ -49,7 +49,9 @@ def boot(cfg_text):
     port = free_port()
     cfgpath = os.path.join(work, "stasima.toml")
     with open(cfgpath, "w", encoding="utf-8") as f:
-        f.write(f'git_dir = "{gd.replace(os.sep, "/")}"\ntransport = "http"\nhttp_port = {port}\n' + cfg_text)
+        # a shared http service runs binding off (the server refuses one that could learn)
+        f.write(f'git_dir = "{gd.replace(os.sep, "/")}"\ntransport = "http"\nhttp_port = {port}\n'
+                f'binding_mode = "off"\n' + cfg_text)
     proc = sp.Popen([sys.executable, "-m", "stasima.cap_server"],
                     env=dict(os.environ, STASIMA_CONFIG=cfgpath), cwd=HERE,
                     stdout=sp.DEVNULL, stderr=sp.DEVNULL)
@@ -82,6 +84,7 @@ try:
     cfgpath = os.path.join(w2, "stasima.toml")
     with open(cfgpath, "w", encoding="utf-8") as f:
         f.write(f'git_dir = "{gd.replace(os.sep, "/")}"\ntransport = "http"\nhttp_port = {port}\n'
+                f'binding_mode = "off"\n'    # shared service: off until per-request identity binds by token
                 f'http_public_url = "{public}"\nhttp_allowed_hosts = ["127.0.0.1"]\n')
     proc = sp.Popen([sys.executable, "-m", "stasima.cap_server"],
                     env=dict(os.environ, STASIMA_CONFIG=cfgpath), cwd=HERE,

@@ -18,11 +18,13 @@ entries, land chronology. A proposal's log entry must carry seq = this seq + 1.
 
 ### `whoami`
 
-How the server sees you — always including this connection's session binding (the
+How the server sees you — always including this server process's binding (the
 SSH-shaped identity pin with sticky learning; see OPERATIONS): mode, the bound name (pinned,
 port-restored, or learned from your first write — null if nothing has bound yet), its
-source, and whether YOUR claim matches. Mode `off` is the server-owned downgrade, shown
-plainly — like http:// in the address bar.
+source, its grain, and whether YOUR claim matches. Mode `off` is the server-owned downgrade,
+shown plainly — like http:// in the address bar. Binding lives at process grain: the
+protocol has no per-conversation session to bind, so a shared service runs `off` until
+per-request identity arrives as tokens.
 
 **Parameters**
 - `instance_id` (string, required)

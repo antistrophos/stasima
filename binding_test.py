@@ -99,8 +99,8 @@ async def main():
         print("7. relay verbs carry NO identity param — outside the guard by shape")
 
         w = payload(await client.call_tool("whoami", {"instance_id": "Recto"}))
-        assert w["session_binding"] == {"mode": "strict", "bound_instance": "Verso",
-                                        "source": "pinned", "match": False}, w
+        assert w["binding"] == {"mode": "strict", "grain": "process", "bound_instance": "Verso",
+                                "source": "pinned", "match": False}, w
         print("8a. whoami surfaces the pinned binding and the match")
 
     binds = audit.events(op="session_binding")
@@ -126,16 +126,16 @@ async def main():
     mcp4 = build_server(store4, index4, emb4, audit4)
     async with connect(mcp4) as client:
         w0 = payload(await client.call_tool("whoami", {"instance_id": "Recto"}))
-        assert w0["session_binding"] == {"mode": "strict", "bound_instance": None,
-                                         "source": None, "match": None}, w0
+        assert w0["binding"] == {"mode": "strict", "grain": "process", "bound_instance": None,
+                                 "source": None, "match": None}, w0
         first = payload(await client.call_tool("kip_commit", {"instance_id": "Recto", "domain": "state",
                                                               "slug": "st1", "body": "a", "op_id": "s1"}))
         assert first["author"] == "Recto", first             # first write LEARNS
         learned = [e for e in audit4.events(op="session_binding") if e["detail"].get("learned")]
-        assert learned and learned[0]["actor"] == "Recto" and learned[0]["detail"]["source"] == "session"
+        assert learned and learned[0]["actor"] == "Recto" and learned[0]["detail"]["source"] == "process"
         w1 = payload(await client.call_tool("whoami", {"instance_id": "Recto"}))
-        assert w1["session_binding"]["bound_instance"] == "Recto" and \
-               w1["session_binding"]["source"] == "session" and w1["session_binding"]["match"] is True, w1
+        assert w1["binding"]["bound_instance"] == "Recto" and \
+               w1["binding"]["source"] == "process" and w1["binding"]["match"] is True, w1
         again = payload(await client.call_tool("kip_commit", {"instance_id": "Recto", "domain": "state",
                                                               "slug": "st2", "body": "b", "op_id": "s2"}))
         assert again["author"] == "Recto", again             # same identity keeps working
@@ -159,7 +159,7 @@ async def main():
         assert "authored_via" not in env3, env3
         assert not audit3.events(op="session_binding"), "off must not learn"
         w = payload(await client.call_tool("whoami", {"instance_id": "Anyone"}))
-        assert w["session_binding"]["mode"] == "off", w      # the downgrade is visible, like http://
+        assert w["binding"]["mode"] == "off", w      # the downgrade is visible, like http://
         print("5. off: open trust, no learning, no stamps — and whoami shows the downgrade plainly")
 
     # ---- port durability: the learned binding survives a respawn; a clear re-arms ----
@@ -172,8 +172,8 @@ async def main():
     mcp5b = build_server(store5, index5, emb5, audit5, port_token="port-7")   # the respawn
     async with connect(mcp5b) as client:
         w = payload(await client.call_tool("whoami", {"instance_id": "Recto"}))
-        assert w["session_binding"] == {"mode": "strict", "bound_instance": "Recto",
-                                        "source": "port", "match": True, "port": "port-7"}, w
+        assert w["binding"] == {"mode": "strict", "grain": "process", "bound_instance": "Recto",
+                                "source": "port", "match": True, "port": "port-7"}, w
         other = await client.call_tool("kip_commit", {"instance_id": "Verso", "domain": "state",
                                                       "slug": "p2", "body": "b", "op_id": "p2"})
         assert other.is_error, "the restored port binding must enforce with no prior write"

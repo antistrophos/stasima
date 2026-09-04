@@ -128,17 +128,24 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     has_map = index is not None and embedder is not None
 
-    # Session binding — the SSH-shaped identity pin, with STICKY learning (port-security with
-    # sticky MACs; OPERATIONS, "Seat identity"). Sources, strongest first: STASIMA_INSTANCE
-    # (pinned — pre-seeded, no learning), a PORT-learned binding (STASIMA_PORT names this
-    # definition; the learned name persists as append-only port_binding events in the audit log —
-    # the ledger IS the running config, and the console clears it), a SESSION-learned binding
-    # (no port: the first identity-claiming WRITE binds this process for its lifetime; the rekey
-    # is a new process). Modes (STASIMA_BINDING): strict = mismatched writes refuse — THE DEFAULT:
-    # secure unless the server's owner explicitly downgrades; witness = proceed and confess
-    # (authored_via in the envelope + an audit row); off = the explicit rip-cord — no learning,
-    # no enforcement, the HTTPS-to-HTTP downgrade, server-owned and never callable from the wire.
-    # Reads are never guarded (pull model; the corpus is world-readable).
+    # Binding — the SSH-shaped identity pin, with STICKY learning (port-security with sticky MACs;
+    # OPERATIONS, "Seat identity"), at PROCESS grain. The ruling behind the grain (the v2 port,
+    # "demote deliberately"): protocol 2026-07-28 has no per-conversation session to bind — the
+    # spec removed sessions, and even a handshake-era client is handed a fresh session object per
+    # request — so binding keeps the grains where enforcement always worked. Sources, strongest
+    # first: STASIMA_INSTANCE (pinned — pre-seeded, no learning), a PORT-learned binding
+    # (STASIMA_PORT names this definition; the learned name persists as append-only port_binding
+    # events in the audit log — the ledger IS the running config, and the console clears it), a
+    # PROCESS-learned binding (no port: the first identity-claiming WRITE binds this process for its
+    # lifetime; the rekey is a new process — under stdio the client spawned this process, so that
+    # is one conversation). Modes (STASIMA_BINDING): strict = mismatched writes refuse — THE
+    # DEFAULT: secure unless the server's owner explicitly downgrades; witness = proceed and
+    # confess (authored_via in the envelope + an audit row); off = the explicit rip-cord — no
+    # learning, no enforcement, the HTTPS-to-HTTP downgrade, server-owned and never callable from
+    # the wire. A SHARED service (the http transport) must not learn — it would bind the whole
+    # fleet to its first writer — so server_from_config refuses to start one that could; per-
+    # request identity for a shared service arrives as tokens (the port's auth phase). Reads are
+    # never guarded (pull model; the corpus is world-readable).
     if bound_instance is not None and not str(bound_instance).strip():
         bound_instance = None
     if port_token is not None and not str(port_token).strip():
@@ -146,89 +153,24 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     binding_mode = (binding_mode or "strict").lower()
     if binding_mode not in ("strict", "witness", "off"):
         raise ValueError(f"binding_mode must be strict|witness|off, got {binding_mode!r}")
-    class _StdioSession:
-        pass
 
-    _STDIO_SESSION = _StdioSession()   # outside-request fallback; stdio's one pipe lands here too
+    _binding = {"name": None, "source": None}   # this process's learned (or port-restored) binding
 
-    class _SessionBindings:
-        """Per-SESSION sticky state. Keyed by the TRANSPORT's own session identity — for a
-        handshake-era HTTP client that is its Mcp-Session-Id (a string; the v2 SDK builds a fresh
-        ServerSession object per request, so the header is the only thing that survives across a
-        conversation's calls), held in a bounded table so a long-lived service cannot grow without
-        limit; for anything else the per-request session object, weakly, so the state dies with the
-        request and a recycled object id can never inherit a dead session's identity. Sticky
-        learning lands per CONVERSATION for legacy clients — the granularity the trunk caveat
-        wanted; under stdio the process has exactly one pipe, so it is the process-sticky it
-        replaces; under the stateless modern protocol there is no conversation to bind (the next
-        phase of the port makes that explicit — this phase only keeps the seam honest)."""
-        MAX_SESSIONS = 4096
-
-        def __init__(self):
-            import collections
-            import threading
-            import weakref
-            self.by_key = weakref.WeakKeyDictionary()
-            self.by_sid = collections.OrderedDict()
-            self._lock = threading.Lock()
-
-        def state(self, key):
-            with self._lock:
-                if isinstance(key, str):
-                    st = self.by_sid.get(key)
-                    if st is None:
-                        st = {"name": None, "source": None}
-                        self.by_sid[key] = st
-                        while len(self.by_sid) > self.MAX_SESSIONS:
-                            self.by_sid.popitem(last=False)
-                    else:
-                        self.by_sid.move_to_end(key)
-                    return st
-                st = self.by_key.get(key)
-                if st is None:
-                    st = {"name": None, "source": None}
-                    self.by_key[key] = st
-                return st
-
-    _bindings = _SessionBindings()
-    _port_restored = {"name": None}   # definition-grade durable identity, seeded into sessions lazily
-
-    def _session_key():
-        # THE seam: the transport session IS the identity granularity.
-        #   stdio / in-process       -> the process (one pipe)
-        #   handshake-era HTTP client -> its Mcp-Session-Id (the bridge's protocol; one per conversation)
-        #   stateless modern client   -> this request's session object (no conversation exists)
+    def _session_tag():
+        """Observability, never enforcement: the transport session a request rode in on — a
+        handshake-era client's Mcp-Session-Id (the bridge's protocol), 'stateless' for the modern
+        protocol (it has no session to name), None on stdio and in-process. Rides every audit row
+        from the http transport, so "writes on your branch from sessions other than yours" stays
+        a query even though nothing binds to it."""
         ctx = _current_request.get()
-        if ctx is None:
-            return _STDIO_SESSION
-        req = getattr(ctx, "request", None)
+        req = getattr(ctx, "request", None) if ctx is not None else None
         if req is None:
-            return _STDIO_SESSION
+            return None
         try:
             sid = req.headers.get("mcp-session-id")
         except Exception:
             sid = None
-        if sid:
-            return sid
-        try:
-            return ctx.session
-        except Exception:
-            return _STDIO_SESSION
-
-    def _session_tag(sk):
-        # the audit row's session label: the transport session's id for a legacy conversation;
-        # 'stateless' when the request carried none (the modern protocol has no session to name)
-        if isinstance(sk, str):
-            return f"s{sk[:8]}"
-        return "stateless"
-
-    def _session_state():
-        st = _bindings.state(_session_key())
-        if st["name"] is None and _port_restored["name"] is not None:
-            # a ported definition's restored identity seeds every session (definition-grade
-            # durability — a ported service is a single-seat door, like a pin that was learned)
-            st.update(name=_port_restored["name"], source="port")
-        return st
+        return f"s{sid[:8]}" if sid else "stateless"
 
     def persp_ref(iid): return PERSP + iid
     def prop_ref(pid): return PROP + pid
@@ -307,12 +249,12 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     def _log(actor, op, **kw):
         if audit is not None:
-            sk = _session_key()
-            if sk is not _STDIO_SESSION:
-                # session-scoped audit (the HTTP era): every row names the transport session it
-                # came from, so "commits on your branch from sessions other than yours" is a query
+            tag = _session_tag()
+            if tag:
+                # session-labelled audit (the http transport): every row names the transport
+                # session it came from — forensics, not identity
                 d = dict(kw.get("detail") or {})
-                d.setdefault("session", _session_tag(sk))
+                d.setdefault("session", tag)
                 kw["detail"] = d
             audit.append(actor, op, **kw)
 
@@ -326,23 +268,23 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             raise
 
     def _check_binding(claimed, op, ref=None, path=None):
-        """Identity-claiming WRITES check their claimed name against this connection's binding —
-        pinned (env), port-learned (durable sticky), or session-learned (the first write binds).
+        """Identity-claiming WRITES check their claimed name against this process's binding —
+        pinned (env), port-learned (durable sticky), or process-learned (the first write binds).
         Returns the witness stamp ({'authored_via': <bound name>}) when the caller should stamp an
         envelope, else None. Every witness mismatch leaves an audit row here regardless of whether
-        the op writes an envelope — the confession is never optional, only its git copy is."""
+        the op writes an envelope — the confession is never optional, only its git copy is. (The
+        audit op names `session_binding` / `port_binding` are ledger vocabulary from the era that
+        bound per transport session; they stay, so the rotation history reads as one trail.)"""
         if binding_mode == "off":
             return None                                    # the explicit, server-owned rip-cord
-        st = _session_state()
-        bound = bound_instance or st["name"]
+        bound = bound_instance or _binding["name"]
         if bound is None:
-            # sticky learn: the first identity-claiming write binds this SESSION — and, through
+            # sticky learn: the first identity-claiming write binds this PROCESS — and, through
             # a port, the definition (durably: the learn is an append-only event the console clears)
-            st.update(name=claimed, source="port" if port_token else "session")
-            detail = {"mode": binding_mode, "source": st["source"], "learned": True}
+            _binding.update(name=claimed, source="port" if port_token else "process")
+            detail = {"mode": binding_mode, "source": _binding["source"], "learned": True}
             if port_token:
                 detail["port"] = port_token
-                _port_restored["name"] = claimed   # the definition learned, not just this session
                 _log(claimed, "port_binding", detail={"port": port_token, "action": "learn",
                                                       "mode": binding_mode})
             _log(claimed, "session_binding", detail=detail)
@@ -371,7 +313,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         # a cleared port re-arms learning)
         _prior = port_bindings(audit).get(port_token, {}).get("instance")
         if _prior:
-            _port_restored["name"] = _prior   # seeds every session lazily via _session_state
+            _binding.update(name=_prior, source="port")   # the definition learned; this process inherits
             _log(_prior, "session_binding", detail={"mode": binding_mode, "source": "port",
                                                     "port": port_token, "restored": True})
 
@@ -488,22 +430,23 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     @tool()
     def whoami(instance_id: str) -> dict:
-        """How the server sees you — always including this connection's session binding (the
+        """How the server sees you — always including this server process's binding (the
         SSH-shaped identity pin with sticky learning; see OPERATIONS): mode, the bound name (pinned,
         port-restored, or learned from your first write — null if nothing has bound yet), its
-        source, and whether YOUR claim matches. Mode `off` is the server-owned downgrade, shown
-        plainly — like http:// in the address bar."""
+        source, its grain, and whether YOUR claim matches. Mode `off` is the server-owned downgrade,
+        shown plainly — like http:// in the address bar. Binding lives at process grain: the
+        protocol has no per-conversation session to bind, so a shared service runs `off` until
+        per-request identity arrives as tokens."""
         out = {"instance_id": instance_id, "perspective_ref": persp_ref(instance_id),
                "namespace": f"perspectives/{instance_id}", "allowed_ops": ["kip_commit", "propose", "imp_send", "vap_record"],
-               "note": "identity is a recorded name; the session binding (transport-pinned or sticky-learned) guards writes"}
-        st = _session_state()
-        eff = bound_instance or st["name"]
-        sb = {"mode": binding_mode, "bound_instance": eff,
-              "source": "pinned" if bound_instance else st["source"],
+               "note": "identity is a recorded name; the binding (pinned or sticky-learned, at process grain) guards writes"}
+        eff = bound_instance or _binding["name"]
+        sb = {"mode": binding_mode, "grain": "process", "bound_instance": eff,
+              "source": "pinned" if bound_instance else _binding["source"],
               "match": (instance_id == eff) if eff else None}
         if port_token:
             sb["port"] = port_token
-        out["session_binding"] = sb
+        out["binding"] = sb
         return out
 
     # ---------------------------------------------------------------- author
@@ -1366,6 +1309,19 @@ def components_from_config(cfg):
 def server_from_config(cfg) -> MCPServer:
     """Assemble the MCP server from a Config."""
     store, index, embedder, audit, authz, airlock = components_from_config(cfg)
+    _bound = os.environ.get("STASIMA_INSTANCE") or None
+    _mode = (os.environ.get("STASIMA_BINDING") or getattr(cfg, "binding_mode", "") or "strict").lower()
+    if cfg.transport == "http" and _mode != "off" and not _bound:
+        # A shared service that could LEARN would bind the whole fleet to its first writer (the
+        # trunk problem, made structural): the protocol has no per-conversation session for the
+        # binding to attach to. The honest configurations are: off (attribution still rides every
+        # write), or pinned (STASIMA_INSTANCE makes the service one seat's own door).
+        from .config import ConfigError
+        raise ConfigError(f"transport = \"http\" with binding_mode = {_mode!r} and no STASIMA_INSTANCE: "
+                          "a shared http service has no per-conversation session to bind (protocol "
+                          "2026-07-28), so sticky learning would bind the whole service to its first "
+                          "writer. Set binding_mode = \"off\" in the http toml (attribution rides every "
+                          "write regardless), or pin the service to one seat with STASIMA_INSTANCE.")
     oauth_provider = None
     if getattr(cfg, "http_public_url", ""):
         from .oauth import StasimaOAuth
@@ -1378,10 +1334,10 @@ def server_from_config(cfg) -> MCPServer:
                         deployment_name=cfg.deployment_name,
                         # binding rides ENV, not the shared config file: the config is one file for
                         # every seat's definition; the env is what distinguishes definitions
-                        bound_instance=os.environ.get("STASIMA_INSTANCE") or None,
+                        bound_instance=_bound,
                         # env overrides the config field; config lets the http toml carry it (a
-                        # bridge deployment sets binding_mode = "off" — don't sticky a trunk)
-                        binding_mode=os.environ.get("STASIMA_BINDING") or getattr(cfg, "binding_mode", "") or None,
+                        # shared service sets binding_mode = "off" — guarded above)
+                        binding_mode=_mode,
                         port_token=os.environ.get("STASIMA_PORT") or None)
 
 
