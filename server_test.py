@@ -18,7 +18,7 @@ from stasima.map_index import SqliteMapIndex, StubEmbedder, index_entry
 from stasima.audit_log import SqliteAuditLog
 from stasima.authz import DefaultPolicy
 from stasima.cap_server import build_server, compose_entry, parse_entry, reindex_from_git
-from mcp.shared.memory import create_connected_server_and_client_session as connect
+from mcp.client import Client as connect   # v2: the in-process client — one Client, one connection
 
 
 def setup():
@@ -38,7 +38,7 @@ def setup():
 
 
 def payload(res):
-    sc = getattr(res, "structuredContent", None)
+    sc = res.structured_content
     if sc is not None:
         if isinstance(sc, dict) and set(sc.keys()) == {"result"}:
             return sc["result"]
@@ -113,21 +113,21 @@ async def main():
         # a lenient propose but fails at land — the practitioner-as-error-relay. Rejected at propose:
         up = await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1",
             "domain": "meta/log", "slug": "3C", "type": "log", "seq": "3c", "body": "x", "op_id": "op-up"})
-        assert getattr(up, "isError", False), "uppercase log slug must be refused at propose"
+        assert up.is_error, "uppercase log slug must be refused at propose"
         sl = await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1",
             "domain": "meta/log/", "slug": "3c", "type": "log", "seq": "3c", "body": "x", "op_id": "op-sl"})
-        assert getattr(sl, "isError", False), "trailing-slash domain must be refused at propose"
+        assert sl.is_error, "trailing-slash domain must be refused at propose"
         print("A3: case/slash log coordinates refused at propose (not relayed to the land)")
 
         # retraction: creator-only lane (audited denial), and every retract writes operation-truth
         r9 = await client.call_tool("propose_retract", {"instance_id": "research-9", "proposal_id": "p-1",
                                                         "path": "practice/principle-durability.md", "op_id": "rx-1"})
-        assert getattr(r9, "isError", False), "cross-instance retract must be denied"
+        assert r9.is_error, "cross-instance retract must be denied"
         denial = [e for e in audit.events(op="propose_retract") if e["outcome"] == "denied"]
         assert denial and denial[-1]["actor"] == "research-9" and denial[-1]["detail"]["owner"] == "research-2"
         ok_r = await client.call_tool("propose_retract", {"instance_id": "research-2", "proposal_id": "p-1",
                                                           "path": "practice/principle-durability.md", "op_id": "rx-2"})
-        assert not getattr(ok_r, "isError", False), "creator's own retract must succeed"
+        assert not ok_r.is_error, "creator's own retract must succeed"
         evs = [e for e in audit.events(op="propose_retract") if e["outcome"] == "ok"]
         assert evs and evs[-1]["actor"] == "research-2" and evs[-1]["target_path"] == "practice/principle-durability.md"             and evs[-1]["result_oid"], "retraction must write full operation-truth"
         assert "practice/principle-durability.md" not in store.list_paths("refs/cap/proposals/p-1"),             "retracted path must actually leave the proposal tree"
@@ -148,10 +148,10 @@ async def main():
         # log entries fail fast at propose-time: missing/malformed seq refuses HERE, not at the land
         bad_log = await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1",
             "domain": "meta/log", "slug": "3c", "body": "no seq given", "op_id": "op-badlog", "type": "log"})
-        assert getattr(bad_log, "isError", False), "meta/log without seq must refuse at propose-time"
+        assert bad_log.is_error, "meta/log without seq must refuse at propose-time"
         mism = await client.call_tool("propose", {"instance_id": "research-2", "proposal_id": "p-1",
             "domain": "meta/log", "slug": "3c", "body": "x", "op_id": "op-mismlog", "type": "log", "seq": "3d"})
-        assert getattr(mism, "isError", False), "log slug != seq must refuse at propose-time"
+        assert mism.is_error, "log slug != seq must refuse at propose-time"
         print("retract reverts canon-held paths | meta/log fails fast at propose OK")
         # THE CROSS-PROPOSE ATTRIBUTION GUARD: carrying another seat's work toward canon requires
         # origin_author — silent reattribution refused on BOTH axes (path under another name; verbatim
@@ -163,20 +163,20 @@ async def main():
         sil = await client.call_tool("propose", {"instance_id": "research-9", "proposal_id": "p-x",
             "domain": "practice", "slug": "attribution-src", "body": "Attribution is provenance made durable.",
             "op_id": "px-1"})
-        assert getattr(sil, "isError", False) and "research-2" in str(sil.content), \
+        assert sil.is_error and "research-2" in str(sil.content), \
             "silent cross-propose (path+body match) must refuse, naming the origin"
         ren = await client.call_tool("propose", {"instance_id": "research-9", "proposal_id": "p-x",
             "domain": "practice", "slug": "renamed-carriage", "body": "Attribution is provenance made durable.",
             "op_id": "px-2"})
-        assert getattr(ren, "isError", False), "verbatim body under a NEW slug must still refuse (rename-bypass closed)"
+        assert ren.is_error, "verbatim body under a NEW slug must still refuse (rename-bypass closed)"
         lie = await client.call_tool("propose", {"instance_id": "research-9", "proposal_id": "p-x",
             "domain": "practice", "slug": "renamed-carriage", "body": "Attribution is provenance made durable.",
             "op_id": "px-3", "origin_author": "research-7"})
-        assert getattr(lie, "isError", False), "an origin_author contradicting the matched evidence must refuse"
+        assert lie.is_error, "an origin_author contradicting the matched evidence must refuse"
         ok_x = await client.call_tool("propose", {"instance_id": "research-9", "proposal_id": "p-x",
             "domain": "practice", "slug": "renamed-carriage", "body": "Attribution is provenance made durable.",
             "op_id": "px-4", "origin_author": "research-2"})
-        assert not getattr(ok_x, "isError", False), "carriage WITH true origin must pass"
+        assert not ok_x.is_error, "carriage WITH true origin must pass"
         carried = store.read_blob("refs/cap/proposals/p-x", "practice/renamed-carriage.md").decode()
         assert "origin_author: research-2" in carried, "the envelope carries the true author"
         cpx = payload(await client.call_tool("conflict_preview", {"proposal_id": "p-x"}))
@@ -188,7 +188,7 @@ async def main():
         for bad in ("Has Space", "UPPER", "-leads", "x" * 65):
             b = await client.call_tool("kip_commit", {"instance_id": "research-2", "domain": "practice",
                 "slug": f"bad-{len(bad)}", "body": "x", "op_id": f"th-bad-{len(bad)}", "thread": bad})
-            assert getattr(b, "isError", False), f"non-ref-safe tag {bad!r} must refuse"
+            assert b.is_error, f"non-ref-safe tag {bad!r} must refuse"
         await client.call_tool("kip_commit", {"instance_id": "research-2", "domain": "practice",
             "slug": "thread-entry", "body": "A threaded entry.", "op_id": "th-1", "thread": "weave-test"})
         assert not getattr(await client.call_tool("propose", {"instance_id": "research-9",
@@ -228,7 +228,7 @@ async def main():
         # terminal for SEAT operations (the gate stays sovereign); the listing carries the lifecycle
         nc = await client.call_tool("propose_close", {"instance_id": "research-2", "proposal_id": "p-x",
                                                       "reason": "not mine to close", "op_id": "cl-0"})
-        assert getattr(nc, "isError", False), "non-creator close must be denied"
+        assert nc.is_error, "non-creator close must be denied"
         cl = payload(await client.call_tool("propose_close", {"instance_id": "research-9", "proposal_id": "p-x",
                                                               "reason": "superseded by a fresh proposal", "op_id": "cl-1"}))
         assert cl["closed"] and cl["reason"] == "superseded by a fresh proposal", cl
@@ -237,10 +237,10 @@ async def main():
         assert again.get("already") is True, "re-close reports already, changes nothing"
         dead = await client.call_tool("propose", {"instance_id": "research-9", "proposal_id": "p-x",
             "domain": "practice", "slug": "late-arrival", "body": "too late", "op_id": "cl-3"})
-        assert getattr(dead, "isError", False) and "closed" in str(dead.content), "propose to closed refuses"
+        assert dead.is_error and "closed" in str(dead.content), "propose to closed refuses"
         dead_r = await client.call_tool("propose_retract", {"instance_id": "research-9", "proposal_id": "p-x",
                                                             "path": "practice/renamed-carriage.md", "op_id": "cl-4"})
-        assert getattr(dead_r, "isError", False), "retract on closed refuses"
+        assert dead_r.is_error, "retract on closed refuses"
         lp = payload(await client.call_tool("list_proposals", {}))
         assert lp["statuses"]["p-x"]["status"] == "closed" and "superseded" in lp["statuses"]["p-x"]["closed_reason"]
         assert lp["statuses"]["p-1"]["status"] == "open" and lp["statuses"]["p-1"].get("lands_behind") == 0, lp["statuses"]["p-1"]
@@ -282,7 +282,7 @@ async def main():
         assert corpse["path"] == "practice/durability-notes.md" and corpse["status"] == "superseded", corpse
         # a miss on the asked ref NAMES where the path actually lives — the error is the instruction
         miss = await client.call_tool("kip_get", {"ref": "research-7", "path": "practice/durability-v2.md"})
-        assert getattr(miss, "isError", False) and "research-2" in str(miss.content), miss.content
+        assert miss.is_error and "research-2" in str(miss.content), miss.content
         # FEATURE A — live-only search by default; include_superseded is the deliberate opt-in,
         # and the hit carries its status so the retired edition is apparent
         live_hits = payload(await client.call_tool("map_search",
@@ -296,7 +296,7 @@ async def main():
         # and a different body on the same path is still refused (the guard the flip rode through)
         bad = await client.call_tool("kip_commit", {"instance_id": "research-2", "domain": "practice",
             "slug": "durability-notes", "body": "secretly rewritten", "op_id": "sup-3"})
-        assert getattr(bad, "isError", False), "body change must still be refused"
+        assert bad.is_error, "body change must still be refused"
         # relevance floor: below-floor hits are withheld WITH a count (an empty result says "N weak
         # matches withheld", never just silence); include_weak returns them; the stub's own default
         # floor is 0 = off (live calibration showed its scores cannot separate true hits from junk)
@@ -383,7 +383,7 @@ async def main():
         # authz seam: a message via kip_commit is denied (use imp_send), and the denial is audit-logged
         res = await client.call_tool("kip_commit", {"instance_id": "research-2", "domain": "messages",
                                                     "slug": "x", "body": "y", "op_id": "op-deny"})
-        denied = bool(getattr(res, "isError", False))
+        denied = bool(res.is_error)
         denial_logged = any(e["outcome"] == "denied" for e in audit.events())
         print("kip_commit into messages/ denied:", denied, "| denial audit-logged:", denial_logged)
 

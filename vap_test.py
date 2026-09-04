@@ -27,7 +27,7 @@ from stasima.audit_log import SqliteAuditLog
 from stasima.authz import DefaultPolicy
 from stasima.cap_server import build_server, compose_entry
 from stasima.entries import parse_entry
-from mcp.shared.memory import create_connected_server_and_client_session as connect
+from mcp.client import Client as connect   # v2: the in-process client — one Client, one connection
 
 work = tempfile.mkdtemp(prefix="cap-vap-")
 gd = os.path.join(work, "stasima.git")
@@ -46,7 +46,7 @@ def make_server():
 
 
 def pay(r):
-    sc = getattr(r, "structuredContent", None)
+    sc = r.structured_content
     return sc.get("result", sc) if isinstance(sc, dict) else \
         json.loads("".join(getattr(c, "text", "") for c in r.content))
 
@@ -97,7 +97,7 @@ async def main():
         bad = await c.call_tool("vap_record", {"instance_id": "Bram", "binds": "practice/tide-note.md",
                                                "horizon": "pretending this was my horizon",
                                                "op_id": "v3", "kind": "confirmed"})
-        assert getattr(bad, "isError", False), "a 'confirmed' vantage on another's entry must be refused"
+        assert bad.is_error, "a 'confirmed' vantage on another's entry must be refused"
 
         # MELODY: one author's vantage-thread
         mine = pay(await c.call_tool("vap_for", {"author": "Aria"}))["vantages"]
@@ -128,9 +128,9 @@ async def main():
         bad_fold = await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
                 "slug": "fold-note", "body": "DIFFERENT body", "op_id": "af2",
                 "horizon": "this horizon must never land"})
-        assert getattr(bad_fold, "isError", False), "the entry refusal must fire"
+        assert bad_fold.is_error, "the entry refusal must fire"
         orphan = await c.call_tool("kip_get", {"ref": "Aria", "path": "vantages/af2-vap.md"})
-        assert getattr(orphan, "isError", False), "no orphaned vantage on a refused entry"
+        assert orphan.is_error, "no orphaned vantage on a refused entry"
         # OMISSION STAYS HONEST: no horizon means no vantage — never auto-filled
         plain = pay(await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
                 "slug": "plain-note", "body": "no fold", "op_id": "af3"}))
@@ -145,7 +145,7 @@ async def main():
                 "slug": "plain-note", "body": "no fold", "op_id": "af3", "horizon": "phantom horizon"}))
         assert rep2.get("replayed") is True and "folded" not in rep2 and "note" in rep2, rep2
         ph = await c.call_tool("kip_get", {"ref": "Aria", "path": "vantages/af3-vap.md"})
-        assert getattr(ph, "isError", False), "no phantom vantage blob in git"
+        assert ph.is_error, "no phantom vantage blob in git"
         fvp = pay(await c.call_tool("vap_for", {"entry": "practice/plain-note.md"}))["vantages"]
         assert not any(v["path"] == "vantages/af3-vap.md" for v in fvp), "no phantom vantage in the index"
 
@@ -154,7 +154,7 @@ async def main():
         reuse = await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
                 "slug": "reuse-note", "body": "a different entry", "op_id": "af1",
                 "horizon": "would silently overwrite af1's recorded horizon"})
-        assert getattr(reuse, "isError", False), "op_id reuse with a fold must be refused"
+        assert reuse.is_error, "op_id reuse with a fold must be refused"
         v_orig = pay(await c.call_tool("kip_get", {"ref": "Aria", "path": "vantages/af1-vap.md"}))
         assert "standpoint the note cannot carry" in v_orig["text"], "original horizon intact"
 
@@ -170,11 +170,11 @@ async def main():
         r4 = await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
                 "slug": "fold-note-v2", "body": "a folded note, restated", "op_id": "af4",
                 "supersedes": ["practice/fold-note.md"]})
-        assert not getattr(r4, "isError", False), r4
+        assert not r4.is_error, r4
         r5 = await c.call_tool("kip_commit", {"instance_id": "Aria", "domain": "practice",
                 "slug": "fold-note", "body": "a folded note", "op_id": "af5", "status": "superseded",
                 "superseded_by": ["practice/fold-note-v2.md"]})
-        assert not getattr(r5, "isError", False), r5
+        assert not r5.is_error, r5
         sv = pay(await c.call_tool("vap_for", {"entry": "practice/fold-note.md"}))["vantages"]
         assert any(v["path"] == "vantages/af1-vap.md" and v["binds_status"] == "superseded" for v in sv), sv
 

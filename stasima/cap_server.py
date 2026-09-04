@@ -9,11 +9,14 @@ Audit scope: writes (state changes) and failures (what's breaking). Successful r
 and are not logged; read-receipts ARE logged (forensic, write-like). Mutations follow git-first-then-
 audit. Identity is the instance's declared name (a deployment binds it from the transport token).
 """
+import contextvars
+import functools
 import os
 import sys
 import time
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from .local_capstore import (LocalCapStore, Identity, PathNotFound, RefNotFound, StaleRef,
                             CapStoreError, PERSP_PREFIX as PERSP, PROP_PREFIX as PROP)
@@ -69,10 +72,9 @@ def port_bindings(audit) -> dict:
 def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, authz=None, airlock=None, *,
                  orientation_text: str = None, orientation_base: str = "technical/orientation",
                  seq_origin: int = CHAT_ERA_FREEZE, deployment_name: str = "",
-                 http_host: str = "127.0.0.1", http_port: int = 8787, http_allowed_hosts=(),
                  bound_instance: str = None, binding_mode: str = None,
                  port_token: str = None,
-                 oauth_provider=None, public_url: str = None) -> FastMCP:
+                 oauth_provider=None, public_url: str = None) -> MCPServer:
     _auth_kwargs = {}
     if oauth_provider is not None and public_url:
         # the OAuth door: the SDK mounts discovery + DCR + /authorize + /token + the bearer
@@ -83,9 +85,47 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                         "auth": AuthSettings(issuer_url=public_url,
                                              resource_server_url=f"{public_url.rstrip('/')}/mcp",
                                              client_registration_options=ClientRegistrationOptions(enabled=True))}
-    mcp = FastMCP("stasima", host=http_host, port=http_port,   # host/port used only by the http transport
-                  transport_security=_transport_security(http_host, http_allowed_hosts),
-                  **_auth_kwargs)
+
+    # The request seam (v2). The v1 server exposed the live request context as an attribute the
+    # binding code read from anywhere; v2 hands it only to the handler. A server middleware sees
+    # every inbound message with its context built, so it publishes the context in a contextvar
+    # for the duration of the call — the handler runs inside call_next, in the same context, and
+    # anyio carries contextvars into the worker thread a sync tool runs on. Outside a request the
+    # var is None and the seam falls back to the process-wide session (stdio's one pipe).
+    _current_request = contextvars.ContextVar("stasima_request", default=None)
+
+    async def _publish_request(ctx, call_next):
+        token = _current_request.set(ctx)
+        try:
+            return await call_next(ctx)
+        finally:
+            _current_request.reset(token)
+
+    # host/port/transport-security are transport options in v2, not server identity: they ride
+    # run() / streamable_http_app() in main(), where the config is.
+    mcp = MCPServer("stasima", middleware=[_publish_request], **_auth_kwargs)
+
+    def tool(**kw):
+        """The SDK's tool decorator with errors-as-instructions preserved. The 2.1 SDK renders a `ToolError`
+        with its own message but wraps any OTHER exception first, so a refusal raised as `Denied`
+        (or a store error) would reach the seat as the wrapper's text — and every recover routine
+        the docks teach reads the refusal's sentence. So each tool lifts what it raises into a
+        `ToolError` carrying that sentence: a `Denied` verbatim (its message is already the
+        instruction), anything else prefixed with its class (the shape of the fault)."""
+        def deco(fn):
+            @functools.wraps(fn)
+            def instructive(*a, **k):
+                try:
+                    return fn(*a, **k)
+                except ToolError:
+                    raise
+                except Denied as e:
+                    raise ToolError(str(e)) from e
+                except Exception as e:
+                    raise ToolError(f"{type(e).__name__}: {e}") from e
+            return mcp.tool(**kw)(instructive)
+        return deco
+
     has_map = index is not None and embedder is not None
 
     # Session binding — the SSH-shaped identity pin, with STICKY learning (port-security with
@@ -112,19 +152,38 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     _STDIO_SESSION = _StdioSession()   # outside-request fallback; stdio's one pipe lands here too
 
     class _SessionBindings:
-        """Per-SESSION sticky state (Phase B, live). Keyed by the TRANSPORT's own session object —
-        weakly, so a session's binding dies with the session and a recycled object id can never
-        inherit a dead session's identity. Streamable HTTP hands each client its own ServerSession:
-        sticky learning lands per CONVERSATION — the granularity the trunk caveat wanted. Under
-        stdio the process has exactly one session, so behavior is the process-sticky it replaces."""
+        """Per-SESSION sticky state. Keyed by the TRANSPORT's own session identity — for a
+        handshake-era HTTP client that is its Mcp-Session-Id (a string; the v2 SDK builds a fresh
+        ServerSession object per request, so the header is the only thing that survives across a
+        conversation's calls), held in a bounded table so a long-lived service cannot grow without
+        limit; for anything else the per-request session object, weakly, so the state dies with the
+        request and a recycled object id can never inherit a dead session's identity. Sticky
+        learning lands per CONVERSATION for legacy clients — the granularity the trunk caveat
+        wanted; under stdio the process has exactly one pipe, so it is the process-sticky it
+        replaces; under the stateless modern protocol there is no conversation to bind (the next
+        phase of the port makes that explicit — this phase only keeps the seam honest)."""
+        MAX_SESSIONS = 4096
+
         def __init__(self):
+            import collections
             import threading
             import weakref
             self.by_key = weakref.WeakKeyDictionary()
+            self.by_sid = collections.OrderedDict()
             self._lock = threading.Lock()
 
         def state(self, key):
             with self._lock:
+                if isinstance(key, str):
+                    st = self.by_sid.get(key)
+                    if st is None:
+                        st = {"name": None, "source": None}
+                        self.by_sid[key] = st
+                        while len(self.by_sid) > self.MAX_SESSIONS:
+                            self.by_sid.popitem(last=False)
+                    else:
+                        self.by_sid.move_to_end(key)
+                    return st
                 st = self.by_key.get(key)
                 if st is None:
                     st = {"name": None, "source": None}
@@ -136,10 +195,32 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     def _session_key():
         # THE seam: the transport session IS the identity granularity.
+        #   stdio / in-process       -> the process (one pipe)
+        #   handshake-era HTTP client -> its Mcp-Session-Id (the bridge's protocol; one per conversation)
+        #   stateless modern client   -> this request's session object (no conversation exists)
+        ctx = _current_request.get()
+        if ctx is None:
+            return _STDIO_SESSION
+        req = getattr(ctx, "request", None)
+        if req is None:
+            return _STDIO_SESSION
         try:
-            return mcp._mcp_server.request_context.session
+            sid = req.headers.get("mcp-session-id")
+        except Exception:
+            sid = None
+        if sid:
+            return sid
+        try:
+            return ctx.session
         except Exception:
             return _STDIO_SESSION
+
+    def _session_tag(sk):
+        # the audit row's session label: the transport session's id for a legacy conversation;
+        # 'stateless' when the request carried none (the modern protocol has no session to name)
+        if isinstance(sk, str):
+            return f"s{sk[:8]}"
+        return "stateless"
 
     def _session_state():
         st = _bindings.state(_session_key())
@@ -231,7 +312,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 # session-scoped audit (the HTTP era): every row names the transport session it
                 # came from, so "commits on your branch from sessions other than yours" is a query
                 d = dict(kw.get("detail") or {})
-                d.setdefault("session", f"s{id(sk) & 0xffffff:06x}")
+                d.setdefault("session", _session_tag(sk))
                 kw["detail"] = d
             audit.append(actor, op, **kw)
 
@@ -387,7 +468,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             store, base=orientation_base, deployment_name=deployment_name)
 
     # ---------------------------------------------------------------- orient
-    @mcp.tool()
+    @tool()
     def announce(instance_id: str) -> dict:
         """Announce presence; returns orientation + current canon head + your perspective tip."""
         home = deployment_name or "Stasima"
@@ -405,7 +486,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     # (0.1.5 dedup: `orientation` and `canon_head` removed — the former was one field of announce's
     # return, the latter a strict subset of canon_state. One home per fact.)
 
-    @mcp.tool()
+    @tool()
     def whoami(instance_id: str) -> dict:
         """How the server sees you — always including this connection's session binding (the
         SSH-shaped identity pin with sticky learning; see OPERATIONS): mode, the bound name (pinned,
@@ -426,7 +507,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         return out
 
     # ---------------------------------------------------------------- author
-    @mcp.tool()
+    @tool()
     def kip_commit(instance_id: str, domain: str, slug: str, body: str, op_id: str,
                    title: str = "", type: str = "kno",
                    tags: list[str] | None = None, references: list[str] | None = None,
@@ -521,7 +602,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         return out
 
     # ---------------------------------------------------------------- read
-    @mcp.tool()
+    @tool()
     def kip_get(ref: str, path: str, resolve: str = "live", with_vantages: bool = False) -> dict:
         """Read an entry (envelope + body in `text`). `ref`: 'canon', a seat name, or a full ref.
         resolve='live' (default) follows supersession to the LIVING edition (redirects shown in
@@ -580,7 +661,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         blank = {"title": "", "status": "", "type": ""}
         return [{"path": p, **env.get(p, blank)} for p in paths]
 
-    @mcp.tool()
+    @tool()
     def list_entries(ref: str, path: str = "") -> dict:
         """List entries under a ref ('canon', an instance name, or a full ref) as triageable pointers —
         each carries path, title, status, and type, so live-vs-dead and what's-what are apparent
@@ -591,7 +672,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     # (0.1.5 dedup: `my_perspective` removed — list_entries(ref=<your name>) is the same listing;
     # your tip rides announce and sup_state.)
 
-    @mcp.tool()
+    @tool()
     def kip_history(ref: str, path: str) -> dict:
         """Version trail for an entry (newest first): oid, author, subject, title — the pointer
         grammar extends to trails, so a version is recognizable without fetching its body."""
@@ -607,7 +688,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         return {"history": hist}
 
     # ---------------------------------------------------------------- propose + track
-    @mcp.tool()
+    @tool()
     def propose(instance_id: str, proposal_id: str, domain: str, slug: str, body: str, op_id: str,
                 title: str = "", type: str = "kno", seq: str = "",
                 tags: list[str] | None = None, references: list[str] | None = None,
@@ -697,7 +778,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         _log(instance_id, "propose", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid)
         return {"proposal_id": proposal_id, "oid": r.oid, "path": path, "author": instance_id}
 
-    @mcp.tool()
+    @tool()
     def propose_retract(instance_id: str, proposal_id: str, path: str, op_id: str) -> dict:
         """Retract a path from a proposal — e.g. a stale log entry after renumbering (canon advanced,
         so your meta/log/<old-seq>.md must be retracted and re-authored at the new seq). Retraction
@@ -740,7 +821,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     # (0.1.5 dedup: `proposal_status` removed — it ran the pre-lifecycle is-ancestor logic and gave
     # strictly poorer answers than list_proposals' statuses; the deep look stays conflict_preview.)
 
-    @mcp.tool()
+    @tool()
     def conflict_preview(proposal_id: str) -> dict:
         """Would this proposal merge cleanly into canon right now? Read-only; creates no candidate.
         `removes` is the one to watch: landing a proposal that removes a canon path is REFUSED
@@ -770,7 +851,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 "would_remove_canon": bool(summary.removed) and not conflicted,
                 "attributions": attributions}
 
-    @mcp.tool()
+    @tool()
     def perf_scry() -> dict:
         """The server-git boundary, measured since this server spawned — SCRY-grade (changes nothing,
         no hinge). Per-git-verb subprocess counts, total/avg/max wall-clock: every git crossing flows
@@ -780,7 +861,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         that is hot by COUNT wants batching; hot by MAX wants an algorithmic look."""
         return store.perf_stats()
 
-    @mcp.tool()
+    @tool()
     def propose_close(instance_id: str, proposal_id: str, reason: str, op_id: str) -> dict:
         """Close a proposal — the terminal verb for staging that will not land: superseded by a fresh
         proposal, dead against current canon, or simply done with. Writes a `close:` tombstone commit
@@ -803,7 +884,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                          f"configured approver) may close it")
         return close_proposal(store, audit, proposal_id, reason, instance_id, op_id=op_id)
 
-    @mcp.tool()
+    @tool()
     def list_proposals() -> dict:
         """Proposal ids plus their lifecycle: `statuses` maps each id to open | landed | closed
         (with `closed_reason`), and open proposals carry `lands_behind` — how many lands canon has
@@ -814,7 +895,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         ids = [r.name[len(PROP):] for r in store.list_refs(PROP)]
         return {"proposals": ids, "statuses": proposal_statuses(store)}
 
-    @mcp.tool()
+    @tool()
     def list_instances() -> dict:
         """The roster: every seat holding a perspective, wrapped in a named object (a bare list can
         fuse names on the wire; attribution must survive it). With the audit log present,
@@ -829,7 +910,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     # ---------------------------------------------------------------- MAP (needs an index) + IMP (needs an index + audit)
     if has_map:
-        @mcp.tool()
+        @tool()
         def map_search(instance_id: str, query: str, scope: str = "all",
                        type: str | None = None, limit: int = 10,
                        include_superseded: bool = False, include_weak: bool = False) -> dict:
@@ -850,7 +931,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                      "preview": h.preview} for h in hits],
                     "below_floor": 0 if include_weak else len(weak)}
 
-        @mcp.tool()
+        @tool()
         def thread_scry(thread: str = "", limit: int = 16, offset: int = 0) -> dict:
             """Bearings on declared threads — SCRY-grade: coordination metadata, changes nothing, costs
             no reconcile hinge (fetch, not pull). No argument: the registry view — every declared tag
@@ -868,7 +949,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                     "count": len(rows), "total": total,
                     "truncated": offset + len(rows) < total, "offset": offset}
 
-        @mcp.tool()
+        @tool()
         def arg_scry(term: str = "") -> dict:
             """The argot dictionary — SCRY-grade (bearings, no reconcile hinge). No argument: the
             registry — every coined term with its distinct-definition count, holding trees, and canon
@@ -886,7 +967,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             return {"term": t, "definitions": defs, "count": len(defs)}
 
         if audit is not None:
-            @mcp.tool()
+            @tool()
             def imp_send(recipients: list[str], subject: str, body: str, op_id: str,
                          instance_id: str = "", sender: str = "",
                          coordinates: list[str] | None = None,
@@ -931,7 +1012,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                      result_oid=r.oid, detail={"recipients": recipients})
                 return {"path": path, "from": who, "recipients": recipients, "oid": r.oid}
 
-            @mcp.tool()
+            @tool()
             def imp_check(instance_id: str, unread_only: bool = True) -> dict:
                 """Your inbox: messages where you're a recipient. Authored fields only (sender, subject,
                 coordinates) — IMP arranges, never synthesizes. Pull, not push. Supersession is resolved
@@ -967,7 +1048,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                           if m.path not in dead and not audit.is_read(instance_id, m.path)]
                 return {"unread": len(unread), "from": sorted({m.authoring_instance for m in unread})}
 
-            @mcp.tool()
+            @tool()
             def imp_flags(instance_id: str = "") -> dict:
                 """The unread-frontier flag (a saved query, not a push). With `instance_id`: your
                 count + senders. With NO instance_id: the whole roster's mailroom in ONE crossing —
@@ -980,7 +1061,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 seats = sorted(r.name[len(PERSP):] for r in store.list_refs(PERSP))
                 return {"seats": {s: _inbox_flags(s) for s in seats}, "roster": len(seats)}
 
-            @mcp.tool()
+            @tool()
             def imp_mark_read(instance_id: str, message_path: str) -> dict:
                 """Append a read-receipt to the audit log (append-only truth; survives a reindex)."""
                 _check_binding(instance_id, "imp_mark_read", path=message_path)
@@ -988,7 +1069,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 return {"marked_read": message_path}
 
             # ------------------------------------------------------ VAP: vantages (horizon, second layer)
-            @mcp.tool()
+            @tool()
             def vap_record(instance_id: str, binds: str, horizon: str, op_id: str,
                            kind: str = "confirmed", title: str = "") -> dict:
                 """Record a VANTAGE — the contextual horizon you authored an act against — bound to entry
@@ -1039,7 +1120,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 return {"path": path, "author": instance_id, "binds": binds, "vantage": vantage,
                         "canon_state": cursor, "oid": r.oid}
 
-            @mcp.tool()
+            @tool()
             def vap_for(entry: str = "", author: str = "", canon_state: str = "",
                         detail: str = "pointer", limit: int = 16, offset: int = 0) -> dict:
                 """Vantages reverse-bound to an entry — the second layer, never the result itself.
@@ -1082,7 +1163,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     # ---------------------------------------------------------------- SUP: per-instance state ↔ canon coherence
     if audit is not None:
-        @mcp.tool()
+        @tool()
         def canon_diff(instance_id: str) -> dict:
             """Pull what changed in canon since you last reconciled — a POINTER diff: path/title/type/status
             per changed entry, plus each land's log narrative in full (the story of the change, written for
@@ -1114,7 +1195,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                  detail={"from": prev, "changed": paths})
             return {"canon_tip": tip, "from": prev, "changed_count": len(changed), "changed": changed, "logs": logs}
 
-        @mcp.tool()
+        @tool()
         def sup_reconcile(instance_id: str, body: str) -> dict:
             """Self-report what you updated about yourself after reading the canon diff. Allowed only after
             you've pulled current canon (canon_diff). Appends a state/ entry to your perspective — your own
@@ -1153,7 +1234,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                  detail={"canon_cursor": tip})
             return {"path": path, "canon_cursor": tip, "oid": r.oid}
 
-        @mcp.tool()
+        @tool()
         def sup_state(instance_id: str) -> dict:
             """An instance's state trail + its standing relative to canon. `ticks` maps the state
             entries that DECLARED a machine-readable label (tick=, the mirror field) to it — absence
@@ -1171,7 +1252,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         # (0.1.5 dedup: `sup_who` removed — list_instances carries the roster AND per-seat
         # currency now; one home for presence.)
 
-        @mcp.tool()
+        @tool()
         def canon_state() -> dict:
             """The shared canon state — the mirror of an instance's own: current tip, state number,
             entries, land chronology. A proposal's log entry must carry seq = this seq + 1."""
@@ -1185,20 +1266,20 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                     "entries": store.list_paths(store.canon_ref) if tip else [], "lands": lands[-10:]}
 
         if airlock is not None:
-            @mcp.tool()
+            @tool()
             def stage_approve(proposal_id: str, code: str) -> dict:
                 """Airlock phase 1 — relay the practitioner's FIRST TOTP code. Freezes the proposal,
                 prepares the merge, starts the review clock. Returns what was staged (oid, changed
                 paths, log seq) for the practitioner to review. Console `land` is unchanged."""
                 return airlock.stage(proposal_id, code)
 
-            @mcp.tool()
+            @tool()
             def land_approve(staged_oid_prefix: str, code: str) -> dict:
                 """Airlock phase 2 — relay the practitioner's SECOND code (a fresh one: strictly later
                 window, after the review floor). Lands exactly the staged oid; anything else fails closed."""
                 return airlock.land(staged_oid_prefix, code)
 
-            @mcp.tool()
+            @tool()
             def stage_revert(proposal_id: str) -> dict:
                 """Abort a staged review — FREE, never requires a code (charging presence-proof to
                 decline would incentivize landing). The proposal returns to open, entries intact."""
@@ -1282,7 +1363,7 @@ def components_from_config(cfg):
     return store, index, embedder, audit, DefaultPolicy(canon_ref=cfg.canon_ref), airlock
 
 
-def server_from_config(cfg) -> FastMCP:
+def server_from_config(cfg) -> MCPServer:
     """Assemble the MCP server from a Config."""
     store, index, embedder, audit, authz, airlock = components_from_config(cfg)
     oauth_provider = None
@@ -1295,8 +1376,6 @@ def server_from_config(cfg) -> FastMCP:
                         public_url=cfg.http_public_url or None,
                         orientation_base=cfg.orientation_base, seq_origin=cfg.seq_origin,
                         deployment_name=cfg.deployment_name,
-                        http_host=cfg.http_host, http_port=cfg.http_port,
-                        http_allowed_hosts=cfg.http_allowed_hosts,
                         # binding rides ENV, not the shared config file: the config is one file for
                         # every seat's definition; the env is what distinguishes definitions
                         bound_instance=os.environ.get("STASIMA_INSTANCE") or None,
@@ -1345,17 +1424,25 @@ def main() -> None:
         # One continuously-running server; clients connect to http://<host>:<port>/mcp.
         # The loopback/tailnet bind is defense-in-depth; the OAuth door (when http_public_url is
         # set) is the real perimeter, reached via `tailscale serve`/`funnel` proxying to loopback.
+        # v2: the bind and the DNS-rebinding allowlist are transport options passed here, not at
+        # construction. A v2 server serves every earlier protocol revision, so handshake-era
+        # clients (the mcp-proxy bridge) keep connecting unchanged.
+        _ts = _transport_security(_cfg.http_host, _cfg.http_allowed_hosts)
         if getattr(_cfg, "http_public_url", ""):
             # public/authed: wrap the whole app in the hardening middleware (Host allowlist over
             # the credential routes, body cap, per-IP rate limit, security headers) — the SDK's
-            # transport-security guards only /mcp. Then run uvicorn on the wrapped app.
+            # transport-security guards only /mcp. Then run uvicorn on the wrapped app. The SDK
+            # app's own lifespan (its session manager) still runs: the middleware forwards every
+            # non-http scope to it untouched.
             import uvicorn
             from .http_guard import harden
-            app = harden(_srv.streamable_http_app(), allowed_hosts=_cfg.http_allowed_hosts)
+            app = harden(_srv.streamable_http_app(transport_security=_ts),
+                         allowed_hosts=_cfg.http_allowed_hosts)
             uvicorn.Server(uvicorn.Config(app, host=_cfg.http_host, port=_cfg.http_port,
                                           log_level="info")).run()
         else:
-            _srv.run(transport="streamable-http")
+            _srv.run(transport="streamable-http", host=_cfg.http_host, port=_cfg.http_port,
+                     transport_security=_ts)
     else:
         _exit_when_parent_dies()   # stdio: the client spawned us; if it dies, don't orphan
         _srv.run()                 # stdio: the connecting client spawns this process

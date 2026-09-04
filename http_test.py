@@ -16,8 +16,7 @@ import anyio
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from stasima.config import Config, ConfigError
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client import Client   # v2: one client object; mode="legacy" speaks the handshake-era protocol
 
 # ---- bind-address guard (the structural "no outside exposure until 1.1") ----
 def rejected(**kw):
@@ -62,48 +61,54 @@ try:
         raise SystemExit("server never opened the port")
     print(f"server up           OK (127.0.0.1:{port})")
 
+    url = f"http://127.0.0.1:{port}/mcp"
+
+    async def arrive(session, label):
+        tools = sorted(t.name for t in (await session.list_tools()).tools)
+        assert "announce" in tools and "stage_approve" in tools, tools
+        res = await session.call_tool("announce", {"instance_id": "epode"})
+        text = "".join(getattr(c, "text", "") for c in res.content)
+        assert "Welcome to Stasima, epode." in text, text[:120]
+        print(f"{label:<19} OK ({len(tools)} tools; announce -> Welcome to Stasima, epode.)")
+        return tools
+
     async def main():
-        async with streamablehttp_client(f"http://127.0.0.1:{port}/mcp") as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                tools = sorted(t.name for t in (await session.list_tools()).tools)
-                assert "announce" in tools and "stage_approve" in tools, tools
-                print(f"tools over http     OK ({len(tools)} tools)")
-                res = await session.call_tool("announce", {"instance_id": "epode"})
-                text = "".join(getattr(c, "text", "") for c in res.content)
-                assert "Welcome to Stasima, epode." in text, text[:120]
-                print("announce over http  OK ->", "Welcome to Stasima, epode.")
+        # the modern protocol (2026-07-28: no handshake, no session, version in every request)
+        async with Client(url) as session:
+            modern = await arrive(session, "modern client")
+        # the handshake-era protocol — what the mcp-proxy bridge speaks; a v2 server serves every
+        # earlier revision, so the fleet's connector survives the port unchanged
+        async with Client(url, mode="legacy") as session:
+            legacy = await arrive(session, "legacy client")
+        assert modern == legacy, "both protocol eras must see the same tool surface"
 
     anyio.run(main)
 
-    # ---- Phase B: per-SESSION sticky binding over real HTTP sessions ----
-    # Two client sessions against ONE server process: each learns its own seat (under the old
-    # process-sticky, the second seat would refuse — the trunk problem, now dissolved), and a
-    # cross-claim inside a bound session still refuses with the learned name in the error.
+    # ---- per-SESSION sticky binding over real HTTP sessions ----
+    # Sessions exist only for handshake-era clients (the modern protocol is stateless), so this
+    # models the bridge's protocol. Two client sessions against ONE server process: each learns
+    # its own seat (under the old process-sticky, the second seat would refuse — the trunk
+    # problem), and a cross-claim inside a bound session still refuses with the learned name.
     async def binding_over_sessions():
-        async with streamablehttp_client(f"http://127.0.0.1:{port}/mcp") as (r1, w1, _):
-            async with ClientSession(r1, w1) as s1:
-                await s1.initialize()
-                async with streamablehttp_client(f"http://127.0.0.1:{port}/mcp") as (r2, w2, _):
-                    async with ClientSession(r2, w2) as s2:
-                        await s2.initialize()
-                        a = await s1.call_tool("kip_commit", {"instance_id": "SeatA", "domain": "state",
-                                                              "slug": "a1", "body": "a", "op_id": "ha1"})
-                        assert not getattr(a, "isError", False), \
-                            "".join(getattr(c, "text", "") for c in a.content)[:200]
-                        b = await s2.call_tool("kip_commit", {"instance_id": "SeatB", "domain": "state",
-                                                              "slug": "b1", "body": "b", "op_id": "hb1"})
-                        assert not getattr(b, "isError", False), \
-                            "two sessions must bind two seats independently: " + \
-                            "".join(getattr(c, "text", "") for c in b.content)[:200]
-                        x = await s1.call_tool("kip_commit", {"instance_id": "SeatB", "domain": "state",
-                                                              "slug": "x1", "body": "x", "op_id": "hx1"})
-                        xt = "".join(getattr(c, "text", "") for c in x.content)
-                        assert getattr(x, "isError", False) and "SeatA" in xt, xt[:200]
-                        w = await s2.call_tool("whoami", {"instance_id": "SeatB"})
-                        wt = "".join(getattr(c, "text", "") for c in w.content)
-                        assert "SeatB" in wt and "session" in wt, wt[:200]
-        print("session binding     OK (two sessions, two seats; cross-claim refused with the name)")
+        async with Client(url, mode="legacy") as s1:
+            async with Client(url, mode="legacy") as s2:
+                a = await s1.call_tool("kip_commit", {"instance_id": "SeatA", "domain": "state",
+                                                      "slug": "a1", "body": "a", "op_id": "ha1"})
+                assert not a.is_error, \
+                    "".join(getattr(c, "text", "") for c in a.content)[:200]
+                b = await s2.call_tool("kip_commit", {"instance_id": "SeatB", "domain": "state",
+                                                      "slug": "b1", "body": "b", "op_id": "hb1"})
+                assert not b.is_error, \
+                    "two sessions must bind two seats independently: " + \
+                    "".join(getattr(c, "text", "") for c in b.content)[:200]
+                x = await s1.call_tool("kip_commit", {"instance_id": "SeatB", "domain": "state",
+                                                      "slug": "x1", "body": "x", "op_id": "hx1"})
+                xt = "".join(getattr(c, "text", "") for c in x.content)
+                assert x.is_error and "SeatA" in xt, xt[:200]
+                w = await s2.call_tool("whoami", {"instance_id": "SeatB"})
+                wt = "".join(getattr(c, "text", "") for c in w.content)
+                assert "SeatB" in wt and "session" in wt, wt[:200]
+        print("session binding     OK (two legacy sessions, two seats; cross-claim refused with the name)")
 
     anyio.run(binding_over_sessions)
 

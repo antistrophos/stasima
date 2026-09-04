@@ -24,14 +24,14 @@ from stasima.authz import DefaultPolicy
 from stasima.cap_server import build_server, compose_entry, land_and_record
 from stasima.canon import reindex_from_git
 from stasima.entries import parse_entry
-from mcp.shared.memory import create_connected_server_and_client_session as connect
+from mcp.client import Client as connect   # v2: the in-process client — one Client, one connection
 
 CANON = "refs/heads/main"
 def persp(i): return f"refs/cap/perspectives/{i}"
 
 
 def payload(res):
-    sc = getattr(res, "structuredContent", None)
+    sc = res.structured_content
     if sc is not None:
         return sc["result"] if isinstance(sc, dict) and set(sc.keys()) == {"result"} else sc
     txt = "".join(getattr(c, "text", "") for c in res.content)
@@ -42,7 +42,7 @@ def payload(res):
 
 
 def err(res):
-    return bool(getattr(res, "isError", False))
+    return bool(res.is_error)
 
 
 def setup():

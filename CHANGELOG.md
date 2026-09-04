@@ -5,6 +5,30 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
+- **The MCP v2 port, phase one: the server runs on SDK 2.1 (`mcp>=2.1,<3`) — protocol
+  2026-07-28 — and still serves every earlier revision.** The pin below is lifted. `FastMCP`
+  becomes `MCPServer`; the bind address and the DNS-rebinding allowlist become transport options
+  passed at `run()` / `streamable_http_app()` instead of construction; the suite drives the server
+  through the SDK's one `Client` (in-process, stdio, and HTTP alike) and reads snake_case result
+  fields (`is_error`, `structured_content`, `input_schema`). 23/23 green. Two things the suite
+  forced into the open, both shipped here:
+  - **Refusals stay instructions.** The 2.1 SDK renders a `ToolError` with its message but wraps
+    any other exception first, so a `Denied` raised inside a tool would have reached the seat as
+    the wrapper's text — and every recover routine the docks teach reads the refusal's sentence.
+    Every tool now lifts what it raises into a `ToolError` carrying that sentence (a `Denied`
+    verbatim; a store error prefixed with its class). The wire text is unchanged from 0.1.5
+    (`Error executing tool <name>: <message>`); the suite's refusal assertions are the proof. This
+    was the port's planned later phase, pulled forward because the suite cannot pass without it.
+  - **The session seam keys on the transport's own session id.** v2 builds a fresh session object
+    per request, even for a handshake-era client; the only conversation identity such a client
+    carries is its `Mcp-Session-Id`, so sticky binding keys on that (a bounded table), stdio stays
+    process-sticky, and a stateless modern-protocol request has no conversation to bind — its
+    audit row says `stateless`. The http test arrives as both protocol eras and proves two legacy
+    sessions bind two seats independently — the `mcp-proxy` bridge's case exactly.
+  Deployment note for the cutover: do NOT install the SDK upgrade into the interpreter that runs
+  the `mcp-proxy` bridge (it declares `mcp>=1.17.0` with no ceiling and predates v2); the ported
+  service runs from its own venv. The cutover sequence lands in OPERATIONS before release.
+
 - **`mcp` is pinned below 2.0** (`mcp>=1.10,<2`). The MCP 2026-07-28 protocol revision removed
   protocol-level sessions and the initialize handshake, and the SDK's same-day 2.0 release renames
   `FastMCP` to `MCPServer` and rebuilds the low-level server — the session-binding seam this suite

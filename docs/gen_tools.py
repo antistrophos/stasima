@@ -23,7 +23,7 @@ sys.path.insert(0, ROOT)
 
 from stasima.config import Config                     # noqa: E402
 from stasima.cap_server import server_from_config     # noqa: E402
-from mcp.shared.memory import create_connected_server_and_client_session as connect  # noqa: E402
+from mcp.client import Client as connect   # v2: the in-process client — one Client, one connection  # noqa: E402
 
 # tool -> section; an unmapped tool still renders (under "Other"), so a new tool cannot vanish
 SECTIONS = [
@@ -87,7 +87,7 @@ async def _collect():
     cfg = Config(git_dir=gd)
     async with connect(server_from_config(cfg)) as client:
         result = await client.list_tools()
-        return [(t.name, t.description or "", t.inputSchema or {}) for t in result.tools]
+        return [(t.name, t.description or "", t.input_schema or {}) for t in result.tools]
 
 
 def generate(out_path: str) -> int:
