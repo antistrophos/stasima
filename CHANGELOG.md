@@ -5,6 +5,23 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
+- **The MCP v2 port, phase four: stateless http, measured against the real bridge; the tool list
+  carries a cache hint; the cockpit learns the venv.** `http_stateless = true` (new toml field,
+  default off) serves every request on a fresh transport with no `Mcp-Session-Id` — the protocol
+  has none since 2026-07-28, and this stops offering one to handshake-era clients too. The prize
+  the early-port clause named: **a service can restart under open bridges without terminating
+  them.** `bridge_smoke.py` (new; the pre-cutover check, not part of the suite — it needs the
+  deploying machine's own `mcp-proxy`) drives the ported server through the REAL bridge (mcp
+  1.28.1 / mcp-proxy 0.12.0, in the other interpreter) in both modes, then restarts the service
+  under the open bridge: sessions `survives-restart=NO` ("Session terminated"), stateless `YES`.
+  The cost is one forensic label (legacy clients' audit rows read `session: stateless`). The
+  restart rule in OPERATIONS is now conditional on the mode, and the cutover runbook is written.
+  `tools/list` carries `ttlMs 300000 / cacheScope private` (the surface is fixed per process and
+  comes back in registration order — deterministic, as the protocol asks; the http test checks
+  both). `service_python` (new toml field) tells the cockpit which interpreter starts the service
+  and drops `PYTHONPATH` for it, so a venv service cannot be shadowed by the launcher's source
+  path — the knob the v2 deployment shape needs.
+
 - **The MCP v2 port, phase two (second half): the desk-and-stacks split — a layer boundary
   between the front end and the store law.** `cap_server.py` is now THE DESK: transport, the
   29-tool wire surface, and AAA (the binding check resolves WHO into a `Principal`). New

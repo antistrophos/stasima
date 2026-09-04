@@ -92,22 +92,28 @@ try:
     url = f"http://127.0.0.1:{port}/mcp"
 
     async def arrive(session, label):
-        tools = sorted(t.name for t in (await session.list_tools()).tools)
+        listing = await session.list_tools()
+        tools = [t.name for t in listing.tools]                 # wire order, not sorted
         assert "announce" in tools and "stage_approve" in tools, tools
         res = await session.call_tool("announce", {"instance_id": "epode"})
         assert "Welcome to Stasima, epode." in text(res), text(res)[:120]
         print(f"{label:<19} OK ({len(tools)} tools; announce -> Welcome to Stasima, epode.)")
-        return tools
+        return tools, listing
 
     async def main():
         # the modern protocol (2026-07-28: no handshake, no session, version in every request)
         async with Client(url) as session:
-            modern = await arrive(session, "modern client")
+            modern, listing = await arrive(session, "modern client")
+            again, _ = await arrive(session, "modern client (2)")
+        # the list is deterministic (registration order) and carries an honest cache hint
+        assert modern == again, "tools/list must come back in the same order every time"
+        assert listing.ttl_ms == 300_000 and listing.cache_scope == "private", (listing.ttl_ms, listing.cache_scope)
+        print("tools/list          OK (deterministic order; ttl 300000 ms, scope private)")
         # the handshake-era protocol — what the mcp-proxy bridge speaks; a v2 server serves every
         # earlier revision, so the fleet's connector survives the port unchanged
         async with Client(url, mode="legacy") as session:
-            legacy = await arrive(session, "legacy client")
-        assert modern == legacy, "both protocol eras must see the same tool surface"
+            legacy, _ = await arrive(session, "legacy client")
+        assert modern == legacy, "both protocol eras must see the same tool surface, in the same order"
 
     anyio.run(main)
 

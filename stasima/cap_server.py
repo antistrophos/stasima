@@ -104,8 +104,16 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             _current_request.reset(token)
 
     # host/port/transport-security are transport options in v2, not server identity: they ride
-    # run() / streamable_http_app() in main(), where the config is.
-    mcp = MCPServer("stasima", middleware=[_publish_request], **_auth_kwargs)
+    # run() / streamable_http_app() in main(), where the config is. The tool list is fixed for the
+    # life of the process (registrations happen here, once) and comes back in registration order —
+    # deterministic, as the protocol asks — so it carries an honest cache hint: a client may hold
+    # it for five minutes, which also bounds how long a restarted service with a changed surface
+    # goes unnoticed. `private`: the list is the same for everyone, but no intermediary should
+    # cache a knowledge server's surface on the fleet's behalf.
+    from mcp.server import CacheHint
+    mcp = MCPServer("stasima", middleware=[_publish_request],
+                    cache_hints={"tools/list": CacheHint(ttl_ms=300_000, scope="private")},
+                    **_auth_kwargs)
 
     def tool(**kw):
         """The SDK's tool decorator with errors-as-instructions preserved. The 2.1 SDK renders a `ToolError`
@@ -500,6 +508,7 @@ def main() -> None:
         # construction. A v2 server serves every earlier protocol revision, so handshake-era
         # clients (the mcp-proxy bridge) keep connecting unchanged.
         _ts = _transport_security(_cfg.http_host, _cfg.http_allowed_hosts)
+        _stateless = bool(getattr(_cfg, "http_stateless", False))
         if getattr(_cfg, "http_public_url", ""):
             # public/authed: wrap the whole app in the hardening middleware (Host allowlist over
             # the credential routes, body cap, per-IP rate limit, security headers) — the SDK's
@@ -508,13 +517,13 @@ def main() -> None:
             # non-http scope to it untouched.
             import uvicorn
             from .http_guard import harden
-            app = harden(_srv.streamable_http_app(transport_security=_ts),
+            app = harden(_srv.streamable_http_app(transport_security=_ts, stateless_http=_stateless),
                          allowed_hosts=_cfg.http_allowed_hosts)
             uvicorn.Server(uvicorn.Config(app, host=_cfg.http_host, port=_cfg.http_port,
                                           log_level="info")).run()
         else:
             _srv.run(transport="streamable-http", host=_cfg.http_host, port=_cfg.http_port,
-                     transport_security=_ts)
+                     transport_security=_ts, stateless_http=_stateless)
     else:
         _exit_when_parent_dies()   # stdio: the client spawned us; if it dies, don't orphan
         _srv.run()                 # stdio: the connecting client spawns this process

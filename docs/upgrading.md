@@ -22,10 +22,17 @@ connect exactly as before. What changes is the server's own environment and one 
 - **`whoami`'s `session_binding` block is now `binding`**, with a `grain` field (`process`); the
   learned-binding `source` reads `process` where it read `session`. Audit op names are unchanged.
 
-Sequence: build the venv → start the new service on the old port with the old toml → restart the
-client so bridges respawn (the bridge rule below) → `whoami` in one conversation shows
-`"grain": "process"`. Rollback is the reverse: stop the new service, start the old one from the
-old interpreter, restart the client.
+- **Two new toml fields**, both optional: `service_python` (the interpreter the cockpit starts the
+  service with — the venv's) and `http_stateless` (no sessions at all; an open bridge survives a
+  service restart — measured with `bridge_smoke.py`; audit rows from legacy clients then read
+  `session: stateless`).
+
+Sequence (the full runbook is OPERATIONS → "Cutover to the v2 service"): build the venv → set
+`service_python` (+ `http_stateless = true` after the smoke) in the http toml → run the smoke →
+back up → stop the old service, start the new one on the old port with the same toml → bounce the
+client ONE last time (the old bridges hold sessions the new service does not have) → `whoami` in
+one conversation shows `"grain": "process"`. Rollback is the reverse: stop the new service, start
+the old one from the old interpreter, bounce the client.
 
 ## 0.1.4 → 0.1.5 (the dedup — six tools removed or folded)
 

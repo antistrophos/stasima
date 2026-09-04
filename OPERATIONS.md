@@ -256,18 +256,45 @@ service; seats reopen on stdio.
 on a shared service); audit rows from the http transport carry a `session` label; `perf_scry`
 becomes the whole fleet's one ledger.
 
-**Restart sequence (bridge deployments — READ THIS).** When clients reach the server through the
-`mcp-proxy` bridge, the bridge holds ONE upstream transport session and **does not reconnect if the
+**Stateless http — `http_stateless = true` — and the restart rule it dissolves.** With sessions
+(the default), a bridge holds ONE upstream transport session and **does not reconnect if the
 service restarts** — the old session goes stale and every seat's next tool call terminates
-("Server transport closed unexpectedly"). So the order is a rule, not a preference:
+("Session terminated" / "Server transport closed unexpectedly"). The order was therefore a rule:
+restart the service first, THEN fully quit and relaunch the desktop client so it respawns fresh
+bridges. `http_stateless = true` serves every request on a fresh transport and assigns no session
+at all (the protocol has none since 2026-07-28; this stops offering one to handshake-era clients
+too), so an open bridge simply carries on across a service restart. Measured, not assumed:
+`bridge_smoke.py` drives the ported server through the real `mcp-proxy` bridge in both modes and
+restarts the service under the open bridge — sessions: `survives-restart=NO`; stateless: `YES`.
+The cost is one forensic label: audit rows from legacy clients read `session: stateless` instead of
+the bridge's session id. Recommended for the fleet. Run the smoke on the deploying machine before
+flipping it; keep the old rule for any deployment that stays on sessions.
 
-1. **Restart the HTTP service first** (cockpit → HTTP service → stop, start) — for any config change.
-2. **Then bounce the desktop client** (fully quit and relaunch) so it respawns fresh bridges
-   against the now-running service.
+**Cutover to the v2 service (0.1.5 → 0.2.0) — the sequence.** The SDK upgrade must NOT land in the
+interpreter that runs the bridge (`mcp-proxy` declares `mcp>=1.17` with no ceiling and predates the
+v2 SDK); the service gets its own venv, and the bridge's interpreter stays exactly as it is.
 
-Doing it the other way — or restarting the service under live bridges — leaves every open seat
-with a dead bridge until the client is bounced. There is no partial fix; the client bounce is what
-respawns the bridges.
+1. **Build the venv** beside the checkout and install the release into it:
+   `python -m venv <dir>\.venv` → `<dir>\.venv\Scripts\python.exe -m pip install stasima==0.2.0`
+   (or `-e <checkout>` for a source deployment). Do not touch `pip` in the bridge's interpreter.
+2. **Point the toml at it** — three lines in the http toml:
+   `service_python = "<dir>/.venv/Scripts/python.exe"` (the cockpit's start button uses it and
+   drops `PYTHONPATH`, so the launcher's source path cannot shadow the venv), `binding_mode = "off"`
+   (already there on a bridge deployment), and `http_stateless = true` (after the smoke).
+3. **Run the smoke** from the venv: `<dir>\.venv\Scripts\python.exe bridge_smoke.py`. Two rows,
+   both `tools=29 announce=OK write=OK`; the stateless row `survives-restart=YES`.
+4. **Back up** (`admin backup`), then **stop the old service and start the new one** on the same
+   port with the same toml (cockpit → HTTP service → x, s; the start line names the interpreter).
+5. **Bounce the desktop client once** — this is the LAST time the bridge rule applies: the bridges
+   were born against the old, session-holding service. From here on a stateless service restarts
+   under open bridges.
+6. **Verify** in one conversation: `whoami` shows `"grain": "process"`, `"mode": "off"`;
+   `canon_state` answers; a deliberate refusal (e.g. a `kip_commit` re-using a slug) comes back as
+   its own sentence, not "Error executing tool".
+
+**Rollback** is the reverse and needs no data step (git, the audit log, the map index, and
+`auth.sqlite` are untouched by the port): stop the new service, clear `service_python` (or start the
+old interpreter's `python -m stasima.cap_server` by hand with the same toml), bounce the client.
 
 **Binding over the bridge — `binding_mode = "off"`, as for any shared service.** The bridge
 multiplexes every conversation onto ONE transport session per bridge process, so even in the era
