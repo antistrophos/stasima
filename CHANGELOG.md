@@ -5,6 +5,33 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
+- **The MCP v2 port, phase two (second half): the desk-and-stacks split — a layer boundary
+  between the front end and the store law.** `cap_server.py` is now THE DESK: transport, the
+  29-tool wire surface, and AAA (the binding check resolves WHO into a `Principal`). New
+  `stasima/stacks.py` is THE STACKS: every helper and every op body, moved verbatim, behind two
+  doors and a read shelf — `apply(principal, op)` for an authored act, `advance_replica(carrier,
+  ref, new, expected_old)` for a carrier's structural fast-forward (new store primitive
+  `LocalCapStore.fast_forward`: CAS + fast-forward-only, bypasses the origin-only guard, never
+  history), `call(name, ...)` for reads. Store law — authorization policy, immutability,
+  attribution, thread form, the reconcile hinge — runs behind the door whoever knocks; the stacks
+  know no transport. The desk's tool surface is DERIVED from the stacks' registry (a write's
+  `principal` becomes `instance_id` on the wire; the description rides the op), so it cannot drift:
+  `docs/tools.md` regenerated with NO diff for 28 of 29 tools. `stacks_test.py` drives both doors
+  and the shelf with no MCP in the process — the proof the boundary is real. Two ride-alongs and one
+  latent fix ride the move:
+  - **`canon_diff` is idempotent until you reconcile** (Mercurius's finding): the diff is measured
+    from the canon you last RECONCILED with, not from your last pull, so a lost response is re-pulled
+    for free; the pull still leaves its row, which is what the reconcile hinge reads. (The one tool
+    whose description changed.)
+  - **Log entries lead the diff in sequence order** (Alidade's cold-arrival finding): git listed
+    `meta/log/10.md` before `meta/log/2.md`; the pull now sorts logs by their hex value, then the
+    rest in path order.
+  - **Reconciling against an empty canon refuses with an instruction** instead of falling over on
+    the missing tip (`None == None` passed the hinge before).
+  Arrival (`announce`) reaches the door with a CLAIMED principal — nothing is verified until the
+  first identity-claiming write, the guard's own rule, unchanged. AAA order at the desk is now
+  authentication (binding) before authorization (policy); both refusals read as before.
+
 - **The MCP v2 port, phase two (first half): binding demotes to PROCESS grain — the ruling
   ("demote deliberately", 2026-08-02) made code.** The protocol has no per-conversation session to
   bind: 2026-07-28 removed sessions, and phase one found that even a handshake-era client is handed

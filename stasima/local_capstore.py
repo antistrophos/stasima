@@ -417,6 +417,27 @@ class LocalCapStore:
         rc, _, _ = self._run("merge-base", "--is-ancestor", maybe_ancestor, descendant)
         return rc == 0
 
+    def fast_forward(self, ref: str, new: Oid, expected_old: Optional[Oid]) -> CommitResult:
+        """Advance `ref` to `new` — a commit this repository already holds — by FAST-FORWARD ONLY,
+        under compare-and-swap on `expected_old` (None = the ref must not exist yet). The carriers'
+        primitive: a replica moves its refs to what the origin already signed, authoring nothing
+        (the two-writers doctrine — carriers are structural, authors have the desk). It deliberately
+        bypasses ProtectedRef (a replica's canon ref IS advanced this way) and refuses anything that
+        would rewrite history: NonFastForward if `new` does not descend from the current tip."""
+        rc, _, err = self._run("cat-file", "-e", f"{new}^{{commit}}")
+        if rc != 0:
+            raise CapStoreError(f"{new} is not a commit this repository holds: {err.strip()}")
+        current = self.resolve_ref(ref)
+        if current != expected_old:
+            raise StaleRef(f"{ref} at {current}, expected {expected_old}")
+        if current is not None and current != new and not self.is_ancestor(current, new):
+            raise NonFastForward(f"{ref}: {new} does not descend from the current tip {current} — "
+                                 f"a replica advances by fast-forward only")
+        if current == new:
+            return self._commit_result(new, ref)
+        self._cas_update(ref, new, current or ZERO)
+        return self._commit_result(new, ref)
+
     def changed_paths(self, a: Oid, b: Oid) -> list[str]:
         """Paths that differ between two commits — the canon diff an instance reconciles with."""
         rc, out, _ = self._run("diff", "--name-only", a, b)

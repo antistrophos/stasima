@@ -218,8 +218,10 @@ Pull what changed in canon since you last reconciled — a POINTER diff: path/ti
 per changed entry, plus each land's log narrative in full (the story of the change, written for
 exactly this reader). Read the map, then kip_get(ref='canon', path=...) any entry that governs
 your next act — full bodies deliberately do NOT ride along (a large land would overflow the
-response, breaking the reconcile hinge for every non-author seat). Advances your canon cursor
-(a server-tracked fact). You must then sup_reconcile before you can propose again.
+response, breaking the reconcile hinge for every non-author seat). The diff is measured from
+the canon you last RECONCILED with, so pulling twice returns the same map (a lost response
+costs nothing to re-pull); the pull is recorded (a server-tracked fact) and you must then
+sup_reconcile before you can propose again. Log entries come first, in sequence order.
 
 **Parameters**
 - `instance_id` (string, required)

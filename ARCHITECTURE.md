@@ -11,8 +11,17 @@ The design intent under everything: **a substrate that cannot silently lose what
 ```
   MCP clients (instances)                 arrive, declare a name, call tools
         │
-  cap_server.py — protocol surface        29 tools: orient · author · search · propose/track
-        │                                 · message · vantage · state/coherence · airlock approval
+  cap_server.py — THE DESK (front end)    transport (stdio / streamable HTTP, protocol 2026-07-28
+        │                                 and every earlier revision) · the 29-tool wire surface,
+        │                                 DERIVED from the stacks' registry · AAA: the binding
+        │                                 check resolves WHO into a Principal · whoami · /approve
+        │  Principal + Op ──▶ door
+  stacks.py — THE STACKS (back end)       every operation against the components, behind two doors
+        │                                 and a read shelf: apply(principal, op) for authored acts,
+        │                                 advance_replica(...) for a carrier's fast-forward, call()
+        │                                 for reads. Store law (authz, immutability, attribution,
+        │                                 the reconcile hinge) runs HERE, whoever knocks. Knows no
+        │                                 transport — a radio envelope or a sync uses the same doors.
   canon.py — canon lifecycle              state sequence · log-entry validation · landing · reindex
         │
         ├────────────────┬──────────────────┐
