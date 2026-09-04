@@ -64,6 +64,11 @@ http_port  = 8787
 # from the cockpit console). https required unless loopback; the host is auto-added to
 # http_allowed_hosts. Blank = no auth (loopback/tailnet trust).
 # http_public_url = "https://yourbox.your-tailnet.ts.net"
+# How many of the most recent land narratives canon_diff carries in full; older logs ride as
+# pointers (a first pull of a grown canon otherwise carries every narrative). The response always
+# states the split (logs_in_full / logs_as_pointers). 0 = all pointers.
+# pull_logs_in_full = 8
+
 # Per-git-op timeout (s). A local git op is sub-second; a hang means contention, and this bounds it
 # so it fails LOUD instead of hanging forever. 0 = auto: 2s stdio / 20s http. Raise for a huge corpus.
 # The FIRST git op of each server process gets a one-time grace window (cold start: Windows scanning

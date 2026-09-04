@@ -115,7 +115,8 @@ class Stacks:
 
 def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, authz=None, airlock=None, *,
                  orientation_text: str = None, orientation_base: str = "technical/orientation",
-                 seq_origin: int = CHAT_ERA_FREEZE, deployment_name: str = "") -> Stacks:
+                 seq_origin: int = CHAT_ERA_FREEZE, deployment_name: str = "",
+                 pull_logs_in_full: int = 8) -> Stacks:
     """Assemble the back end over its components. The body below is the operational law of the
     practice — every helper and every op, registered by name as it is defined."""
     ops = {}
@@ -1009,13 +1010,15 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         @op
         def canon_diff(principal) -> dict:
             """Pull what changed in canon since you last reconciled — a POINTER diff: path/title/type/status
-            per changed entry, plus each land's log narrative in full (the story of the change, written for
-            exactly this reader). Read the map, then kip_get(ref='canon', path=...) any entry that governs
-            your next act — full bodies deliberately do NOT ride along (a large land would overflow the
-            response, breaking the reconcile hinge for every non-author seat). The diff is measured from
-            the canon you last RECONCILED with, so pulling twice returns the same map (a lost response
-            costs nothing to re-pull); the pull is recorded (a server-tracked fact) and you must then
-            sup_reconcile before you can propose again. Log entries come first, in sequence order."""
+            per changed entry, plus the most recent lands' log narratives in full (the story of the change,
+            written for exactly this reader); older narratives ride as pointers, and the response says how
+            many of each (`logs_in_full`, `logs_as_pointers`). Read the map, then kip_get(ref='canon',
+            path=...) any entry that governs your next act — full bodies deliberately do NOT ride along (a
+            large land, or a first pull of a large canon, would overflow the response and break the reconcile
+            hinge). The diff is measured from the canon you last RECONCILED with, so pulling twice returns
+            the same map (a lost response costs nothing to re-pull); the pull is recorded (a server-tracked
+            fact) and you must then sup_reconcile before you can propose again. Log entries come first, in
+            sequence order; a first pull is marked `first_pull: true`."""
             instance_id = principal.name   # the desk resolved WHO; the record carries the name
             tip = store.resolve_ref(store.canon_ref)
             # the diff BASE is the last reconciled position, not the last pull (Mercurius's finding:
@@ -1030,7 +1033,14 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             else:
                 paths = store.changed_paths(prev, tip)
             paths = sorted(paths, key=_diff_order)                # logs first, by seq (hex), then the rest
-            changed, logs = [], []
+            # The legenda relief: a first pull of a grown canon (or a long absence) would otherwise
+            # carry every land's narrative — on Rehearsal at ::1E, ~17k tokens of logs before a single
+            # design entry is read. The most recent narratives are the story a reconciling seat needs;
+            # older ones are history it reaches for by pointer. The bound is the deployment's
+            # (pull_logs_in_full), and the response always says what it did.
+            log_paths = [p for p in paths if _diff_order(p)[0] == 0]
+            in_full = set(log_paths[-pull_logs_in_full:]) if pull_logs_in_full > 0 else set()
+            changed, logs, pointers = [], [], 0
             for p in paths:
                 try:
                     envelope, body = parse_entry(store.read_blob(store.canon_ref, p).decode("utf-8", "replace"))
@@ -1040,10 +1050,21 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 changed.append({"path": p, "title": envelope.get("title", ""), "type": envelope.get("type", ""),
                                 "status": envelope.get("status", "")})
                 if envelope.get("type") == "log":
-                    logs.append({"path": p, "body": body})       # small by design; the narrative IS for the reconciling seat
+                    if p in in_full:
+                        logs.append({"path": p, "body": body})   # the narrative IS for the reconciling seat
+                    else:
+                        pointers += 1                             # older story: in `changed`, by pointer
             _log(instance_id, "canon_pull", target_ref=store.canon_ref, result_oid=tip,
                  detail={"from": prev, "changed": paths})
-            return {"canon_tip": tip, "from": prev, "changed_count": len(changed), "changed": changed, "logs": logs}
+            out = {"canon_tip": tip, "from": prev, "changed_count": len(changed), "changed": changed,
+                   "logs": logs, "logs_in_full": len(logs), "logs_as_pointers": pointers}
+            if prev is None and tip is not None:
+                out["first_pull"] = True
+                out["note"] = (f"first pull: all {len(changed)} canon entries as pointers; the {len(logs)} most "
+                               f"recent land narratives in full, {pointers} older as pointers. Read the "
+                               f"orientation (announce) and the suite manifest first; kip_get what governs "
+                               f"your next act; sup_reconcile when you have taken it up.")
+            return out
 
         @op
         def sup_reconcile(principal, body: str) -> dict:

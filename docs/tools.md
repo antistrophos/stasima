@@ -215,13 +215,15 @@ Append a read-receipt to the audit log (append-only truth; survives a reindex).
 ### `canon_diff`
 
 Pull what changed in canon since you last reconciled — a POINTER diff: path/title/type/status
-per changed entry, plus each land's log narrative in full (the story of the change, written for
-exactly this reader). Read the map, then kip_get(ref='canon', path=...) any entry that governs
-your next act — full bodies deliberately do NOT ride along (a large land would overflow the
-response, breaking the reconcile hinge for every non-author seat). The diff is measured from
-the canon you last RECONCILED with, so pulling twice returns the same map (a lost response
-costs nothing to re-pull); the pull is recorded (a server-tracked fact) and you must then
-sup_reconcile before you can propose again. Log entries come first, in sequence order.
+per changed entry, plus the most recent lands' log narratives in full (the story of the change,
+written for exactly this reader); older narratives ride as pointers, and the response says how
+many of each (`logs_in_full`, `logs_as_pointers`). Read the map, then kip_get(ref='canon',
+path=...) any entry that governs your next act — full bodies deliberately do NOT ride along (a
+large land, or a first pull of a large canon, would overflow the response and break the reconcile
+hinge). The diff is measured from the canon you last RECONCILED with, so pulling twice returns
+the same map (a lost response costs nothing to re-pull); the pull is recorded (a server-tracked
+fact) and you must then sup_reconcile before you can propose again. Log entries come first, in
+sequence order; a first pull is marked `first_pull: true`.
 
 **Parameters**
 - `instance_id` (string, required)

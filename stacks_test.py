@@ -49,7 +49,21 @@ print("empty deployment    OK (reconcile with no canon refuses with the instruct
 cd = S.apply(Principal(name="Scout"), Op("canon_diff", {}))   # a seat that only reads; Verso stays un-pulled below
 assert [l["path"] for l in cd["logs"]] == [f"meta/log/{n:x}.md" for n in (1, 2, 10, 16, 0x1a)], cd["logs"]
 assert cd["changed"][0]["path"] == "meta/log/1.md" and cd["changed"][-1]["path"].startswith("technical/"), cd["changed"]
+assert cd["first_pull"] is True and cd["logs_in_full"] == 5 and cd["logs_as_pointers"] == 0, cd
 print("pull order          OK (logs lead in hex-sequence order; the rest follow in path order)")
+
+# the legenda relief: a bounded pull carries only the most recent narratives in full; older logs stay
+# in the map as pointers, and the response says exactly what it did
+S3 = build_stacks(store, index, emb, audit, DefaultPolicy(), pull_logs_in_full=2)
+cd3 = S3.apply(Principal(name="Scout"), Op("canon_diff", {}))
+assert [l["path"] for l in cd3["logs"]] == ["meta/log/10.md", "meta/log/1a.md"], cd3["logs"]   # the two highest seqs
+assert cd3["logs_in_full"] == 2 and cd3["logs_as_pointers"] == 3, cd3
+assert len(cd3["changed"]) == len(cd["changed"]), "the map itself is not bounded — only the narratives"
+assert "3 older as pointers" in cd3["note"], cd3["note"]
+S0 = build_stacks(store, index, emb, audit, DefaultPolicy(), pull_logs_in_full=0)
+cd0 = S0.apply(Principal(name="Scout"), Op("canon_diff", {}))
+assert cd0["logs"] == [] and cd0["logs_as_pointers"] == 5, cd0
+print("legenda relief      OK (bound 2: the two most recent narratives in full, three as pointers; bound 0: all pointers)")
 
 # ---- the registry is the surface: the wire's 29 minus whoami (the desk's own) minus the three
 # relay verbs (no airlock in this assembly) = 25; writes identified by their signature ----

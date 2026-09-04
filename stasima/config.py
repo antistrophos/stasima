@@ -101,6 +101,11 @@ class Config:
     # are NOT bound by the tight steady-state git_timeout above. Raise it for a huge corpus over a slow
     # link; lower it to fail a stuck remote faster.
     git_network_timeout: float = 300.0
+    # How many of the most recent land narratives canon_diff carries IN FULL; older logs ride as
+    # pointers (the legenda relief: a first pull of a grown canon carried every narrative — on
+    # Rehearsal at ::1E about 17k tokens of logs before one design entry was read). A seat this many
+    # lands behind or fewer sees every narrative; the response always states the split.
+    pull_logs_in_full: int = 8
     # Relevance floor for map_search: hits below it are withheld (a count reports them). None = the
     # embedder's own calibrated default (stub: 0.0 = off — its scores don't separate true from junk).
     # Set only after measuring where YOUR model's true/junk scores separate on YOUR corpus.
@@ -161,6 +166,8 @@ class Config:
             if not (0 < self.http_port < 65536):
                 raise ConfigError("http_port must be 1-65535")
             self._check_bind_address(self.http_host)
+        if int(self.pull_logs_in_full) < 0:
+            raise ConfigError("pull_logs_in_full must be >= 0 (0 = every narrative rides as a pointer)")
         if self.http_stateless and self.transport != "http":
             raise ConfigError("http_stateless is only meaningful with transport='http'")
         if self.service_python and not os.path.exists(self.service_python):

@@ -5,6 +5,21 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
+- **The legenda relief: `canon_diff` bounds the narratives it carries in full.** The legenda
+  criterion (canon ::13) names the failure — a canon no longer readable entire — and the practitioner
+  reported it firing on Rehearsal: a fresh seat's first pull was too large to read as content, so fresh
+  seats read titles. Measured at ::1E: 106 entries, ~159k tokens of canon; a first pull carried all
+  30 land narratives in full, ~17k tokens of logs plus ~4k of pointers before one design entry was
+  read. Now the pull carries the most recent `pull_logs_in_full` narratives in full (new toml field,
+  default 8; on Rehearsal ~6.7k tokens instead of ~17k) and older logs as pointers in the map, and the
+  response says what it did: `logs_in_full`, `logs_as_pointers`, and on a first pull `first_pull:
+  true` with a `note` naming the reading order (orientation, the suite manifest, then what governs
+  your next act). The map itself is never bounded — every changed entry is still a pointer; a seat
+  eight lands behind or fewer sees every narrative, exactly as before. `stacks_test` proves the bound
+  at 2 and at 0. This is relief inside one canon; the structural answer is the area split the
+  subsidiarity design already describes, drafted at the seat's grain on epode's branch
+  (technical/seat-across-canons-home-and-memberships.md) for a review round.
+
 - **The 0.2.0 polish pass — the documents say what the code does.** STATUS, ARCHITECTURE (the
   trust model, the HTTP era, four new invariants — store law behind the door, the derived wire
   surface, fast-forward-only carriers — and the two doors as extension points), SETUP, README,
