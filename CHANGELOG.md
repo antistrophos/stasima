@@ -13,7 +13,10 @@ are added, never rewritten — corrections appear as later entries.
   except the ledger's own op names. `skills/gen_aous.py` now follows canon's supersession from a
   dock's home path to its living edition, so a dock revised at a new path (the 0.2.0 `canon_diff`
   semantics want one) is picked up by regeneration without touching the generator; regenerated
-  from live canon today it is byte-identical. Two `server_test` assertions the phase-one rename
+  from live canon today it is byte-identical; `--ref refs/cap/proposals/<id>` previews the encoding a
+  staged proposal would produce, so the gate can read the skill diff before the land (the 0.2.0
+  dock editions preview as 22 lines in reconcile, 8 in recover, nothing else). Two `server_test`
+  assertions the phase-one rename
   had missed (multi-line `getattr(..., "isError", False)`) were passing vacuously and now check
   `is_error`. Unused imports pruned from the desk and the stacks; the desk's re-exports (the
   content model's serialization, the canon lifecycle) are marked as such. `bridge_smoke.py` ships

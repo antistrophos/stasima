@@ -52,8 +52,11 @@ If the practitioner approves a landing THROUGH you — a TOTP code spoken in con
 """
 
 
+REF = "refs/heads/main"   # canon; `--ref <ref>` previews the encoding a staged proposal would produce
+
+
 def blob(gd, path):
-    r = subprocess.run(["git", "-C", gd, "cat-file", "blob", f"refs/heads/main:{path}"],
+    r = subprocess.run(["git", "-C", gd, "cat-file", "blob", f"{REF}:{path}"],
                        capture_output=True)
     if r.returncode != 0:
         raise SystemExit(f"cannot read {path}: {r.stderr.decode().strip()}")
@@ -108,10 +111,16 @@ def dispositions_body(gd):
 
 
 def main():
-    gd = sys.argv[1] if len(sys.argv) > 1 else None
-    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(__file__), "aous")
+    global REF
+    args = sys.argv[1:]
+    if "--ref" in args:   # preview: encode from a proposal ref (refs/cap/proposals/<id>) before it lands
+        i = args.index("--ref")
+        REF = args[i + 1]
+        del args[i:i + 2]
+    gd = args[0] if args else None
+    out = args[1] if len(args) > 1 else os.path.join(os.path.dirname(__file__), "aous")
     if not gd:
-        raise SystemExit("usage: gen_aous.py <bare-repo> [out-dir]")
+        raise SystemExit("usage: gen_aous.py <bare-repo> [out-dir] [--ref <ref>]")
     os.makedirs(out, exist_ok=True)
 
     road = dock_body(gd, "arrival-road")
