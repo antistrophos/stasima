@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """
-Session binding (the SSH-shaped identity pin, with port-security sticky learning):
+Binding at process grain (the SSH-shaped identity pin, with port-security sticky learning):
   1. pinned strict: matched write proceeds; mismatch refuses with the ritual named
   2. the imp_send identity alias: instance_id= (canonical) + sender= (deprecated twin); conflict
      refused; the original forgery typo refused under a pinned binding
@@ -190,7 +190,7 @@ async def main():
     assert port_bindings(audit5)["port-7"]["instance"] == "Verso"
     print("6. port sticky: learned -> survives respawn -> console clear re-arms -> relearns")
 
-    print("\nOK -- session binding: pinned, sticky, port-durable, off, alias, relay shape all pass.")
+    print("\nOK -- binding (process grain): pinned, sticky, port-durable, off, alias, relay shape all pass.")
 
 
 anyio.run(main)

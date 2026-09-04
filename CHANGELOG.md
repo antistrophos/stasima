@@ -5,6 +5,20 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
+- **The 0.2.0 polish pass — the documents say what the code does.** STATUS, ARCHITECTURE (the
+  trust model, the HTTP era, four new invariants — store law behind the door, the derived wire
+  surface, fast-forward-only carriers — and the two doors as extension points), SETUP, README,
+  OPERATIONS' rekeying note, the cockpit's screen title, and the binding test's title all describe
+  binding at process grain and the desk-and-stacks shape; nothing left says "session binding"
+  except the ledger's own op names. `skills/gen_aous.py` now follows canon's supersession from a
+  dock's home path to its living edition, so a dock revised at a new path (the 0.2.0 `canon_diff`
+  semantics want one) is picked up by regeneration without touching the generator; regenerated
+  from live canon today it is byte-identical. Two `server_test` assertions the phase-one rename
+  had missed (multi-line `getattr(..., "isError", False)`) were passing vacuously and now check
+  `is_error`. Unused imports pruned from the desk and the stacks; the desk's re-exports (the
+  content model's serialization, the canon lifecycle) are marked as such. `bridge_smoke.py` ships
+  in the sdist.
+
 - **The MCP v2 port, phase four: stateless http, measured against the real bridge; the tool list
   carries a cache hint; the cockpit learns the venv.** `http_stateless = true` (new toml field,
   default off) serves every request on a fresh transport with no `Mcp-Session-Id` — the protocol

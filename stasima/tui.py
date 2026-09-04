@@ -311,7 +311,7 @@ def _http_service(config):
     stem, _ = os.path.splitext(config)
     http_cfg = stem + "-http.toml"
     pidfile = http_cfg + ".pid"
-    print(BOLD("\nHTTP service") + DIM("  — one process serves the fleet; sessions self-bind"))
+    print(BOLD("\nHTTP service") + DIM("  — one process serves the fleet; a shared service runs binding off"))
     if not os.path.exists(http_cfg):
         print(DIM(f"  no {os.path.basename(http_cfg)} yet — the service wants its OWN toml "
                   f"(flipping the shared one would break stdio definitions)."))

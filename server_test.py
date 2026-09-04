@@ -191,12 +191,12 @@ async def main():
             assert b.is_error, f"non-ref-safe tag {bad!r} must refuse"
         await client.call_tool("kip_commit", {"instance_id": "research-2", "domain": "practice",
             "slug": "thread-entry", "body": "A threaded entry.", "op_id": "th-1", "thread": "weave-test"})
-        assert not getattr(await client.call_tool("propose", {"instance_id": "research-9",
+        assert not (await client.call_tool("propose", {"instance_id": "research-9",
             "proposal_id": "p-x", "domain": "practice", "slug": "threaded-prop",
-            "body": "A threaded proposal entry.", "op_id": "th-2", "thread": "weave-test"}), "isError", False)
-        assert not getattr(await client.call_tool("imp_send", {"sender": "research-2",
+            "body": "A threaded proposal entry.", "op_id": "th-2", "thread": "weave-test"})).is_error
+        assert not (await client.call_tool("imp_send", {"sender": "research-2",
             "recipients": ["research-9"], "subject": "threaded note", "body": "chained",
-            "op_id": "th-msg-1", "thread": "weave-test"}), "isError", False)
+            "op_id": "th-msg-1", "thread": "weave-test"})).is_error
         reg = payload(await client.call_tool("thread_scry", {}))
         assert "weave-test" in reg["threads"] and reg["threads"]["weave-test"]["count"] >= 2, reg["threads"]
         one = payload(await client.call_tool("thread_scry", {"thread": "weave-test"}))

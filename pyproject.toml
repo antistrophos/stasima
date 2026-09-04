@@ -57,5 +57,6 @@ path = "stasima/__init__.py"
 packages = ["stasima"]
 
 [tool.hatch.build.targets.sdist]
-include = ["stasima/", "skills/", "LICENSE", "NOTICE", "BRAND.md", "README.md", "*.md", "stasima.toml.example"]
+include = ["stasima/", "skills/", "LICENSE", "NOTICE", "BRAND.md", "README.md", "*.md", "stasima.toml.example",
+           "bridge_smoke.py"]   # the pre-cutover check OPERATIONS names; an operator tool, not a test
 exclude = ["examples/", "*_test.py", "brand/"]

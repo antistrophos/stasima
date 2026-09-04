@@ -1,13 +1,22 @@
 # SPDX-License-Identifier: Apache-2.0
 """
-Stasima CAP server — MCP protocol surface over LocalCapStore + the MAP index + the audit log.
+Stasima CAP server — THE DESK: the front end over the stacks (stasima/stacks.py).
+
+The desk owns three things and nothing else: the TRANSPORT (stdio, or streamable HTTP on protocol
+2026-07-28 with every earlier revision still served), the WIRE SURFACE (29 MCP tools, derived from
+the stacks' op registry — a write's `principal` becomes `instance_id` on the wire, the description
+rides the op, so the surface cannot drift from the law behind it), and AAA at flow grain — the
+binding check that resolves WHO is acting into a `Principal`, then hands the act through the door.
+Store law (authorization policy, immutability, attribution, the reconcile hinge) is the stacks';
+the desk never touches the store directly.
 
 Tools give an instance: orient -> author (with envelopes, indexed inline, audit-logged) -> search
 -> review its own trail -> propose -> check status -> message peers (read-state in the audit log).
 
 Audit scope: writes (state changes) and failures (what's breaking). Successful reads are observability
 and are not logged; read-receipts ARE logged (forensic, write-like). Mutations follow git-first-then-
-audit. Identity is the instance's declared name (a deployment binds it from the transport token).
+audit. Identity is the instance's declared name (a deployment binds it at process grain — env, or
+the first write; a shared service runs binding off until per-request identity arrives as tokens).
 """
 import contextvars
 import functools
@@ -19,19 +28,17 @@ import time
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from .local_capstore import (LocalCapStore, Identity, PathNotFound, RefNotFound, StaleRef,
-                            CapStoreError, PERSP_PREFIX as PERSP, PROP_PREFIX as PROP)
-from .map_index import SqliteMapIndex, StubEmbedder, LocalServerEmbedder, index_entry
+from .local_capstore import LocalCapStore, PERSP_PREFIX as PERSP
+from .map_index import SqliteMapIndex, StubEmbedder, LocalServerEmbedder
 from .audit_log import SqliteAuditLog
 from .authz import Denied, DefaultPolicy
 from .stacks import build_stacks, Principal, Op
-from .entries import compose_entry, parse_entry          # shared content-model serialization
-from .orientation import build_orientation               # practice-agnostic machinery + practice slots
 from .airlock import Airlock                             # TOTP two-phase remote approval
-# canon lifecycle (re-exported here for callers/tests that import via the server module)
-from .canon import (LOG_DIR, CHAT_ERA_FREEZE, canon_seq, seq_display, reindex_from_git,
-                   land_and_record, validate_log_entry, validate_log_entry as _validate_log_entry,
-                   proposal_statuses, close_proposal)
+# re-exported through the server module for callers and tests that wire or read via it: the
+# content model's serialization and the canon lifecycle (the cockpit, the airlock, the suite)
+from .entries import compose_entry, parse_entry          # noqa: F401
+from .canon import (CHAT_ERA_FREEZE, canon_seq, seq_display, reindex_from_git,   # noqa: F401
+                   land_and_record, validate_log_entry, validate_log_entry as _validate_log_entry)
 
 
 def _transport_security(http_host: str, extra_hosts):

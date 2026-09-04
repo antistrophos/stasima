@@ -27,19 +27,15 @@ DERIVED from this registry and cannot drift from it. A handler whose first param
 """
 import contextvars
 import inspect
-import os
-import sys
-import time
 from dataclasses import dataclass, field
 
 from .local_capstore import (LocalCapStore, Identity, PathNotFound, RefNotFound, StaleRef,
-                            CapStoreError, NonFastForward, PERSP_PREFIX as PERSP, PROP_PREFIX as PROP)
+                            CapStoreError, PERSP_PREFIX as PERSP, PROP_PREFIX as PROP)
 from .map_index import index_entry
 from .authz import Denied
 from .entries import compose_entry, parse_entry          # shared content-model serialization
 from .orientation import build_orientation               # practice-agnostic machinery + practice slots
-from .canon import (LOG_DIR, CHAT_ERA_FREEZE, canon_seq, seq_display,
-                    validate_log_entry as _validate_log_entry, proposal_statuses, close_proposal)
+from .canon import LOG_DIR, CHAT_ERA_FREEZE, canon_seq, seq_display, proposal_statuses, close_proposal
 
 
 @dataclass(frozen=True)

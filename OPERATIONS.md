@@ -304,7 +304,7 @@ Today the server refuses to start a shared service that could learn, so the toml
 Attribution still rides every write; per-request identity (and its anti-spoofing) returns with the
 token door, where each request carries the seat's credential.
 
-**Rekeying.** Per source: a session-sticky binding dies with its process (rekey = close and
+**Rekeying.** Per source: a process-sticky binding dies with its process (rekey = close and
 reopen the chat); a port-sticky binding is cleared from the console — `stasima-admin binding`
 lists the learned table, `stasima-admin binding --clear <port>` appends a clear event and re-arms
 learning (the history is never erased — the ledger keeps every learn and clear in order); a
