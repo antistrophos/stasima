@@ -13,7 +13,6 @@ Binding at process grain (the SSH-shaped identity pin, with port-security sticky
   7. the relay verbs carry no identity param (outside the guard BY SHAPE)
   8. every pinned spawn / sticky learn / port restore declares itself into the audit log
 """
-import json
 import os
 import subprocess as sp
 import sys
@@ -39,21 +38,7 @@ def setup():
     return store, SqliteMapIndex(":memory:"), StubEmbedder(dim=64), SqliteAuditLog(":memory:")
 
 
-def payload(res):
-    sc = res.structured_content
-    if sc is not None:
-        if isinstance(sc, dict) and set(sc.keys()) == {"result"}:
-            return sc["result"]
-        return sc
-    txt = "".join(getattr(c, "text", "") for c in res.content)
-    try:
-        return json.loads(txt)
-    except Exception:
-        return txt
-
-
-def err_text(res):
-    return "".join(getattr(c, "text", "") for c in res.content)
+from _testkit import payload, err_text   # the suite's shared readers
 
 
 async def main():

@@ -12,7 +12,6 @@ import os
 import socket
 import subprocess as sp
 import sys
-import tempfile
 import time
 
 import anyio
@@ -41,20 +40,12 @@ print("bind guard          OK (loopback+tailnet allowed; LAN/0.0.0.0 refused unt
 
 
 # ---- live servers over HTTP ----
-def text(res):
-    return "".join(getattr(c, "text", "") for c in res.content)
-
-
-def free_port():
-    s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
-    return port
+from _testkit import text, fresh_repo, free_port   # the suite's shared transport helpers
 
 
 def boot(extra_toml="", extra_env=None, expect_up=True):
     """Spawn the real server under a fresh bare repo + toml. Returns (proc, port, stderr_path)."""
-    work = tempfile.mkdtemp(prefix="stasima-http-")
-    gd = os.path.join(work, "stasima.git")
-    sp.run(["git", "init", "--bare", "-q", gd], check=True)
+    work, gd = fresh_repo("stasima-http-")
     port = free_port()
     cfgpath = os.path.join(work, "stasima.toml")
     with open(cfgpath, "w", encoding="utf-8") as f:

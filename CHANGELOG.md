@@ -5,7 +5,27 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
-(nothing yet)
+- **The suite runs in parallel, times itself, and takes filters.** `run_tests.py` runs the 24
+  standalone tests four at a time by default (`-j N`; `--serial` is the old behavior) and prints
+  each test's wall time plus the three slowest: on the build machine 183 s of wall for 694 s of
+  test time, against ten-plus minutes serial. `-k <substring>` (repeatable) runs one test or one
+  family. The measurement it produced: the cost is git subprocess spawns — the three slowest tests
+  are the ones that commit most — at roughly a quarter second per spawn on Windows, which is a
+  store-level fact for a later window, not a suite one.
+
+- **`_testkit.py` — the suite's shared helpers.** The result reader (`payload`), the refusal
+  readers (`is_err`, `err_text`, `text`), a fresh bare repo (`fresh_repo`), and the free-port /
+  wait-for-port pair the transport tests use. Nine tests carried their own copies, in four slightly
+  different shapes; they import one now. Tests stay standalone scripts. Unused imports the dedupe
+  left behind are pruned.
+
+- **CI on every push, on both platforms, on Node 24 actions.** Before 0.2.1 the suite ran in CI only
+  at release time (the 0.2.0 branch had no CI at all until its tag). New `ci.yml` runs test + build
+  on every push and pull request, on Ubuntu with Python 3.12 (the package's floor) and on Windows
+  with Python 3.14 (the reference fleet's shape — the stdio hang and the read-only git-object
+  regressions only show there). Both workflows pin the Node 24 majors (checkout v7, setup-python
+  v7, upload-artifact v7, download-artifact v8): GitHub removes Node 20 from its runners on
+  2026-09-23, and the 0.2.0 release run carried the deprecation warning.
 
 ## 0.2.0 — 2026-09-05 (the MCP v2 port: SDK 2.1 on protocol 2026-07-28 with every earlier revision served; the desk-and-stacks split; stateless http; soaked on the live fleet before tagging)
 

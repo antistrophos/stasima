@@ -10,12 +10,22 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Ubuntu on the floor Python the package declares; Windows on the Python the reference fleet
+    # runs — the stdio hang and the read-only-git-object class of regressions only show on Windows.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: "3.12"
+          - os: windows-latest
+            python: "3.14"
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
       - run: python -m pip install -e ".[test]"
       - run: python run_tests.py
 

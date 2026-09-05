@@ -67,17 +67,10 @@ print("3. additive proposal prepares fine: adds =", prep.summary.added, "removes
 # removal typed, so a naive arriving instance self-catches BEFORE involving the practitioner. This
 # is the property the rehearsal cares about most — confirmed here through the real tool, not just
 # the store primitive. (Lintel's point: the self-catch is what a stranger's instance depends on.)
-import json as _json
 import anyio
 from stasima.cap_server import build_server
 from mcp.client import Client as connect   # v2: the in-process client — one Client, one connection
-
-
-def _payload(res):
-    sc = res.structured_content
-    if isinstance(sc, dict):
-        return sc.get("result", sc)
-    return _json.loads("".join(getattr(c, "text", "") for c in res.content))
+from _testkit import payload as _payload   # the suite's shared result reader
 
 
 async def _instance_side():
