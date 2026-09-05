@@ -4,6 +4,55 @@ The cutover checklist for a **live deployment** moving between suite versions. W
 practitioner running the upgrade; the suite's own discipline applies — trust the process table over
 status badges, back up before you touch anything, and prefer boring sequences to clever ones.
 
+## 0.2.x → 0.3.0 (Eurotas — the plain-language contract)
+
+No data migration: git, the audit log, the map index, and `auth.sqlite` are untouched. What
+changes is the **wire contract**: every tool and identity parameter is renamed into the plain
+register (the Eurotas suite; its glossary is the ruling record), and a seat's skill must change
+with it. A 0.3.0 service serves one name set — the Eurotas names — so the fleet cuts over once.
+
+**The names.** `<family>_<verb>` for an act, `<family>_<view>` for a named read, all snake_case:
+
+| 0.2.x (Aous) | 0.3.0 (Eurotas) | | 0.2.x (Aous) | 0.3.0 (Eurotas) |
+|---|---|---|---|---|
+| `announce` | `seat_announce` | | `imp_send` | `message_send` |
+| `whoami` | `seat_whoami` | | `imp_check` | `message_inbox` |
+| `list_instances` | `seat_list` | | `imp_flags` | `message_unread_count` |
+| `sup_state` | `seat_state` | | `imp_mark_read` | `message_mark_read` |
+| `canon_state` | `canon_state` | | `propose` | `proposal_append_entry` |
+| `canon_diff` | `canon_diff` | | `propose_retract` | `proposal_retract_path` |
+| `sup_reconcile` | `canon_reconcile` | | `conflict_preview` | `proposal_preview` |
+| `kip_commit` | `entry_write` | | `list_proposals` | `proposal_list` |
+| `kip_get` | `entry_read` | | `propose_close` | `proposal_close` |
+| `list_entries` | `entry_list` | | `stage_approve` | `proposal_stage` |
+| `map_search` | `entry_search` | | `land_approve` | `proposal_land` |
+| `kip_history` | `entry_history` | | `stage_revert` | `proposal_unstage` |
+| `vap_record` | `vantage_write` | | `thread_scry` | `thread_list` |
+| `vap_for` | `vantage_list` | | `arg_scry` | `term_list` |
+| | | | `perf_scry` | `server_stats` |
+
+**The parameters.** `instance_id` is `seat` on every tool that took it (the value is the seat's
+name, as before). `message_send` drops the deprecated `sender` twin. On `entry_write` the fold's
+text is `vantage` (+ `vantage_title`), not `horizon`. On `vantage_write` the bound entry is `entry`
+and the vantage's text is `body`. Responses follow: `seat`/`seats` for `instance`/`instances`,
+`bound_seat` in `seat_whoami`'s binding block, `kind` wherever a vantage's kind was returned under
+`vantage`, `entry`/`entry_status`/`body` in `vantage_list`. `coordinates` is unchanged (it is a
+stored envelope key). Config keys, env vars, the admin CLI, and the store's commit format are
+unchanged.
+
+**Every tool now states its class** in the last sentence of its description — `replica`,
+`process`, `origin`, or `relay` — and carries MCP annotations (`read_only_hint`,
+`idempotent_hint`) to match; `docs/tools.md` explains the four.
+
+**Audit rows** written by 0.3.0 carry the Eurotas op names; rows written before the cutover keep
+the Aous names. The audit's readers filter on neither set (`canon_pull`, `reconcile_report`,
+`land_merge`, `read_receipt`), so nothing recomputes differently.
+
+Sequence: install 0.3.0 into the service venv → regenerate and install the **Eurotas skill** in
+every client (the Aous skill names tools that no longer exist) → restart the service → bounce the
+client → `seat_whoami` answers. Rollback: the 0.2.x service from its cockpit, the Aous skill back in
+the client, bounce.
+
 ## 0.1.5 → 0.2.0 (the MCP v2 port — SDK 2.1, protocol 2026-07-28)
 
 No data migration: git, the audit log, the map index, and `auth.sqlite` are untouched, and the

@@ -40,8 +40,8 @@ Identical across every tree (the branch is the layer); `state/`, `messages/`, an
 | `technical/` | protocol, schema, bootstrap/orientation — shared operational canon | resources |
 | `prompts/` | reusable, invokable prompts | MCP **prompts** |
 | `maps/` | **cartographic entries** — authored links/regions/salience over other entries | resources / search |
-| `messages/` | **addressed messages** — authored, attributed, with `recipients` | `imp_check` tool (pull) |
-| `vantages/` | **vantages** — the contextual horizon an act was figured against; reverse-bound, excluded from universal search | `vap_for` tool (scoped lookup) |
+| `messages/` | **addressed messages** — authored, attributed, with `recipients` | `message_inbox` tool (pull) |
+| `vantages/` | **vantages** — the contextual horizon an act was figured against; reverse-bound, excluded from universal search | `vantage_list` tool (scoped lookup) |
 | `assets/` | owned binary files (inline or Git LFS; never URL) | resources |
 | `archive/` | imported historical record from a prior substrate (chat logs, earlier journals) — *not* practice-generated, external, or reflection; populated at bootstrap, read-only by convention after | resources |
 | `state/` | per-instance self-description — **perspective-only, ungated** | (not canon) |
@@ -53,13 +53,13 @@ Identical across every tree (the branch is the layer); `state/`, `messages/`, an
 
 ## Log entries & the state sequence
 
-Two artifact types deliberately named apart. **Coherence state** (`state/`, `sup_reconcile`) is perspective-only and ungated. **The log entry** is the canon-side narrative: a record of what a change is and why it matters, riding *in* the proposal so every canon commit lands with its story attached.
+Two artifact types deliberately named apart. **Coherence state** (`state/`, `canon_reconcile`) is perspective-only and ungated. **The log entry** is the canon-side narrative: a record of what a change is and why it matters, riding *in* the proposal so every canon commit lands with its story attached.
 
 - **Home:** `meta/log/<seq>.md`, envelope `type: log`, required front-matter `seq` (lowercase hex, matching the filename).
 - **One per proposal, enforced at land** (not convention): landing rejects a proposal with zero or multiple log entries, and rejects `seq ≠ canon seq + 1` (monotonicity). `preview` surfaces both before the practitioner lands.
 - **At land, the merge commit is tagged `state/<seq>`** — the `::N` notation becomes an alias for a content-addressed truth (`git rev-parse state/4f`). State tags ride the sync refspecs.
 - **The origin is configurable** (`seq_origin`): canon sits at the origin before any land; the first land is origin + 1. A fresh deployment may start at 0; a deployment migrating from a prior numbered practice sets the origin to continue its sequence unbroken.
-- **Allocation is free:** an instance learns `next_seq` from `canon_state`/its reconcile; if another proposal lands first, the reconcile-before-propose gate forces a re-pull, the instance renumbers and retracts the stale entry (`propose_retract`). The coherence gate doubles as the allocation mechanism.
+- **Allocation is free:** an instance learns `next_seq` from `canon_state`/its reconcile; if another proposal lands first, the reconcile-before-propose gate forces a re-pull, the instance renumbers and retracts the stale entry (`proposal_retract_path`). The coherence gate doubles as the allocation mechanism.
 - **Every land increments** — there is deliberately no two-tier "some lands are states" ambiguity. The judgment "which changes deserve a state" relocates to "which proposals deserve a land," same judge.
 
 ## References & lineage — the one piece of future-proofing infra
@@ -121,7 +121,7 @@ v1 builds **no autonomous relevance engine.** Relevance is the practitioner's ju
 
 - **A vantage = an entry + a binding + a provenance.** Parallel to a message, a different key. It records the contextual horizon an authored act was figured against — the one axis the other organs don't instrument (chronology, lineage, and the two-clock coordinates are covered; *what was in view* was not).
 - **Reverse-bound.** The vantage points at the entry it accompanies (a coordinate); reverse-lookup returns the set. The direction is forced: a forward-reference (entry → its one vantage) can't express the many-to-one — one author's vantages on an entry over canon-states (melody), or many authors' vantages on one entry at one canon-state (harmony). Only reverse-binding represents both.
-- **Excluded from universal search**, exactly as a message is (index-scope) — surfaced only via the scoped `vap_for` lookup (by entry / author / canon-state). A second layer on a search result, never the result itself; otherwise a search would retrieve prior vantages and the record would echo its own past glances.
+- **Excluded from universal search**, exactly as a message is (index-scope) — surfaced only via the scoped `vantage_list` lookup (by entry / author / canon-state). A second layer on a search result, never the result itself; otherwise a search would retrieve prior vantages and the record would echo its own past glances.
 - **Provenance is first-class and asserted.** `confirmed` = the author's own horizon, recorded at authoring (you may only confirm an entry you authored — the server refuses otherwise); `reconstructed-by-<instance>-from-record` = a present instance's scholarly reading of an older entry's horizon, authored *by the reconstructor about the record*, never on the original's behalf.
 - **canon-state is server-pinned** from the author's reconcile cursor — one source for the value, not a self-report.
 
@@ -146,5 +146,5 @@ map_entries(
 ## MCP surface alignment
 
 - `prompts/` → MCP **prompts** primitive (list/get, invokable).
-- knowledge domains + `maps/` → MCP **resources** and/or the **`map_search` → `kip_get`** path.
-- `messages/` → the **`imp_check`** pull tool.
+- knowledge domains + `maps/` → MCP **resources** and/or the **`entry_search` → `entry_read`** path.
+- `messages/` → the **`message_inbox`** pull tool.

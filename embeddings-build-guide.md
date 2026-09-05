@@ -16,7 +16,7 @@
 
 ## The task in one sentence
 
-Connect the already-written `LocalServerEmbedder` to a running local embedding model and confirm that semantic search works — i.e., `map_search` returns entries that are *related in meaning*, not just sharing words.
+Connect the already-written `LocalServerEmbedder` to a running local embedding model and confirm that semantic search works — i.e., `entry_search` returns entries that are *related in meaning*, not just sharing words.
 
 ## Why this is the one piece left
 
@@ -57,7 +57,7 @@ Everything else in the Stasima is built and tested. Search runs today on `StubEm
 
 4. **Re-embed the corpus:** `stasima-admin --config stasima.toml reindex`. This rebuilds the index from git using the real model.
 
-5. **Acceptance:** run `map_search` with a query that's *semantically* (not lexically) related to an entry and confirm it ranks the entry highly. The clearest demonstration is a query that shares **no words** with the target entry but means the same thing — the stub ranks that near zero; a real model ranks it near the top.
+5. **Acceptance:** run `entry_search` with a query that's *semantically* (not lexically) related to an entry and confirm it ranks the entry highly. The clearest demonstration is a query that shares **no words** with the target entry but means the same thing — the stub ranks that near zero; a real model ranks it near the top.
 
 ## Gotchas (this is the real content)
 
@@ -78,7 +78,7 @@ Everything else in the Stasima is built and tested. Search runs today on `StubEm
 ## Done when
 
 - The step-2 smoke test passes (semantic > lexical) against your live server.
-- `map_search` on the real index ranks a meaning-related, word-disjoint query highly.
+- `entry_search` on the real index ranks a meaning-related, word-disjoint query highly.
 - The existing test suite still passes (`for t in *_test.py; do python $t; done`) — those use `StubEmbedder`, so they should be unaffected; if any break, you changed something you shouldn't have.
 - `OPERATIONS.md`'s embeddings instructions match what you actually did.
 
