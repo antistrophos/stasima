@@ -5,6 +5,19 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
+(nothing yet)
+
+## 0.2.0 — 2026-09-05 (the MCP v2 port: SDK 2.1 on protocol 2026-07-28 with every earlier revision served; the desk-and-stacks split; stateless http; soaked on the live fleet before tagging)
+
+- **Soaked before tagging.** Cut over on the Rehearsal fleet at 2026-09-05T00:28Z and held there
+  while three seats reported from their own chairs (the record is on the merge PR): the pull
+  measured from the last reconcile, the earned empty map, the first in-the-wild observation of
+  the idempotent re-pull, refusals arriving as their own sentences, the `binding` block as
+  specified, every message attributed through `instance_id` under the stateless service. Two
+  findings, both fixed before the tag: the reconcile dock had not named the pull's new return
+  fields (reconcile-v3 landed as canon ::1F; skill regenerated), and one client held a stale
+  0.1.5 skill archive (re-uploaded). Nothing read wrong at the wire.
+
 - **The legenda relief: `canon_diff` bounds the narratives it carries in full.** The legenda
   criterion (canon ::13) names the failure — a canon no longer readable entire — and the practitioner
   reported it firing on Rehearsal: a fresh seat's first pull was too large to read as content, so fresh
