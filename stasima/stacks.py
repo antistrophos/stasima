@@ -65,8 +65,9 @@ _session_label = contextvars.ContextVar("stasima_session_label", default=None)
 
 
 class Stacks:
-    def __init__(self, ops: dict, store: LocalCapStore, audit):
+    def __init__(self, ops: dict, store: LocalCapStore, audit, classes: dict | None = None):
         self.ops = ops
+        self.classes = dict(classes or {})   # op name -> replica | process | origin | relay
         self.store = store
         self.audit = audit
         self.writes = {n for n, fn in ops.items()
@@ -120,10 +121,19 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
     """Assemble the back end over its components. The body below is the operational law of the
     practice — every helper and every op, registered by name as it is defined."""
     ops = {}
+    classes = {}
 
-    def op(fn):
-        ops[fn.__name__] = fn
-        return fn
+    def op(cls):
+        """Register an op under its function name with its CLASS — the async-tolerance axis the wire
+        states on every tool: `replica` (a read any replica holding the refs can answer, later,
+        elsewhere), `process` (answered only by the process the seat is connected to), `origin`
+        (mutates origin state — a ref or the audit log — and needs a live lane to origin), `relay`
+        (origin, plus the practitioner's code in the conversation)."""
+        def reg(fn):
+            ops[fn.__name__] = fn
+            classes[fn.__name__] = cls
+            return fn
+        return reg
 
     has_map = index is not None and embedder is not None
 
@@ -333,9 +343,11 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             store, base=orientation_base, deployment_name=deployment_name)
 
     # ---------------------------------------------------------------- orient
-    @op
+    @op("origin")
     def seat_announce(principal) -> dict:
-        """Announce presence; returns orientation + current canon head + your perspective tip."""
+        """Announces a seat's arrival and returns the deployment's orientation, the canon head, and
+        the seat's perspective tip. Call first in every session. `seat` is the seat's reserved name,
+        held as one exact string; a casing drift forks a second seat. Class: origin."""
         seat = principal.name   # the desk resolved WHO; the record carries the name
         home = deployment_name or "Stasima"
         out = {"welcome": f"Welcome to {home}, {seat}.", "orientation": _orientation(),
@@ -353,7 +365,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
     # return, the latter a strict subset of canon_state. One home per fact.)
 
     # ---------------------------------------------------------------- author
-    @op
+    @op("origin")
     def entry_write(principal, domain: str, slug: str, body: str, op_id: str,
                    title: str = "", type: str = "kno",
                    tags: list[str] | None = None, references: list[str] | None = None,
@@ -361,13 +373,11 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                    superseded_by: list[str] | None = None,
                    vantage: str = "", vantage_title: str = "", tick: str = "",
                    thread: str = "") -> dict:
-        """Author an entry to your append-only perspective at <domain>/<slug>.md (YAML envelope +
-        body). Revise by SUPERSESSION, never edit: the new entry carries supersedes=[<old>]; retire
-        the old with a same-body re-commit, status='superseded' + superseded_by=[<new>]. `tick=<hex>`
-        (state/ entries only) mirrors your DECLARED clock label — surfaced, never validated.
-        `thread=<ref-safe-tag>` declares associative work. `vantage=` is THE FOLD: the entry and its
-        confirmed vantage in ONE atomic commit under one op_id (no vantage = no vantage, honestly).
-        The deep teaching lives in the current suite's author dock."""
+        """Writes one entry to the seat's perspective at `<domain>/<slug>.md`. Never rewrite a path's
+        body — refused; revise with a new entry carrying `supersedes`, then re-write the old one
+        unchanged with `status='superseded'` and `superseded_by`. `vantage` records the context
+        written against, same commit. `tick` (under `state/` only) declares the seat's state label.
+        Class: origin."""
         seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = persp_ref(seat)
         path = f"{domain}/{slug}.md"
@@ -449,13 +459,12 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         return out
 
     # ---------------------------------------------------------------- read
-    @op
+    @op("replica")
     def entry_read(ref: str, path: str, resolve: str = "live", with_vantages: bool = False) -> dict:
-        """Read an entry (envelope + body in `text`). `ref`: 'canon', a seat name, or a full ref.
-        resolve='live' (default) follows supersession to the LIVING edition (redirects shown in
-        `resolved_from`); resolve='exact' reads the edition at the path as-is. A miss names the
-        ref(s) actually holding the path. with_vantages=true also returns the bound vantages in
-        full."""
+        """Reads one entry (envelope and body in `text`). `ref` is `canon`, a seat name, or a full
+        ref. `resolve='live'` (default) follows supersession to the living edition and reports
+        `resolved_from`; `resolve='exact'` reads the path as-is. `with_vantages=true` adds the bound
+        vantages. A miss names the refs that hold the path. Class: replica."""
         full = resolve_alias(ref)
         p = path if path.endswith(".md") else path + ".md"
         try:
@@ -508,21 +517,20 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         blank = {"title": "", "status": "", "type": ""}
         return [{"path": p, **env.get(p, blank)} for p in paths]
 
-    @op
+    @op("replica")
     def entry_list(ref: str, path: str = "") -> dict:
-        """List entries under a ref ('canon', an instance name, or a full ref) as triageable pointers —
-        each carries path, title, status, and type, so live-vs-dead and what's-what are apparent
-        BEFORE you pull a body."""
+        """Lists entries under a ref (`canon`, a seat name, or a full ref), optionally below `path`,
+        as pointers: path, title, status, type. Use before reading bodies. Class: replica."""
         full = resolve_alias(ref)
         return {"entries": _listing(full, store.list_paths(full, path))}
 
     # (0.1.5 dedup: `my_perspective` removed — entry_list(ref=<your name>) is the same listing;
     # your tip rides announce and seat_state.)
 
-    @op
+    @op("replica")
     def entry_history(ref: str, path: str) -> dict:
-        """Version trail for an entry (newest first): oid, author, subject, title — the pointer
-        grammar extends to trails, so a version is recognizable without fetching its body."""
+        """Lists an entry's versions, newest first: oid, author, subject, title. Use to see how a
+        path changed without reading bodies. Class: replica."""
         r = resolve_alias(ref)
         p = path if path.endswith(".md") else path + ".md"
         hist = store.history(r, p)
@@ -535,20 +543,17 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         return {"history": hist}
 
     # ---------------------------------------------------------------- propose + track
-    @op
+    @op("origin")
     def proposal_append_entry(principal, proposal_id: str, domain: str, slug: str, body: str, op_id: str,
                 title: str = "", type: str = "kno", seq: str = "",
                 tags: list[str] | None = None, references: list[str] | None = None,
                 supersedes: list[str] | None = None, status: str = "active",
                 superseded_by: list[str] | None = None, origin_author: str = "",
                 thread: str = "") -> dict:
-        """Open or extend a proposal targeting canon at <domain>/<slug>.md — only the practitioner
-        lands. Reconcile first. Every proposal needs exactly ONE log entry to land:
-        proposal_append_entry(domain='meta/log', slug='<seq>', type='log', seq='<seq>'), seq = canon_state's
-        next_seq (checked here, fail-fast). Carrying ANOTHER seat's work (their path, or a verbatim
-        body) requires origin_author=<seat> — silent reattribution is refused; the gate sees both
-        names. `thread=` on the log entry tags the whole land. Lineage fields match entry_write.
-        The deep teaching lives in the current suite's author dock."""
+        """Appends one entry to a proposal at `<domain>/<slug>.md`, creating the proposal if
+        `proposal_id` is new. Reconcile first — refused otherwise. Exactly one log entry per proposal:
+        `domain='meta/log'`, `slug=<seq>`, `type='log'`, `seq` = canon's `next_seq`. Another seat's
+        work needs `origin_author` — refused otherwise. Only the practitioner lands. Class: origin."""
         seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = prop_ref(proposal_id)
         if domain != domain.strip("/") or "//" in f"{domain}/{slug}":
@@ -626,12 +631,11 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         _log(seat, "proposal_append_entry", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid)
         return {"proposal_id": proposal_id, "oid": r.oid, "path": path, "author": seat}
 
-    @op
+    @op("origin")
     def proposal_retract_path(principal, proposal_id: str, path: str, op_id: str) -> dict:
-        """Retract a path from a proposal — e.g. a stale log entry after renumbering (canon advanced,
-        so your meta/log/<old-seq>.md must be retracted and re-authored at the new seq). Retraction
-        restores ZERO DIVERGENCE: a path canon also holds reverts to canon's current edition; a path
-        the proposal added leaves the tree. (It never turns a proposal into a canon-deletion.)"""
+        """Removes one path from a proposal. A path canon also holds reverts to canon's edition; a
+        path the proposal added leaves it. Use to replace a stale log entry after canon advanced.
+        Never turns a proposal into a canon deletion. Class: origin."""
         seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = prop_ref(proposal_id)
         _authz(seat, "proposal_append_entry", ref, path)
@@ -669,13 +673,12 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
     # (0.1.5 dedup: `proposal_status` removed — it ran the pre-lifecycle is-ancestor logic and gave
     # strictly poorer answers than proposal_list' statuses; the deep look stays proposal_preview.)
 
-    @op
+    @op("replica")
     def proposal_preview(proposal_id: str) -> dict:
-        """Would this proposal merge cleanly into canon right now? Read-only; creates no candidate.
-        `removes` is the one to watch: landing a proposal that removes a canon path is REFUSED
-        (canon is append-only). If `removes` is non-empty, re-author before asking to land.
-        `attributions` lists entries carried on ANOTHER seat's behalf ({path: {authored, proposed}})
-        — the gate sees both names wherever origin_author was declared."""
+        """Reports whether a proposal would land cleanly on current canon: `adds`, `modifies`,
+        `removes`, conflicts, and `attributions` (entries carried for another seat). If `removes` is
+        non-empty, re-author before asking to land — a land that removes a canon path is refused.
+        Class: replica."""
         summary = store.preview_merge(prop_ref(proposal_id))
         pref = prop_ref(proposal_id)
         attributions = {}
@@ -699,24 +702,19 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 "would_remove_canon": bool(summary.removed) and not conflicted,
                 "attributions": attributions}
 
-    @op
+    @op("process")
     def server_stats() -> dict:
-        """The server-git boundary, measured since this server spawned — SCRY-grade (changes nothing,
-        no hinge). Per-git-verb subprocess counts, total/avg/max wall-clock: every git crossing flows
-        through one chokepoint, so this is the boundary's COMPLETE ledger. Read it before and after a
-        heavy act (a land, a first-pull reconcile, a listing sweep) and the delta names what that act
-        actually cost. On this substrate each git call is a process spawn with a fixed floor — a verb
-        that is hot by COUNT wants batching; hot by MAX wants an algorithmic look."""
+        """Reports this server process's git subprocess ledger since it started: counts and
+        wall-clock totals per git verb. Read before and after a heavy call to see what it cost.
+        Class: process."""
         return store.perf_stats()
 
-    @op
+    @op("origin")
     def proposal_close(principal, proposal_id: str, reason: str, op_id: str) -> dict:
-        """Close a proposal — the terminal verb for staging that will not land: superseded by a fresh
-        proposal, dead against current canon, or simply done with. Writes a `close:` tombstone commit
-        (the ref and its history remain; nothing is deleted). Terminal for SEAT operations only —
-        propose and retract refuse a closed proposal; the gate stays sovereign and may still land or
-        discard it. Creator-only, plus the practitioner's configured approvers (clearing lingering
-        offerings is the gate's own duty)."""
+        """Closes a proposal that will not land, with `reason`. The ref and its history remain. Only
+        the creator or a configured approver may close. After closing, `proposal_append_entry` and
+        `proposal_retract_path` refuse it; the practitioner can still land or discard it.
+        Class: origin."""
         seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = prop_ref(proposal_id)
         _authz(seat, "proposal_append_entry", ref, f"close/{proposal_id}")
@@ -732,23 +730,18 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                          f"configured approver) may close it")
         return close_proposal(store, audit, proposal_id, reason, seat, op_id=op_id)
 
-    @op
+    @op("replica")
     def proposal_list() -> dict:
-        """Proposal ids plus their lifecycle: `statuses` maps each id to open | landed | closed
-        (with `closed_reason`), and open proposals carry `lands_behind` — how many lands canon has
-        taken since the proposal branched (the mechanical staleness fact, surfaced raw; whether a
-        lingering proposal is DUE for closing is judgment, so no threshold is baked in). Whether an
-        open proposal would merge cleanly stays proposal_preview's question — a listing is bearings,
-        not an examination."""
+        """Lists proposals with `statuses` (open, landed, or closed with `closed_reason`) and, for
+        open ones, `lands_behind`: how many lands canon has taken since the proposal branched.
+        Class: replica."""
         ids = [r.name[len(PROP):] for r in store.list_refs(PROP)]
         return {"proposals": ids, "statuses": proposal_statuses(store)}
 
-    @op
+    @op("replica")
     def seat_list() -> dict:
-        """The roster: every seat holding a perspective, wrapped in a named object (a bare list can
-        fuse names on the wire; attribution must survive it). With the audit log present,
-        `current_with_canon` maps each seat to whether its reconcile cursor sits at canon's tip —
-        presence and currency in one glance (absorbs 0.1.4's sup_who)."""
+        """Lists every seat that holds a perspective, with `current_with_canon` per seat when the
+        audit log is present. Use to see who is here and who is current. Class: replica."""
         names = [r.name[len(PERSP):] for r in store.list_refs(PERSP)]
         out = {"seats": names}
         if audit is not None:
@@ -758,15 +751,14 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     # ---------------------------------------------------------------- MAP (needs an index) + IMP (needs an index + audit)
     if has_map:
-        @op
+        @op("replica")
         def entry_search(seat: str, query: str, scope: str = "all",
                        type: str | None = None, limit: int = 10,
                        include_superseded: bool = False, include_weak: bool = False) -> dict:
-            """Semantic search over the corpus, attributed — pointers (path/ref/author/type/title/
-            status/score/preview), never an unattributed blend. scope: canon | mine | all. Live-only
-            by default (`include_superseded=true` opts in; every hit carries status). Weak hits below
-            the embedder's calibrated floor are withheld WITH a count (`below_floor` — an empty
-            result is never silent); `include_weak=true` returns them."""
+            """Searches the corpus by meaning and returns attributed pointers (path, ref, author, type,
+            title, status, score, preview). `scope`: `canon`, `mine` (needs `seat`), or `all`. Superseded
+            entries are excluded unless `include_superseded=true`. Weak hits are withheld and counted in
+            `below_floor`; `include_weak=true` returns them. Class: replica."""
             qv = embedder.embed_query([query])[0]
             hits = index.search(qv, scope=scope, seat=seat, type=type, limit=limit,
                                 status=None if include_superseded else "active")
@@ -779,14 +771,11 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                      "preview": h.preview} for h in hits],
                     "below_floor": 0 if include_weak else len(weak)}
 
-        @op
+        @op("replica")
         def thread_list(thread: str = "", limit: int = 16, offset: int = 0) -> dict:
-            """Bearings on declared threads — SCRY-grade: coordination metadata, changes nothing, costs
-            no reconcile hinge (fetch, not pull). No argument: the registry view — every declared tag
-            with its entry count, authors, and latest pointer. With thread=<tag>: that thread's entries
-            as pointers, newest-first, bounded (the hex-page unit). Declared tags only — the value
-            semantics are unruled (reserve-the-field-rule-the-values); one tag with surprising authors
-            is a curation catch to read, never an error."""
+            """Without `thread`: every declared thread tag with its entry count, authors, and latest
+            pointer. With `thread=<tag>`: that thread's entries as pointers, newest first, paged by
+            `limit` and `offset`. Class: replica."""
             if not thread:
                 return {"threads": index.threads()}
             rows, total = index.thread_entries(thread, limit=limit, offset=offset)
@@ -797,16 +786,12 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                     "count": len(rows), "total": total,
                     "truncated": offset + len(rows) < total, "offset": offset}
 
-        @op
+        @op("replica")
         def term_list(term: str = "") -> dict:
-            """The argot dictionary — SCRY-grade (bearings, no reconcile hinge). No argument: the
-            registry — every coined term with its distinct-definition count, holding trees, and canon
-            presence. With term=<name>: each DISTINCT definition shown once (echo-collapsed), every
-            holder annotated (ref, author, status) — one definition across many trees is concordance;
-            several definitions under one term is divergence to read, never an error. All editions
-            shown WITH status (dictionary-grade honesty). This is the within-practice bore of the
-            search-aperture design: collapse and provenance now; the leash parameter arrives
-            additively when federation's rails exist."""
+            """Without `term`: every term in the argot dictionary with its definition count and holders.
+            With `term=<name>`: each distinct definition once, every holder annotated (ref, author,
+            status). Several definitions under one term is divergence to read, not an error.
+            Class: replica."""
             if not term:
                 return {"terms": index.arg_terms()}
             t = term.rsplit("/", 1)[-1]
@@ -815,15 +800,14 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             return {"term": t, "definitions": defs, "count": len(defs)}
 
         if audit is not None:
-            @op
+            @op("origin")
             def message_send(principal, recipients: list[str], subject: str, body: str, op_id: str,
                          coordinates: list[str] | None = None,
                          supersedes: list[str] | None = None, thread: str = "") -> dict:
-                """Author an addressed message — a KIP entry on your branch under messages/, indexed
-                into each recipient's inbox. Identity: your seat name as `seat` (canonical;
-                `sender` is the deprecated 0.1.x twin — pass exactly one). `coordinates` = paths to
-                jump to. `supersedes` retires your OWN earlier message(s) — tombstoned in inbox
-                views, never hidden. `thread=` chains messages to declared work."""
+                """Sends a message to one or more seats: an entry under `messages/` on the sender's
+                perspective, indexed into each recipient's inbox. `coordinates` lists entry paths the message
+                points to. `supersedes` retires the sender's own earlier message. `thread` chains it to
+                declared work. Class: origin."""
                 who = principal.name   # the desk resolved WHO (the seat/sender twin included)
                 ref = persp_ref(who)
                 path = f"messages/{op_id}.md"
@@ -855,14 +839,11 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                      result_oid=r.oid, detail={"recipients": recipients})
                 return {"path": path, "from": who, "recipients": recipients, "oid": r.oid}
 
-            @op
+            @op("replica")
             def message_inbox(seat: str, unread_only: bool = True) -> dict:
-                """Your inbox: messages where you're a recipient. Authored fields only (sender, subject,
-                coordinates) — IMP arranges, never synthesizes. Pull, not push. Supersession is resolved
-                across the WHOLE inbox before anything surfaces: a message another inbox message declares
-                `supersedes` carries its tombstone in `superseded_by` — FLAT, nothing hidden (visibility,
-                not refusal; read the frontier first, reply to no corpse). Declared edges only — the
-                unmarked stays author-discipline."""
+                """Lists the seat's inbox: messages where it is a recipient, unread only by default
+                (`unread_only=false` for all). A message superseded by another inbox message carries
+                `superseded_by`; nothing is hidden. Read the live messages first. Class: replica."""
                 msgs = index.inbox(seat)
                 superseded_by = {}   # resolved over the full inbox, before any unread filtering
                 by_author = {m.path: m.authoring_instance for m in msgs}
@@ -891,36 +872,32 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                           if m.path not in dead and not audit.is_read(seat, m.path)]
                 return {"unread": len(unread), "from": sorted({m.authoring_instance for m in unread})}
 
-            @op
+            @op("replica")
             def message_unread_count(seat: str = "") -> dict:
-                """The unread-frontier flag (a saved query, not a push). With `seat`: your
-                count + senders. With NO seat: the whole roster's mailroom in ONE crossing —
-                {seats: {name: {unread, from}}, roster: N}, zero-unread rows included (a quiet
-                mailroom is a fact). FRONTIER: a message superseded by its own sender's later
-                message stops flagging; message_inbox keeps the flat view with tombstones. (Absorbs
-                0.1.4's imp_flags_all.)"""
+                """Counts unread messages. With `seat`: that seat's count and senders. Without `seat`: every
+                seat's count and senders in one call, zero counts included. A message superseded by its
+                sender's later message stops counting. Class: replica."""
                 if seat:
                     return _inbox_flags(seat)
                 seats = sorted(r.name[len(PERSP):] for r in store.list_refs(PERSP))
                 return {"seats": {s: _inbox_flags(s) for s in seats}, "roster": len(seats)}
 
-            @op
+            @op("origin")
             def message_mark_read(principal, message_path: str) -> dict:
-                """Append a read-receipt to the audit log (append-only truth; survives a reindex)."""
+                """Marks one message read for the seat by appending a read receipt to the audit log. The
+                receipt survives a reindex. Class: origin."""
                 seat = principal.name   # the desk resolved WHO; the record carries the name
                 audit.append_read(seat, message_path)
                 return {"marked_read": message_path}
 
             # ------------------------------------------------------ VAP: vantages (horizon, second layer)
-            @op
+            @op("origin")
             def vantage_write(principal, entry: str, body: str, op_id: str,
                            kind: str = "confirmed", title: str = "") -> dict:
-                """Record a VANTAGE — the contextual body you authored an act against — bound to entry
-                `entry`. A KIP entry on your branch under vantages/, EXCLUDED from universal search (like a
-                message), surfaced only via vantage_list. `kind`: 'confirmed' (your real body, recorded at
-                authoring — you may only confirm your OWN entry) or 'reconstructed' (your scholarly reading
-                of an older entry's body, recorded as reconstructed-by-you, never on the original's
-                behalf). canon-state is pinned server-side from your reconcile cursor, not author-supplied."""
+                """Records a vantage: the context the seat wrote `entry` against, as its own entry under
+                `vantages/`. `kind='confirmed'` is your own context on your own entry — refused on another
+                seat's; `kind='reconstructed'` is your reading of an older entry, recorded as yours. Vantages
+                surface only through `vantage_list` and `entry_read(with_vantages=true)`. Class: origin."""
                 seat = principal.name   # the desk resolved WHO; the record carries the name
                 if kind not in ("confirmed", "reconstructed"):
                     raise Denied("kind must be 'confirmed' or 'reconstructed'")
@@ -964,15 +941,13 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 return {"path": path, "author": seat, "entry": entry, "kind": vantage,
                         "canon_state": cursor, "oid": r.oid}
 
-            @op
+            @op("replica")
             def vantage_list(entry: str = "", author: str = "", canon_state: str = "",
                         detail: str = "pointer", limit: int = 16, offset: int = 0) -> dict:
-                """Vantages reverse-bound to an entry — the second layer, never the result itself.
-                Project by `entry`, `author`, or `canon_state`. Pointers by default (+ the bound
-                entry's live status); detail="full" adds complete horizons. Newest-first, bounded
-                (default 16), `offset` pages. THE RECOVERY CONVENTION: recovery after context loss
-                = vantage_list(author=<you>, detail="full"), which rebuilds your standpoint-thread from
-                the substrate. Vantages surface ONLY here — never in universal search."""
+                """Lists vantages bound to an `entry`, written by an `author`, or pinned to a `canon_state`,
+                newest first, as pointers with the bound entry's status. `detail='full'` adds each vantage's
+                `body`. After context loss, call with `author=<your seat>` and `detail='full'` to rebuild your
+                standpoint. Class: replica."""
                 rows = index.vantages_for(entry=entry or None, author=author or None,
                                           canon_state=canon_state or None)
                 total = len(rows)
@@ -1007,18 +982,12 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     # ---------------------------------------------------------------- SUP: per-instance state ↔ canon coherence
     if audit is not None:
-        @op
+        @op("origin")
         def canon_diff(principal) -> dict:
-            """Pull what changed in canon since you last reconciled — a POINTER diff: path/title/type/status
-            per changed entry, plus the most recent lands' log narratives in full (the story of the change,
-            written for exactly this reader); older narratives ride as pointers, and the response says how
-            many of each (`logs_in_full`, `logs_as_pointers`). Read the map, then entry_read(ref='canon',
-            path=...) any entry that governs your next act — full bodies deliberately do NOT ride along (a
-            large land, or a first pull of a large canon, would overflow the response and break the reconcile
-            hinge). The diff is measured from the canon you last RECONCILED with, so pulling twice returns
-            the same map (a lost response costs nothing to re-pull); the pull is recorded (a server-tracked
-            fact) and you must then canon_reconcile before you can propose again. Log entries come first, in
-            sequence order; a first pull is marked `first_pull: true`."""
+            """Lists what changed in canon since this seat last reconciled: changed entries as pointers,
+            the most recent land narratives in full (`logs_in_full`, default 8), older ones as pointers.
+            Records the pull. Call before `canon_reconcile`; calling twice returns the same diff until
+            then. A first pull is marked `first_pull`. Class: origin."""
             seat = principal.name   # the desk resolved WHO; the record carries the name
             tip = store.resolve_ref(store.canon_ref)
             # the diff BASE is the last reconciled position, not the last pull (Mercurius's finding:
@@ -1066,11 +1035,11 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                                f"your next act; canon_reconcile when you have taken it up.")
             return out
 
-        @op
+        @op("origin")
         def canon_reconcile(principal, body: str) -> dict:
-            """Self-report what you updated about yourself after reading the canon diff. Allowed only after
-            you've pulled current canon (canon_diff). Appends a state/ entry to your perspective — your own
-            chronology, paired to the canon version. This is what unblocks propose."""
+            """Self-reports what this seat updated after reading the canon diff, as a state entry on its
+            perspective paired to the canon tip. Allowed only after `canon_diff` — refused otherwise.
+            Required before `proposal_append_entry` and before writing durable entries. Class: origin."""
             seat = principal.name   # the desk resolved WHO; the record carries the name
             _binding_stamp = principal.stamp
             tip = store.resolve_ref(store.canon_ref)
@@ -1111,11 +1080,11 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                  detail={"canon_cursor": tip})
             return {"path": path, "canon_cursor": tip, "oid": r.oid}
 
-        @op
+        @op("replica")
         def seat_state(seat: str) -> dict:
-            """An instance's state trail + its standing relative to canon. `ticks` maps the state
-            entries that DECLARED a machine-readable label (tick=, the mirror field) to it — absence
-            from the map is normal and means nothing; prose remains the governing declaration."""
+            """Returns one seat's trail and standing: perspective tip, state entries, `ticks` (the state
+            labels the seat declared), `canon_cursor`, `current_with_canon`. Use to read a seat's trail,
+            including your own after context loss. Class: replica."""
             ref = persp_ref(seat)
             tip = store.resolve_ref(ref)
             states = [p for p in (store.list_paths(ref) if tip else []) if p.startswith("state/")]
@@ -1129,10 +1098,11 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         # (0.1.5 dedup: `sup_who` removed — seat_list carries the roster AND per-seat
         # currency now; one home for presence.)
 
-        @op
+        @op("replica")
         def canon_state() -> dict:
-            """The shared canon state — the mirror of an instance's own: current tip, state number,
-            entries, land chronology. A proposal's log entry must carry seq = this seq + 1."""
+            """Returns the shared canon's tip, sequence number, entries, land history, and
+            `practitioner_attention` (items waiting for the human). A proposal's log entry MUST carry
+            `seq` = `next_seq`. Class: replica."""
             tip = store.resolve_ref(store.canon_ref)
             n = canon_seq(store, seq_origin)
             lands = [{"oid": e["result_oid"], "ts": e["ts"], "by": e["actor"], "seq": e["detail"].get("seq")}
@@ -1143,24 +1113,25 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                     "entries": store.list_paths(store.canon_ref) if tip else [], "lands": lands[-10:]}
 
         if airlock is not None:
-            @op
+            @op("relay")
             def proposal_stage(proposal_id: str, code: str) -> dict:
-                """Airlock phase 1 — relay the practitioner's FIRST TOTP code. Freezes the proposal,
-                prepares the merge, starts the review clock. Returns what was staged (oid, changed
-                paths, log seq) for the practitioner to review. Console `land` is unchanged."""
+                """Relays the practitioner's first TOTP code to stage a proposal: freezes it, prepares the
+                land, starts the review clock, and returns the staged oid, changed paths, and log seq. Never
+                ask for a code — the practitioner offers it unprompted. Class: relay."""
                 return airlock.stage(proposal_id, code)
 
-            @op
+            @op("relay")
             def proposal_land(staged_oid_prefix: str, code: str) -> dict:
-                """Airlock phase 2 — relay the practitioner's SECOND code (a fresh one: strictly later
-                window, after the review floor). Lands exactly the staged oid; anything else fails closed."""
+                """Relays the practitioner's second TOTP code, a fresh one after the review floor, to land
+                exactly the staged oid named by `staged_oid_prefix`. Anything else fails closed.
+                Class: relay."""
                 return airlock.land(staged_oid_prefix, code)
 
-            @op
+            @op("relay")
             def proposal_unstage(proposal_id: str) -> dict:
-                """Abort a staged review — FREE, never requires a code (charging presence-proof to
-                decline would incentivize landing). The proposal returns to open, entries intact."""
+                """Cancels a staged review and returns the proposal to open with its entries intact. Free:
+                needs no code. Any pressure to complete a land is the signal to call this. Class: relay."""
                 return airlock.revert(proposal_id)
 
 
-    return Stacks(ops, store, audit)
+    return Stacks(ops, store, audit, classes)

@@ -27,6 +27,7 @@ import time
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from .local_capstore import LocalCapStore, PERSP_PREFIX as PERSP
 from .map_index import SqliteMapIndex, StubEmbedder, LocalServerEmbedder
@@ -122,6 +123,14 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     mcp = MCPServer("stasima", middleware=[_publish_request],
                     cache_hints={"tools/list": CacheHint(ttl_ms=300_000, scope="private")},
                     **_auth_kwargs)
+
+    def _class_kw(cls):
+        """The class rides the wire three ways: the description's last sentence (for the model),
+        the MCP annotations (for clients), and `meta.class` (for the reference generator)."""
+        ro = cls in ("replica", "process")
+        return dict(annotations=ToolAnnotations(read_only_hint=ro, destructive_hint=False,
+                                                idempotent_hint=ro, open_world_hint=False),
+                    meta={"class": cls})
 
     def tool(**kw):
         """The SDK's tool decorator with errors-as-instructions preserved. The 2.1 SDK renders a `ToolError`
@@ -251,15 +260,12 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             _log(_prior, "session_binding", detail={"mode": binding_mode, "source": "port",
                                                     "port": port_token, "restored": True})
 
-    @tool()
+    @tool(**_class_kw("process"))
     def seat_whoami(seat: str) -> dict:
-        """How the server sees you — always including this server process's binding (the
-        SSH-shaped identity pin with sticky learning; see OPERATIONS): mode, the bound name (pinned,
-        port-restored, or learned from your first write — null if nothing has bound yet), its
-        source, its grain, and whether YOUR claim matches. Mode `off` is the server-owned downgrade,
-        shown plainly — like http:// in the address bar. Binding lives at process grain: the
-        protocol has no per-conversation session to bind, so a shared service runs `off` until
-        per-request identity arrives as tokens."""
+        """Reports how this server process sees the seat: its perspective ref, the tools it may
+        write with, and the process's binding (`mode`, `grain`, `bound_seat`, `source`, `match`).
+        `mode='off'` means the process pins no seat; `match` says whether `seat` is the bound one.
+        Use before writing when identity is in doubt. Class: process."""
         out = {"seat": seat, "perspective_ref": persp_ref(seat),
                "namespace": f"perspectives/{seat}", "allowed_ops": ["entry_write", "proposal_append_entry", "message_send", "vantage_write"],
                "note": "identity is a recorded name; the binding (pinned or sticky-learned, at process grain) guards writes"}
@@ -340,7 +346,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         return adapter
 
     for _name, _fn in S.ops.items():
-        tool()(_adapter(_name, _fn))
+        tool(**_class_kw(S.classes.get(_name, "origin")))(_adapter(_name, _fn))
 
     if oauth_provider is not None and public_url:
         # the practitioner's side of the door: the SDK redirected the browser here; the SAME TOTP
