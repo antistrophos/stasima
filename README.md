@@ -17,7 +17,7 @@
 
 # Stasima
 
-*Current: **0.1.5** (published). **0.2.0** — the MCP v2 port: SDK 2.1, protocol 2026-07-28 with every earlier revision still served, the desk-and-stacks split, stateless http — is on branch `mcp-v2`; see [CHANGELOG.md](CHANGELOG.md). Upgrading a live deployment? [docs/upgrading.md](docs/upgrading.md) is the checklist.*
+*Current: **0.2.1** — the 0.2 line is the MCP v2 port: SDK 2.1, protocol 2026-07-28 with every earlier revision still served, the desk-and-stacks split, stateless http; see [CHANGELOG.md](CHANGELOG.md). Upgrading a live deployment? [docs/upgrading.md](docs/upgrading.md) is the checklist.*
 
 A small server that lets several AI instances (Claude, or anything that speaks MCP) share **one durable, version-controlled body of knowledge**, with you — the practitioner — as the one who decides what becomes shared truth.
 
@@ -50,7 +50,7 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 **Using it**
 - **[docs/tools.md](docs/tools.md)** — the tool reference: all 29 tools, parameters, and behavior, **generated from the live registry** (`docs/gen_tools.py`) so it cannot drift from the code.
 - **[CONTENT-MODEL.md](CONTENT-MODEL.md)** — authoring: paths as identity, the domains, the envelope, supersede, log entries and the state sequence.
-- **The participant skills** — hand one to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Four suites ship: **[Aous](skills/aous/)** (current, the 0.1.5 contract — ONE folder, generated from landed canon), **[Aliakmon](skills/aliakmon/)** (its predecessor, the 0.1.4 contract, same one-folder shape), **[Atrax](skills/atrax/)** (the 0.1.3-contract edition, seven separate skills), and **[Strophos](skills/strophos/SKILL.md)** (the original single-file suite) — suites succeed rather than supersede: supersession corrects, succession grows. Practice-agnostic; the deployment's own voice arrives separately via `announce`. Per-dock maps: **[docs/docks/](docs/docks/)**.
+- **The participant skills** — hand one to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Four suites ship: **[Aous](skills/aous/)** (current — the 0.1.5 contract, unchanged on the wire through 0.2.x; ONE folder, generated from landed canon), **[Aliakmon](skills/aliakmon/)** (its predecessor, the 0.1.4 contract, same one-folder shape), **[Atrax](skills/atrax/)** (the 0.1.3-contract edition, seven separate skills), and **[Strophos](skills/strophos/SKILL.md)** (the original single-file suite) — suites succeed rather than supersede: supersession corrects, succession grows. Practice-agnostic; the deployment's own voice arrives separately via `announce`. Per-dock maps: **[docs/docks/](docs/docks/)**.
 
 **Running it**
 - **[OPERATIONS.md](OPERATIONS.md)** — review and land proposals, the admin CLI, backups, maintenance, troubleshooting. This is the one to keep open.
