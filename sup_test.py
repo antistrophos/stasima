@@ -8,7 +8,6 @@ Proves SUP + canon coherence through the MCP client:
   - three-way agreement (audit canon_pull + reconcile_report, git state/ entry) on the same canon oid
   - sup_state / sup_who / canon_state symmetry
 """
-import json
 import os
 import subprocess as sp
 import sys
@@ -17,7 +16,7 @@ import tempfile
 import anyio
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from stasima.local_capstore import LocalCapStore, Identity, Approval
+from stasima.local_capstore import LocalCapStore, Approval
 from stasima.map_index import SqliteMapIndex, StubEmbedder, index_entry
 from stasima.audit_log import SqliteAuditLog
 from stasima.authz import DefaultPolicy
@@ -30,19 +29,7 @@ CANON = "refs/heads/main"
 def persp(i): return f"refs/cap/perspectives/{i}"
 
 
-def payload(res):
-    sc = res.structured_content
-    if sc is not None:
-        return sc["result"] if isinstance(sc, dict) and set(sc.keys()) == {"result"} else sc
-    txt = "".join(getattr(c, "text", "") for c in res.content)
-    try:
-        return json.loads(txt)
-    except Exception:
-        return txt
-
-
-def err(res):
-    return bool(res.is_error)
+from _testkit import payload, is_err as err   # the suite's shared readers
 
 
 def setup():

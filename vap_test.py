@@ -12,7 +12,6 @@ index-exclusion, no scaffold):
     — you never confirm a horizon you did not author;
   - canon-state is pinned server-side from the reconcile cursor, not author-supplied.
 """
-import json
 import os
 import subprocess as sp
 import sys
@@ -45,10 +44,7 @@ def make_server():
                         binding_mode="off")
 
 
-def pay(r):
-    sc = r.structured_content
-    return sc.get("result", sc) if isinstance(sc, dict) else \
-        json.loads("".join(getattr(c, "text", "") for c in r.content))
+from _testkit import payload as pay   # the suite's shared result reader
 
 
 HORIZON = "the salient surrounding I figured against was tidal-flux-under-low-attention-zarquon-glimmerwharf"

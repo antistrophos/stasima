@@ -12,12 +12,9 @@ import base64
 import hashlib
 import json
 import os
-import re
 import secrets
-import socket
 import subprocess as sp
 import sys
-import tempfile
 import time
 import urllib.parse
 
@@ -37,15 +34,11 @@ assert rl.allow("ip-a", 11.0), "the window slid — oldest hit aged out, allowed
 print("0. rate limiter      OK (window fills, denies, slides; keys independent)")
 
 
-def free_port():
-    s = socket.socket(); s.bind(("127.0.0.1", 0)); p = s.getsockname()[1]; s.close()
-    return p
+from _testkit import fresh_repo, free_port, wait_port   # the suite's shared transport helpers
 
 
 def boot(cfg_text):
-    work = tempfile.mkdtemp(prefix="stasima-oauth-")
-    gd = os.path.join(work, "stasima.git")
-    sp.run(["git", "init", "--bare", "-q", gd], check=True)
+    work, gd = fresh_repo("stasima-oauth-")
     port = free_port()
     cfgpath = os.path.join(work, "stasima.toml")
     with open(cfgpath, "w", encoding="utf-8") as f:
@@ -55,17 +48,7 @@ def boot(cfg_text):
     proc = sp.Popen([sys.executable, "-m", "stasima.cap_server"],
                     env=dict(os.environ, STASIMA_CONFIG=cfgpath), cwd=HERE,
                     stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        try:
-            socket.create_connection(("127.0.0.1", port), timeout=0.5).close()
-            break
-        except OSError:
-            if proc.poll() is not None:
-                raise SystemExit(f"server exited early ({proc.returncode})")
-            time.sleep(0.3)
-    else:
-        raise SystemExit("server never opened the port")
+    wait_port(port, proc)
     return work, port, proc
 
 
@@ -73,9 +56,7 @@ def boot(cfg_text):
 work, port, proc = None, None, None
 try:
     base = f"http://127.0.0.1:{free_port()}"   # placeholder; replaced below with the real port
-    w2 = tempfile.mkdtemp(prefix="stasima-oauth-")
-    gd = os.path.join(w2, "stasima.git")
-    sp.run(["git", "init", "--bare", "-q", gd], check=True)
+    w2, gd = fresh_repo("stasima-oauth-")
     port = free_port()
     public = f"http://127.0.0.1:{port}"
     secret = generate_secret()
@@ -89,13 +70,7 @@ try:
     proc = sp.Popen([sys.executable, "-m", "stasima.cap_server"],
                     env=dict(os.environ, STASIMA_CONFIG=cfgpath), cwd=HERE,
                     stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-    for _ in range(100):
-        try:
-            socket.create_connection(("127.0.0.1", port), timeout=0.5).close(); break
-        except OSError:
-            if proc.poll() is not None:
-                raise SystemExit(f"server exited early ({proc.returncode})")
-            time.sleep(0.3)
+    wait_port(port, proc)
 
     c = httpx.Client(base_url=public, timeout=15)
 

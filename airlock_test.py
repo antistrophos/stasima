@@ -14,7 +14,6 @@ Airlock acceptance checks (per the implementation brief), with an injectable clo
 Plus: RFC 6238 test vector, and the practitioner_attention field.
 """
 import base64
-import json
 import os
 import subprocess as sp
 import sys
@@ -46,23 +45,7 @@ class Clock:
     def advance(self, s): self.t += s
 
 
-def payload(res):
-    sc = res.structured_content
-    if sc is not None:
-        return sc["result"] if isinstance(sc, dict) and set(sc.keys()) == {"result"} else sc
-    txt = "".join(getattr(c, "text", "") for c in res.content)
-    try:
-        return json.loads(txt)
-    except Exception:
-        return txt
-
-
-def err(res):
-    return bool(res.is_error)
-
-
-def errtext(res):
-    return "".join(getattr(c, "text", "") for c in res.content)
+from _testkit import payload, is_err as err, err_text as errtext   # the suite's shared readers
 
 
 async def main():

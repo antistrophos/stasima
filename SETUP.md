@@ -104,7 +104,7 @@ Skippable — console `land` works without it, and you can provision later. Deta
 ```bash
 stasima-admin --config stasima.toml status     # canon head, seq, perspectives, audit health
 stasima-admin --config stasima.toml verify     # audit chain integrity
-python run_tests.py                                  # the full suite (23 files), if you want belt-and-braces
+python run_tests.py                                  # the full suite (24 files, in parallel; -k <name> for one), if you want belt-and-braces
 ```
 
 If `status` shows your canon head and `verify` reports the chain OK, you're set up.

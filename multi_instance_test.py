@@ -6,7 +6,6 @@ a message sent through one server is seen through the other, a reply round-trips
 are visible. Single-server IMP is covered by server_test; this is the cross-server (real multi-
 instance) path, where messages travel through the shared git substrate + map index, not in-process.
 """
-import json
 import os
 import subprocess as sp
 import sys
@@ -37,10 +36,7 @@ def make_server():
                         SqliteMapIndex(mapdb), StubEmbedder(64), SqliteAuditLog(auditdb), DefaultPolicy())
 
 
-def pay(r):
-    sc = r.structured_content
-    return sc.get("result", sc) if isinstance(sc, dict) else \
-        json.loads("".join(getattr(c, "text", "") for c in r.content))
+from _testkit import payload as pay   # the suite's shared result reader
 
 
 async def main():

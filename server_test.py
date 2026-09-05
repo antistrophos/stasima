@@ -4,7 +4,6 @@ Full-loop test through the real MCP client/protocol path (in-memory transport):
 orient -> author (indexed inline) -> map_search -> read own trail -> propose -> check status
 -> message peers -> flag/inbox/read. Uses the deterministic StubEmbedder (offline).
 """
-import json
 import os
 import subprocess as sp
 import sys
@@ -37,17 +36,7 @@ def setup():
     return store, index, emb, audit
 
 
-def payload(res):
-    sc = res.structured_content
-    if sc is not None:
-        if isinstance(sc, dict) and set(sc.keys()) == {"result"}:
-            return sc["result"]
-        return sc
-    txt = "".join(getattr(c, "text", "") for c in res.content)
-    try:
-        return json.loads(txt)
-    except Exception:
-        return txt
+from _testkit import payload   # the suite's shared result reader
 
 
 async def main():
