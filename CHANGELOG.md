@@ -5,6 +5,16 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
+(nothing yet)
+
+## 0.2.1 — 2026-09-05 (the suite: parallel, measured, shared helpers; CI on every push, both platforms, Node 24 actions)
+
+- **Measured on three machines.** The same suite at `-j 4`: the build laptop (Windows) 183 s wall
+  for 694 s of test time; GitHub's Windows runner 57 s / 213 s; GitHub's Ubuntu runner 12 s /
+  39 s. Same tests, same parallelism — the spread is git subprocess spawn cost and nothing else,
+  roughly eighteen to one between the laptop and Linux. Recorded so nobody optimizes the store for
+  a cost that Linux does not pay.
+
 - **The suite runs in parallel, times itself, and takes filters.** `run_tests.py` runs the 24
   standalone tests four at a time by default (`-j N`; `--serial` is the old behavior) and prints
   each test's wall time plus the three slowest: on the build machine 183 s of wall for 694 s of
