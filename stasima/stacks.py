@@ -256,7 +256,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 pass
         return (1, 0, path)
 
-    def _pin(envelope, instance_id, tip):
+    def _pin(envelope, seat, tip):
         """The mechanical two-clock pin, stamped on EVERY write: the author's canon cursor
         (`canon_state`, server-sourced — the shared primitive VAP introduced) and the target ref's
         commit position (`instance_depth`, parent-count+1 — monotonic per ref, survives a reindex
@@ -266,7 +266,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         re-pins. A parentless first commit is depth 1 (no fallback: a fresh perspective is BORN at 1;
         a proposal branch is created from canon before its first commit, so its tip already exists).
         Both faces of an atomic fold share one commit, hence one depth."""
-        envelope.setdefault("canon_state", _canon_cursor(instance_id) or "")
+        envelope.setdefault("canon_state", _canon_cursor(seat) or "")
         envelope["instance_depth"] = (store.commit_count(tip) + 1) if tip else 1
         return envelope
 
@@ -336,16 +336,16 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
     @op
     def seat_announce(principal) -> dict:
         """Announce presence; returns orientation + current canon head + your perspective tip."""
-        instance_id = principal.name   # the desk resolved WHO; the record carries the name
+        seat = principal.name   # the desk resolved WHO; the record carries the name
         home = deployment_name or "Stasima"
-        out = {"welcome": f"Welcome to {home}, {instance_id}.", "orientation": _orientation(),
+        out = {"welcome": f"Welcome to {home}, {seat}.", "orientation": _orientation(),
                "canon_head": store.resolve_ref(store.canon_ref),
-               "your_perspective_tip": store.resolve_ref(persp_ref(instance_id)),
+               "your_perspective_tip": store.resolve_ref(persp_ref(seat)),
                "practitioner_attention": _attention()}
-        clash = _name_collision(instance_id)   # surface a fork-by-casing on arrival, before any write
+        clash = _name_collision(seat)   # surface a fork-by-casing on arrival, before any write
         if clash:
-            out["name_warning"] = (f"a perspective '{clash}' already exists and '{instance_id}' differs "
-                                   f"only in case — writing under '{instance_id}' would fork your identity. "
+            out["name_warning"] = (f"a perspective '{clash}' already exists and '{seat}' differs "
+                                   f"only in case — writing under '{seat}' would fork your identity. "
                                    f"Use '{clash}'. (Names are case-sensitive in v1; writes will be refused.)")
         return out
 
@@ -359,19 +359,19 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                    tags: list[str] | None = None, references: list[str] | None = None,
                    supersedes: list[str] | None = None, status: str = "active",
                    superseded_by: list[str] | None = None,
-                   horizon: str = "", horizon_title: str = "", tick: str = "",
+                   vantage: str = "", vantage_title: str = "", tick: str = "",
                    thread: str = "") -> dict:
         """Author an entry to your append-only perspective at <domain>/<slug>.md (YAML envelope +
         body). Revise by SUPERSESSION, never edit: the new entry carries supersedes=[<old>]; retire
         the old with a same-body re-commit, status='superseded' + superseded_by=[<new>]. `tick=<hex>`
         (state/ entries only) mirrors your DECLARED clock label — surfaced, never validated.
-        `thread=<ref-safe-tag>` declares associative work. `horizon=` is THE FOLD: the entry and its
-        confirmed vantage in ONE atomic commit under one op_id (no horizon = no vantage, honestly).
+        `thread=<ref-safe-tag>` declares associative work. `vantage=` is THE FOLD: the entry and its
+        confirmed vantage in ONE atomic commit under one op_id (no vantage = no vantage, honestly).
         The deep teaching lives in the current suite's author dock."""
-        instance_id = principal.name   # the desk resolved WHO; the record carries the name
-        ref = persp_ref(instance_id)
+        seat = principal.name   # the desk resolved WHO; the record carries the name
+        ref = persp_ref(seat)
         path = f"{domain}/{slug}.md"
-        _authz(instance_id, "entry_write", ref, path)
+        _authz(seat, "entry_write", ref, path)
         _binding_stamp = principal.stamp
         if tick:
             # form + scope are structure (the shapes accepted at write); the VALUE is the seat's —
@@ -391,61 +391,61 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                                       thread=thread or None)
         if _binding_stamp:
             envelope.update(_binding_stamp)
-        vap_path = f"vantages/{op_id}-vap.md" if horizon else None
+        vap_path = f"vantages/{op_id}-vap.md" if vantage else None
         vap_holder = {}
 
         def build(btip):
             # per-tip work, re-run on a CAS retry: guard + pins + composition all keyed to `btip`
-            _check_immutable(instance_id, btip, path, body)
-            _pin(envelope, instance_id, btip)
+            _check_immutable(seat, btip, path, body)
+            _pin(envelope, seat, btip)
             changes = {path: compose_entry(envelope, body)}
-            if horizon:
+            if vantage:
                 # confirmed-by-construction: the folded entry is necessarily the author's own, recorded
                 # at the true moment — dignity and temporal guards are satisfied by the call shape.
                 # The vantage path derives from op_id; reusing an op_id after the ref moved on would
                 # silently REWRITE the recorded standpoint — refuse it (a replay of the same op is
                 # fine: the tip's own op-id matches and the store returns the prior commit unwritten).
                 if _blob_at(btip, vap_path) is not None and store.commit_op_id(btip) != op_id:
-                    _log(instance_id, "entry_write", target_path=vap_path, op_id=op_id, outcome="denied",
+                    _log(seat, "entry_write", target_path=vap_path, op_id=op_id, outcome="denied",
                          detail={"reason": "op_id reuse would rewrite a recorded vantage"})
                     raise Denied(f"{vap_path} already records a vantage under op_id '{op_id}' — an op_id "
                                  f"names one act; use a new op_id (the standpoint record is append-only)")
-                vap_env = {"type": "vap", "title": horizon_title or f"vantage on {path}", "status": "active",
+                vap_env = {"type": "vap", "title": vantage_title or f"vantage on {path}", "status": "active",
                            "vantage": "confirmed", "canon_state": envelope["canon_state"],
                            "instance_depth": envelope["instance_depth"],   # one commit, one depth — both faces
                            "coordinates": [path]}
                 vap_holder["env"] = vap_env
-                changes[vap_path] = compose_entry(vap_env, horizon)
+                changes[vap_path] = compose_entry(vap_env, vantage)
             return changes
 
         try:
-            r = _commit_retry(ref, path, build, instance_id, op_id)
+            r = _commit_retry(ref, path, build, seat, op_id)
         except CapStoreError as e:
-            _log(instance_id, "entry_write", target_ref=ref, target_path=path, op_id=op_id,
+            _log(seat, "entry_write", target_ref=ref, target_path=path, op_id=op_id,
                  outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
             raise
-        out = {"oid": r.oid, "ref": r.ref, "path": path, "op_id": r.op_id, "author": instance_id}
+        out = {"oid": r.oid, "ref": r.ref, "path": path, "op_id": r.op_id, "author": seat}
         if r.replayed:
             # tip-local idempotency fired: git holds the PRIOR commit, nothing was written this call.
             # Do not index and do not report content this call composed — report what git actually holds.
-            _log(instance_id, "entry_write", target_ref=ref, target_path=path, op_id=op_id,
+            _log(seat, "entry_write", target_ref=ref, target_path=path, op_id=op_id,
                  result_oid=r.oid, detail={"replayed": True})
             out["replayed"] = True
             if vap_path:
                 if _exists(ref, vap_path):
-                    out["folded"] = {"path": vap_path, "vantage": "confirmed", "replayed": True}
+                    out["folded"] = {"path": vap_path, "kind": "confirmed", "replayed": True}
                 else:
                     out["note"] = ("replayed the prior commit for this op_id — it carried no vantage; "
                                    "to fold, author under a new op_id")
             return out
-        _index(ref, path, False, instance_id, r.oid, envelope, body)            # git-first ...
+        _index(ref, path, False, seat, r.oid, envelope, body)            # git-first ...
         detail = {"folded": vap_path} if vap_path else None
-        _log(instance_id, "entry_write", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid,
+        _log(seat, "entry_write", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid,
              detail=detail)                                                     # ... then audit
         if vap_path:
             vap_env = vap_holder["env"]
-            _index(ref, vap_path, False, instance_id, r.oid, vap_env, horizon)
-            out["folded"] = {"path": vap_path, "vantage": "confirmed", "canon_state": vap_env["canon_state"]}
+            _index(ref, vap_path, False, seat, r.oid, vap_env, vantage)
+            out["folded"] = {"path": vap_path, "kind": "confirmed", "canon_state": vap_env["canon_state"]}
         return out
 
     # ---------------------------------------------------------------- read
@@ -496,8 +496,8 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         if with_vantages:
             vs = index.vantages_for(entry=p) if index is not None else []
             out["vantages"] = [{"path": v.path, "ref": v.ref, "author": v.authoring_instance,
-                                "vantage": v.vantage, "canon_state": v.canon_state, "title": v.title,
-                                "horizon": v.body_text} for v in vs]
+                                "kind": v.vantage, "canon_state": v.canon_state, "title": v.title,
+                                "body": v.body_text} for v in vs]
         return out
 
     def _listing(full_ref: str, paths: list) -> list:
@@ -549,7 +549,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         body) requires origin_author=<seat> — silent reattribution is refused; the gate sees both
         names. `thread=` on the log entry tags the whole land. Lineage fields match entry_write.
         The deep teaching lives in the current suite's author dock."""
-        instance_id = principal.name   # the desk resolved WHO; the record carries the name
+        seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = prop_ref(proposal_id)
         if domain != domain.strip("/") or "//" in f"{domain}/{slug}":
             # a trailing/leading slash builds meta/log//<seq>.md — passes propose, fails at land on
@@ -557,11 +557,11 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             raise Denied(f"domain {domain!r} must not start or end with '/' (the entry lands at "
                          f"<domain>/<slug>.md); got a path that would contain a double slash")
         path = f"{domain}/{slug}.md"
-        _authz(instance_id, "proposal_append_entry", ref, path)
+        _authz(seat, "proposal_append_entry", ref, path)
         _binding_stamp = principal.stamp
         _check_not_staged(proposal_id)
         _check_not_closed(proposal_id)
-        _require_reconciled(instance_id)
+        _require_reconciled(seat)
         if domain == "meta/log":
             # fail-fast at the seat that can fix it: without this, a malformed log entry sails
             # through propose and the guard fires at LAND — making the practitioner the error-relay
@@ -585,14 +585,14 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             # structure; judging paraphrase-credit stays usage (meta/machinery-structure-instance-usage).
             matched = {}                                     # author -> exemplar path
             for a in index.authors_of(path):
-                if a and a != instance_id:
+                if a and a != seat:
                     matched.setdefault(a, path)
             for a, p in index.authors_of_body(body).items():
-                if a and a != instance_id:
+                if a and a != seat:
                     matched.setdefault(a, p)
             if matched and not origin_author:
                 who = "; ".join(f"{a} ({p})" for a, p in sorted(matched.items()))
-                _log(instance_id, "proposal_append_entry", target_ref=ref, target_path=path, outcome="denied",
+                _log(seat, "proposal_append_entry", target_ref=ref, target_path=path, outcome="denied",
                      detail={"reason": "cross-propose without origin_author", "matched": sorted(matched)})
                 raise Denied(f"this content already exists under another seat's name — {who}. Carrying "
                              f"another's work toward canon requires origin_author=<seat> (attribution "
@@ -613,18 +613,18 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             envelope.update(_binding_stamp)
 
         def build(btip):
-            _pin(envelope, instance_id, btip)
+            _pin(envelope, seat, btip)
             return {path: compose_entry(envelope, body)}
         try:
             if store.resolve_ref(ref) is None:
                 store.create_branch(ref, store.resolve_ref(store.canon_ref))
-            r = _commit_retry(ref, path, build, instance_id, op_id)
+            r = _commit_retry(ref, path, build, seat, op_id)
         except CapStoreError as e:
-            _log(instance_id, "proposal_append_entry", target_ref=ref, target_path=path, op_id=op_id,
+            _log(seat, "proposal_append_entry", target_ref=ref, target_path=path, op_id=op_id,
                  outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
             raise
-        _log(instance_id, "proposal_append_entry", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid)
-        return {"proposal_id": proposal_id, "oid": r.oid, "path": path, "author": instance_id}
+        _log(seat, "proposal_append_entry", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid)
+        return {"proposal_id": proposal_id, "oid": r.oid, "path": path, "author": seat}
 
     @op
     def proposal_retract_path(principal, proposal_id: str, path: str, op_id: str) -> dict:
@@ -632,9 +632,9 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         so your meta/log/<old-seq>.md must be retracted and re-authored at the new seq). Retraction
         restores ZERO DIVERGENCE: a path canon also holds reverts to canon's current edition; a path
         the proposal added leaves the tree. (It never turns a proposal into a canon-deletion.)"""
-        instance_id = principal.name   # the desk resolved WHO; the record carries the name
+        seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = prop_ref(proposal_id)
-        _authz(instance_id, "proposal_append_entry", ref, path)
+        _authz(seat, "proposal_append_entry", ref, path)
         _check_not_staged(proposal_id)
         _check_not_closed(proposal_id)
         tip = store.resolve_ref(ref)
@@ -643,8 +643,8 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         # retraction is destructive, so the lane is creator-only (adding stays open to all —
         # additions are attributed and reviewed at land; removals erase someone else's work)
         owner = store.branch_creator(ref, store.canon_ref)
-        if owner and owner != instance_id:
-            _log(instance_id, "proposal_retract_path", target_ref=ref, target_path=path, outcome="denied",
+        if owner and owner != seat:
+            _log(seat, "proposal_retract_path", target_ref=ref, target_path=path, outcome="denied",
                  detail={"reason": "not the proposal's creator", "owner": owner})
             raise Denied(f"proposal {proposal_id} was opened by {owner} — only its creator may retract from it")
         # Retract = restore ZERO DIVERGENCE for the path, not "delete the path": a proposal that
@@ -657,12 +657,12 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             canon_side = None
         try:
             r = store.commit(ref, {path: canon_side}, f"retract {path}",
-                             Identity(instance_id), expected_parent=tip, op_id=op_id)
+                             Identity(seat), expected_parent=tip, op_id=op_id)
         except CapStoreError as e:   # forensic parity with the other writers (audit C7)
-            _log(instance_id, "proposal_retract_path", target_ref=ref, target_path=path, op_id=op_id,
+            _log(seat, "proposal_retract_path", target_ref=ref, target_path=path, op_id=op_id,
                  outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
             raise
-        _log(instance_id, "proposal_retract_path", target_ref=ref, target_path=path, op_id=op_id,
+        _log(seat, "proposal_retract_path", target_ref=ref, target_path=path, op_id=op_id,
              result_oid=r.oid, detail={"reverted_to_canon": canon_side is not None})
         return {"proposal_id": proposal_id, "retracted": path, "oid": r.oid}
 
@@ -717,20 +717,20 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         propose and retract refuse a closed proposal; the gate stays sovereign and may still land or
         discard it. Creator-only, plus the practitioner's configured approvers (clearing lingering
         offerings is the gate's own duty)."""
-        instance_id = principal.name   # the desk resolved WHO; the record carries the name
+        seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = prop_ref(proposal_id)
-        _authz(instance_id, "proposal_append_entry", ref, f"close/{proposal_id}")
+        _authz(seat, "proposal_append_entry", ref, f"close/{proposal_id}")
         _check_not_staged(proposal_id)
         tip = store.resolve_ref(ref)
         if tip is None:
             raise RefNotFound(ref)
         owner = store.branch_creator(ref, store.canon_ref)
-        if owner and owner != instance_id and instance_id not in store.approvers:
-            _log(instance_id, "proposal_close", target_ref=ref, outcome="denied",
+        if owner and owner != seat and seat not in store.approvers:
+            _log(seat, "proposal_close", target_ref=ref, outcome="denied",
                  detail={"reason": "not the proposal's creator", "owner": owner})
             raise Denied(f"proposal {proposal_id} was opened by {owner} — only its creator (or a "
                          f"configured approver) may close it")
-        return close_proposal(store, audit, proposal_id, reason, instance_id, op_id=op_id)
+        return close_proposal(store, audit, proposal_id, reason, seat, op_id=op_id)
 
     @op
     def proposal_list() -> dict:
@@ -750,7 +750,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         `current_with_canon` maps each seat to whether its reconcile cursor sits at canon's tip —
         presence and currency in one glance (absorbs 0.1.4's sup_who)."""
         names = [r.name[len(PERSP):] for r in store.list_refs(PERSP)]
-        out = {"instances": names}
+        out = {"seats": names}
         if audit is not None:
             canon_tip = store.resolve_ref(store.canon_ref)
             out["current_with_canon"] = {n: _canon_cursor(n) == canon_tip for n in names}
@@ -759,7 +759,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
     # ---------------------------------------------------------------- MAP (needs an index) + IMP (needs an index + audit)
     if has_map:
         @op
-        def entry_search(instance_id: str, query: str, scope: str = "all",
+        def entry_search(seat: str, query: str, scope: str = "all",
                        type: str | None = None, limit: int = 10,
                        include_superseded: bool = False, include_weak: bool = False) -> dict:
             """Semantic search over the corpus, attributed — pointers (path/ref/author/type/title/
@@ -768,7 +768,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             the embedder's calibrated floor are withheld WITH a count (`below_floor` — an empty
             result is never silent); `include_weak=true` returns them."""
             qv = embedder.embed_query([query])[0]
-            hits = index.search(qv, scope=scope, instance_id=instance_id, type=type, limit=limit,
+            hits = index.search(qv, scope=scope, seat=seat, type=type, limit=limit,
                                 status=None if include_superseded else "active")
             floor = getattr(embedder, "score_floor", 0.0) or 0.0
             weak = [h for h in hits if h.score < floor]
@@ -820,11 +820,11 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                          coordinates: list[str] | None = None,
                          supersedes: list[str] | None = None, thread: str = "") -> dict:
                 """Author an addressed message — a KIP entry on your branch under messages/, indexed
-                into each recipient's inbox. Identity: your seat name as `instance_id` (canonical;
+                into each recipient's inbox. Identity: your seat name as `seat` (canonical;
                 `sender` is the deprecated 0.1.x twin — pass exactly one). `coordinates` = paths to
                 jump to. `supersedes` retires your OWN earlier message(s) — tombstoned in inbox
                 views, never hidden. `thread=` chains messages to declared work."""
-                who = principal.name   # the desk resolved WHO (the instance_id/sender twin included)
+                who = principal.name   # the desk resolved WHO (the seat/sender twin included)
                 ref = persp_ref(who)
                 path = f"messages/{op_id}.md"
                 _authz(who, "message_send", ref, path)
@@ -856,14 +856,14 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 return {"path": path, "from": who, "recipients": recipients, "oid": r.oid}
 
             @op
-            def message_inbox(instance_id: str, unread_only: bool = True) -> dict:
+            def message_inbox(seat: str, unread_only: bool = True) -> dict:
                 """Your inbox: messages where you're a recipient. Authored fields only (sender, subject,
                 coordinates) — IMP arranges, never synthesizes. Pull, not push. Supersession is resolved
                 across the WHOLE inbox before anything surfaces: a message another inbox message declares
                 `supersedes` carries its tombstone in `superseded_by` — FLAT, nothing hidden (visibility,
                 not refusal; read the frontier first, reply to no corpse). Declared edges only — the
                 unmarked stays author-discipline."""
-                msgs = index.inbox(instance_id)
+                msgs = index.inbox(seat)
                 superseded_by = {}   # resolved over the full inbox, before any unread filtering
                 by_author = {m.path: m.authoring_instance for m in msgs}
                 for m in msgs:
@@ -874,94 +874,94 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                         if by_author.get(old) == m.authoring_instance:
                             superseded_by[old] = m.path
                 if unread_only:
-                    msgs = [m for m in msgs if not audit.is_read(instance_id, m.path)]
+                    msgs = [m for m in msgs if not audit.is_read(seat, m.path)]
                 return {"messages": [{"path": m.path, "from": m.authoring_instance, "subject": m.subject,
                          "coordinates": m.links, "ref": m.ref, "supersedes": m.supersedes,
                          "superseded_by": superseded_by.get(m.path, "")} for m in msgs]}
 
-            def _inbox_flags(instance_id: str) -> dict:
+            def _inbox_flags(seat: str) -> dict:
                 # frontier, not corpus: a message the SAME sender later superseded (the author-scoped
                 # rule message_inbox resolves) no longer flags — the successor does, if unread. The flat
                 # view with tombstones stays message_inbox's; the flag answers "what waits", not "what exists".
-                msgs = index.inbox(instance_id)
+                msgs = index.inbox(seat)
                 by_author = {m.path: m.authoring_instance for m in msgs}
                 dead = {old for m in msgs for old in (m.supersedes or [])
                         if by_author.get(old) == m.authoring_instance}
                 unread = [m for m in msgs
-                          if m.path not in dead and not audit.is_read(instance_id, m.path)]
+                          if m.path not in dead and not audit.is_read(seat, m.path)]
                 return {"unread": len(unread), "from": sorted({m.authoring_instance for m in unread})}
 
             @op
-            def message_unread_count(instance_id: str = "") -> dict:
-                """The unread-frontier flag (a saved query, not a push). With `instance_id`: your
-                count + senders. With NO instance_id: the whole roster's mailroom in ONE crossing —
+            def message_unread_count(seat: str = "") -> dict:
+                """The unread-frontier flag (a saved query, not a push). With `seat`: your
+                count + senders. With NO seat: the whole roster's mailroom in ONE crossing —
                 {seats: {name: {unread, from}}, roster: N}, zero-unread rows included (a quiet
                 mailroom is a fact). FRONTIER: a message superseded by its own sender's later
                 message stops flagging; message_inbox keeps the flat view with tombstones. (Absorbs
                 0.1.4's imp_flags_all.)"""
-                if instance_id:
-                    return _inbox_flags(instance_id)
+                if seat:
+                    return _inbox_flags(seat)
                 seats = sorted(r.name[len(PERSP):] for r in store.list_refs(PERSP))
                 return {"seats": {s: _inbox_flags(s) for s in seats}, "roster": len(seats)}
 
             @op
             def message_mark_read(principal, message_path: str) -> dict:
                 """Append a read-receipt to the audit log (append-only truth; survives a reindex)."""
-                instance_id = principal.name   # the desk resolved WHO; the record carries the name
-                audit.append_read(instance_id, message_path)
+                seat = principal.name   # the desk resolved WHO; the record carries the name
+                audit.append_read(seat, message_path)
                 return {"marked_read": message_path}
 
             # ------------------------------------------------------ VAP: vantages (horizon, second layer)
             @op
-            def vantage_write(principal, binds: str, horizon: str, op_id: str,
+            def vantage_write(principal, entry: str, body: str, op_id: str,
                            kind: str = "confirmed", title: str = "") -> dict:
-                """Record a VANTAGE — the contextual horizon you authored an act against — bound to entry
-                `binds`. A KIP entry on your branch under vantages/, EXCLUDED from universal search (like a
-                message), surfaced only via vantage_list. `kind`: 'confirmed' (your real horizon, recorded at
+                """Record a VANTAGE — the contextual body you authored an act against — bound to entry
+                `entry`. A KIP entry on your branch under vantages/, EXCLUDED from universal search (like a
+                message), surfaced only via vantage_list. `kind`: 'confirmed' (your real body, recorded at
                 authoring — you may only confirm your OWN entry) or 'reconstructed' (your scholarly reading
-                of an older entry's horizon, recorded as reconstructed-by-you, never on the original's
+                of an older entry's body, recorded as reconstructed-by-you, never on the original's
                 behalf). canon-state is pinned server-side from your reconcile cursor, not author-supplied."""
-                instance_id = principal.name   # the desk resolved WHO; the record carries the name
+                seat = principal.name   # the desk resolved WHO; the record carries the name
                 if kind not in ("confirmed", "reconstructed"):
                     raise Denied("kind must be 'confirmed' or 'reconstructed'")
-                if binds and not binds.endswith(".md"):
-                    binds = binds + ".md"    # normalize at write — a bare coordinate is unresolvable later
-                ref = persp_ref(instance_id)
+                if entry and not entry.endswith(".md"):
+                    entry = entry + ".md"    # normalize at write — a bare coordinate is unresolvable later
+                ref = persp_ref(seat)
                 path = f"vantages/{op_id}.md"
-                _authz(instance_id, "vantage_write", ref, path)
+                _authz(seat, "vantage_write", ref, path)
                 _binding_stamp = principal.stamp
-                # dignity guard (fork-guard posture): a 'confirmed' vantage claims YOUR OWN horizon.
+                # dignity guard (fork-guard posture): a 'confirmed' vantage claims YOUR OWN body.
                 # Confirming an entry authored by someone else speaks for absent attention — refuse it.
                 if kind == "confirmed" and has_map:
-                    authors = index.authors_of(binds)
-                    if authors and instance_id not in authors:
-                        _log(instance_id, "vantage_write", target_path=path, op_id=op_id, outcome="denied",
-                             detail={"reason": "confirmed vantage on another's entry", "binds": binds,
+                    authors = index.authors_of(entry)
+                    if authors and seat not in authors:
+                        _log(seat, "vantage_write", target_path=path, op_id=op_id, outcome="denied",
+                             detail={"reason": "confirmed vantage on another's entry", "entry": entry,
                                      "authors": sorted(authors)})
-                        raise Denied(f"a 'confirmed' vantage claims your own horizon, but {binds} is authored "
-                                     f"by {sorted(authors)}, not {instance_id} — record it as 'reconstructed' "
+                        raise Denied(f"a 'confirmed' vantage claims your own body, but {entry} is authored "
+                                     f"by {sorted(authors)}, not {seat} — record it as 'reconstructed' "
                                      f"(a reading of the record, never on the original's behalf).")
-                cursor = _canon_cursor(instance_id) or ""        # shared primitive: server-sourced canon-state
-                vantage = "confirmed" if kind == "confirmed" else f"reconstructed-by-{instance_id}-from-record"
-                envelope = {"type": "vap", "title": title or f"vantage on {binds}", "status": "active",
-                            "vantage": vantage, "canon_state": cursor, "coordinates": [binds]}
+                cursor = _canon_cursor(seat) or ""        # shared primitive: server-sourced canon-state
+                vantage = "confirmed" if kind == "confirmed" else f"reconstructed-by-{seat}-from-record"
+                envelope = {"type": "vap", "title": title or f"vantage on {entry}", "status": "active",
+                            "vantage": vantage, "canon_state": cursor, "coordinates": [entry]}
                 if _binding_stamp:
                     envelope.update(_binding_stamp)
 
                 def build(btip):
-                    _pin(envelope, instance_id, btip)
-                    return {path: compose_entry(envelope, horizon)}
+                    _pin(envelope, seat, btip)
+                    return {path: compose_entry(envelope, body)}
                 try:
-                    r = _commit_retry(ref, path, build, instance_id, op_id)
+                    r = _commit_retry(ref, path, build, seat, op_id)
                 except CapStoreError as e:
-                    _log(instance_id, "vantage_write", target_path=path, op_id=op_id,
+                    _log(seat, "vantage_write", target_path=path, op_id=op_id,
                          outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
                     raise
                 if not r.replayed:   # a replayed op wrote nothing — the index row already exists
-                    _index(ref, path, False, instance_id, r.oid, envelope, horizon)
-                _log(instance_id, "vantage_write", target_ref=ref, target_path=path, op_id=op_id,
-                     result_oid=r.oid, detail={"binds": binds, "vantage": vantage, "canon_state": cursor})
-                return {"path": path, "author": instance_id, "binds": binds, "vantage": vantage,
+                    _index(ref, path, False, seat, r.oid, envelope, body)
+                _log(seat, "vantage_write", target_ref=ref, target_path=path, op_id=op_id,
+                     result_oid=r.oid, detail={"entry": entry, "vantage": vantage, "canon_state": cursor})
+                return {"path": path, "author": seat, "entry": entry, "kind": vantage,
                         "canon_state": cursor, "oid": r.oid}
 
             @op
@@ -996,11 +996,11 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 for v in rows:
                     binds = v.links[0] if v.links else ""
                     p = {"path": v.path, "ref": v.ref, "author": v.authoring_instance,
-                         "binds": v.links, "vantage": v.vantage, "canon_state": v.canon_state,
+                         "entry": binds, "kind": v.vantage, "canon_state": v.canon_state,
                          "title": v.title, "preview": v.body_text[:240],
-                         "binds_status": binds_status(binds, v.ref) if binds else ""}
+                         "entry_status": binds_status(binds, v.ref) if binds else ""}
                     if detail == "full":
-                        p["horizon"] = v.body_text
+                        p["body"] = v.body_text
                     out.append(p)
                 return {"vantages": out, "count": len(out), "total": total,
                         "truncated": start + len(out) < total, "offset": start}
@@ -1019,13 +1019,13 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             the same map (a lost response costs nothing to re-pull); the pull is recorded (a server-tracked
             fact) and you must then canon_reconcile before you can propose again. Log entries come first, in
             sequence order; a first pull is marked `first_pull: true`."""
-            instance_id = principal.name   # the desk resolved WHO; the record carries the name
+            seat = principal.name   # the desk resolved WHO; the record carries the name
             tip = store.resolve_ref(store.canon_ref)
             # the diff BASE is the last reconciled position, not the last pull (Mercurius's finding:
             # a pull that moved its own base was effectful and non-idempotent — a seat that lost the
             # response re-pulled into an empty diff it had not earned). The pull still leaves its row,
             # which is what the reconcile hinge reads as proof the current tip was read.
-            prev = _reconciled_cursor(instance_id)
+            prev = _reconciled_cursor(seat)
             if tip is None:
                 paths = []
             elif prev is None:
@@ -1054,7 +1054,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                         logs.append({"path": p, "body": body})   # the narrative IS for the reconciling seat
                     else:
                         pointers += 1                             # older story: in `changed`, by pointer
-            _log(instance_id, "canon_pull", target_ref=store.canon_ref, result_oid=tip,
+            _log(seat, "canon_pull", target_ref=store.canon_ref, result_oid=tip,
                  detail={"from": prev, "changed": paths})
             out = {"canon_tip": tip, "from": prev, "changed_count": len(changed), "changed": changed,
                    "logs": logs, "logs_in_full": len(logs), "logs_as_pointers": pointers}
@@ -1071,7 +1071,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             """Self-report what you updated about yourself after reading the canon diff. Allowed only after
             you've pulled current canon (canon_diff). Appends a state/ entry to your perspective — your own
             chronology, paired to the canon version. This is what unblocks propose."""
-            instance_id = principal.name   # the desk resolved WHO; the record carries the name
+            seat = principal.name   # the desk resolved WHO; the record carries the name
             _binding_stamp = principal.stamp
             tip = store.resolve_ref(store.canon_ref)
             if tip is None:
@@ -1079,9 +1079,9 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 # cursor equalled an absent tip and the write fell over on the tip's oid)
                 raise Denied("no canon exists yet — there is nothing to reconcile with; author to "
                              "your perspective, and reconcile once the practitioner has landed ::1")
-            if _canon_cursor(instance_id) != tip:
+            if _canon_cursor(seat) != tip:
                 raise Denied("pull current canon first (canon_diff), then reconcile")
-            ref = persp_ref(instance_id)
+            ref = persp_ref(seat)
             path = f"state/reconciled-{tip[:12]}.md"
             if _exists(ref, path):
                 # Name the referent: a dedup that only says already:True sends a replayed seat hunting
@@ -1097,32 +1097,32 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 envelope.update(_binding_stamp)
 
             def build(btip):
-                _pin(envelope, instance_id, btip)
+                _pin(envelope, seat, btip)
                 return {path: compose_entry(envelope, body)}
             try:
-                r = _commit_retry(ref, path, build, instance_id, f"reconcile-{tip[:12]}")
+                r = _commit_retry(ref, path, build, seat, f"reconcile-{tip[:12]}")
             except CapStoreError as e:   # forensic parity with the other writers (audit C7)
-                _log(instance_id, "canon_reconcile", target_ref=ref, target_path=path,
+                _log(seat, "canon_reconcile", target_ref=ref, target_path=path,
                      outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
                 raise
             if not r.replayed:
-                _index(ref, path, False, instance_id, r.oid, envelope, body)
-            _log(instance_id, "reconcile_report", target_ref=ref, target_path=path, result_oid=r.oid,
+                _index(ref, path, False, seat, r.oid, envelope, body)
+            _log(seat, "reconcile_report", target_ref=ref, target_path=path, result_oid=r.oid,
                  detail={"canon_cursor": tip})
             return {"path": path, "canon_cursor": tip, "oid": r.oid}
 
         @op
-        def seat_state(instance_id: str) -> dict:
+        def seat_state(seat: str) -> dict:
             """An instance's state trail + its standing relative to canon. `ticks` maps the state
             entries that DECLARED a machine-readable label (tick=, the mirror field) to it — absence
             from the map is normal and means nothing; prose remains the governing declaration."""
-            ref = persp_ref(instance_id)
+            ref = persp_ref(seat)
             tip = store.resolve_ref(ref)
             states = [p for p in (store.list_paths(ref) if tip else []) if p.startswith("state/")]
-            cursor = _canon_cursor(instance_id)
+            cursor = _canon_cursor(seat)
             env = index.envelopes_for(ref) if index is not None else {}
             ticks = {p: env[p]["tick"] for p in states if env.get(p, {}).get("tick")}
-            return {"instance": instance_id, "perspective_tip": tip, "state_entries": states,
+            return {"seat": seat, "perspective_tip": tip, "state_entries": states,
                     "ticks": ticks,
                     "canon_cursor": cursor, "current_with_canon": cursor == store.resolve_ref(store.canon_ref)}
 

@@ -47,25 +47,25 @@ async def main():
         names = sorted(t.name for t in (await client.list_tools()).tools)
         print(f"{len(names)} tools:", ", ".join(names))
 
-        await client.call_tool("seat_announce", {"instance_id": "research-2"})
+        await client.call_tool("seat_announce", {"seat": "research-2"})
 
         # author into perspectives (indexed inline)
-        await client.call_tool("entry_write", {"instance_id": "research-2", "domain": "practice",
+        await client.call_tool("entry_write", {"seat": "research-2", "domain": "practice",
             "slug": "durability-notes", "body": "Notes on durability and never losing committed work; append-only git history.",
             "op_id": "op-1", "title": "Durability notes", "references": ["practice/no-silent-loss.md"]})
-        await client.call_tool("entry_write", {"instance_id": "research-7", "domain": "practice",
+        await client.call_tool("entry_write", {"seat": "research-7", "domain": "practice",
             "slug": "scaling-notes", "body": "Scaling throughput and performance under concurrent request load.",
             "op_id": "op-2", "title": "Scaling notes"})
 
         # search — attributed, scoped
-        allhits = payload(await client.call_tool("entry_search", {"instance_id": "research-2",
+        allhits = payload(await client.call_tool("entry_search", {"seat": "research-2",
             "query": "how do we avoid losing committed work durability", "scope": "all"}))["results"]
         print("entry_search all:")
         for h in allhits:
             print(f"   {h['score']:>6}  {h['author']:12} canon={h['is_canon']!s:5} {h['path']}")
-        canon_only = payload(await client.call_tool("entry_search", {"instance_id": "research-2",
+        canon_only = payload(await client.call_tool("entry_search", {"seat": "research-2",
             "query": "durability", "scope": "canon"}))["results"]
-        mine7 = payload(await client.call_tool("entry_search", {"instance_id": "research-7",
+        mine7 = payload(await client.call_tool("entry_search", {"seat": "research-7",
             "query": "durability", "scope": "mine"}))["results"]
         print("entry_search canon:", [h["path"] for h in canon_only])
         print("entry_search mine(r-7):", [h["path"] for h in mine7])
@@ -86,11 +86,11 @@ async def main():
         print("own perspective:", [e["path"] for e in mp["entries"]])
 
         # reconcile with canon before proposing (the coherence gate now requires it)
-        await client.call_tool("canon_diff", {"instance_id": "research-2"})
-        await client.call_tool("canon_reconcile", {"instance_id": "research-2", "body": "Read current canon."})
+        await client.call_tool("canon_diff", {"seat": "research-2"})
+        await client.call_tool("canon_reconcile", {"seat": "research-2", "body": "Read current canon."})
 
         # propose + track
-        await client.call_tool("proposal_append_entry", {"instance_id": "research-2", "proposal_id": "p-1",
+        await client.call_tool("proposal_append_entry", {"seat": "research-2", "proposal_id": "p-1",
             "domain": "practice", "slug": "principle-durability", "body": "Promote durability to a stated principle.",
             "op_id": "op-3", "title": "Durability principle"})
         cp = payload(await client.call_tool("proposal_preview", {"proposal_id": "p-1"}))
@@ -100,21 +100,21 @@ async def main():
 
         # A3: a log slug that only differs from its seq by CASE (or a trailing-slash domain) passes
         # a lenient propose but fails at land — the practitioner-as-error-relay. Rejected at propose:
-        up = await client.call_tool("proposal_append_entry", {"instance_id": "research-2", "proposal_id": "p-1",
+        up = await client.call_tool("proposal_append_entry", {"seat": "research-2", "proposal_id": "p-1",
             "domain": "meta/log", "slug": "3C", "type": "log", "seq": "3c", "body": "x", "op_id": "op-up"})
         assert up.is_error, "uppercase log slug must be refused at propose"
-        sl = await client.call_tool("proposal_append_entry", {"instance_id": "research-2", "proposal_id": "p-1",
+        sl = await client.call_tool("proposal_append_entry", {"seat": "research-2", "proposal_id": "p-1",
             "domain": "meta/log/", "slug": "3c", "type": "log", "seq": "3c", "body": "x", "op_id": "op-sl"})
         assert sl.is_error, "trailing-slash domain must be refused at propose"
         print("A3: case/slash log coordinates refused at propose (not relayed to the land)")
 
         # retraction: creator-only lane (audited denial), and every retract writes operation-truth
-        r9 = await client.call_tool("proposal_retract_path", {"instance_id": "research-9", "proposal_id": "p-1",
+        r9 = await client.call_tool("proposal_retract_path", {"seat": "research-9", "proposal_id": "p-1",
                                                         "path": "practice/principle-durability.md", "op_id": "rx-1"})
         assert r9.is_error, "cross-instance retract must be denied"
         denial = [e for e in audit.events(op="proposal_retract_path") if e["outcome"] == "denied"]
         assert denial and denial[-1]["actor"] == "research-9" and denial[-1]["detail"]["owner"] == "research-2"
-        ok_r = await client.call_tool("proposal_retract_path", {"instance_id": "research-2", "proposal_id": "p-1",
+        ok_r = await client.call_tool("proposal_retract_path", {"seat": "research-2", "proposal_id": "p-1",
                                                           "path": "practice/principle-durability.md", "op_id": "rx-2"})
         assert not ok_r.is_error, "creator's own retract must succeed"
         evs = [e for e in audit.events(op="proposal_retract_path") if e["outcome"] == "ok"]
@@ -124,10 +124,10 @@ async def main():
         # retract of a CANON-HELD path reverts to canon's edition (zero divergence) — never deletes,
         # so a retract can't construct a canon-deletion for the land guard to refuse (Lintel's finding)
         seed = store.read_blob("refs/heads/main", "practice/no-silent-loss.md").decode()
-        await client.call_tool("proposal_append_entry", {"instance_id": "research-2", "proposal_id": "p-1",
+        await client.call_tool("proposal_append_entry", {"seat": "research-2", "proposal_id": "p-1",
             "domain": "practice", "slug": "no-silent-loss", "body": seed.split("---")[-1].strip(),
             "op_id": "op-3flip", "title": "No silent loss", "status": "superseded"})
-        await client.call_tool("proposal_retract_path", {"instance_id": "research-2", "proposal_id": "p-1",
+        await client.call_tool("proposal_retract_path", {"seat": "research-2", "proposal_id": "p-1",
                                                    "path": "practice/no-silent-loss.md", "op_id": "rx-3"})
         assert "practice/no-silent-loss.md" in store.list_paths("refs/cap/proposals/p-1"), \
             "canon-held path must SURVIVE its retract (reverted, not deleted)"
@@ -135,34 +135,34 @@ async def main():
         assert "practice/no-silent-loss.md" not in cp2["removes"], "retract must not read as a canon-deletion"
         assert "practice/no-silent-loss.md" not in cp2["modifies"], "reverted path must show zero divergence"
         # log entries fail fast at propose-time: missing/malformed seq refuses HERE, not at the land
-        bad_log = await client.call_tool("proposal_append_entry", {"instance_id": "research-2", "proposal_id": "p-1",
+        bad_log = await client.call_tool("proposal_append_entry", {"seat": "research-2", "proposal_id": "p-1",
             "domain": "meta/log", "slug": "3c", "body": "no seq given", "op_id": "op-badlog", "type": "log"})
         assert bad_log.is_error, "meta/log without seq must refuse at propose-time"
-        mism = await client.call_tool("proposal_append_entry", {"instance_id": "research-2", "proposal_id": "p-1",
+        mism = await client.call_tool("proposal_append_entry", {"seat": "research-2", "proposal_id": "p-1",
             "domain": "meta/log", "slug": "3c", "body": "x", "op_id": "op-mismlog", "type": "log", "seq": "3d"})
         assert mism.is_error, "log slug != seq must refuse at propose-time"
         print("retract reverts canon-held paths | meta/log fails fast at propose OK")
         # THE CROSS-PROPOSE ATTRIBUTION GUARD: carrying another seat's work toward canon requires
         # origin_author — silent reattribution refused on BOTH axes (path under another name; verbatim
         # body anywhere), the declared origin must match the evidence, and the gate sees both names
-        await client.call_tool("entry_write", {"instance_id": "research-2", "domain": "practice",
+        await client.call_tool("entry_write", {"seat": "research-2", "domain": "practice",
             "slug": "attribution-src", "body": "Attribution is provenance made durable.", "op_id": "as-1"})
-        await client.call_tool("canon_diff", {"instance_id": "research-9"})
-        await client.call_tool("canon_reconcile", {"instance_id": "research-9", "body": "Read current canon."})
-        sil = await client.call_tool("proposal_append_entry", {"instance_id": "research-9", "proposal_id": "p-x",
+        await client.call_tool("canon_diff", {"seat": "research-9"})
+        await client.call_tool("canon_reconcile", {"seat": "research-9", "body": "Read current canon."})
+        sil = await client.call_tool("proposal_append_entry", {"seat": "research-9", "proposal_id": "p-x",
             "domain": "practice", "slug": "attribution-src", "body": "Attribution is provenance made durable.",
             "op_id": "px-1"})
         assert sil.is_error and "research-2" in str(sil.content), \
             "silent cross-propose (path+body match) must refuse, naming the origin"
-        ren = await client.call_tool("proposal_append_entry", {"instance_id": "research-9", "proposal_id": "p-x",
+        ren = await client.call_tool("proposal_append_entry", {"seat": "research-9", "proposal_id": "p-x",
             "domain": "practice", "slug": "renamed-carriage", "body": "Attribution is provenance made durable.",
             "op_id": "px-2"})
         assert ren.is_error, "verbatim body under a NEW slug must still refuse (rename-bypass closed)"
-        lie = await client.call_tool("proposal_append_entry", {"instance_id": "research-9", "proposal_id": "p-x",
+        lie = await client.call_tool("proposal_append_entry", {"seat": "research-9", "proposal_id": "p-x",
             "domain": "practice", "slug": "renamed-carriage", "body": "Attribution is provenance made durable.",
             "op_id": "px-3", "origin_author": "research-7"})
         assert lie.is_error, "an origin_author contradicting the matched evidence must refuse"
-        ok_x = await client.call_tool("proposal_append_entry", {"instance_id": "research-9", "proposal_id": "p-x",
+        ok_x = await client.call_tool("proposal_append_entry", {"seat": "research-9", "proposal_id": "p-x",
             "domain": "practice", "slug": "renamed-carriage", "body": "Attribution is provenance made durable.",
             "op_id": "px-4", "origin_author": "research-2"})
         assert not ok_x.is_error, "carriage WITH true origin must pass"
@@ -175,15 +175,15 @@ async def main():
         # THE RESERVED thread= TAG: ref-safe form guarded on all three carriers (commit/propose/send);
         # value semantics unruled; declared tags scry without the hinge (registry + per-tag pointers)
         for bad in ("Has Space", "UPPER", "-leads", "x" * 65):
-            b = await client.call_tool("entry_write", {"instance_id": "research-2", "domain": "practice",
+            b = await client.call_tool("entry_write", {"seat": "research-2", "domain": "practice",
                 "slug": f"bad-{len(bad)}", "body": "x", "op_id": f"th-bad-{len(bad)}", "thread": bad})
             assert b.is_error, f"non-ref-safe tag {bad!r} must refuse"
-        await client.call_tool("entry_write", {"instance_id": "research-2", "domain": "practice",
+        await client.call_tool("entry_write", {"seat": "research-2", "domain": "practice",
             "slug": "thread-entry", "body": "A threaded entry.", "op_id": "th-1", "thread": "weave-test"})
-        assert not (await client.call_tool("proposal_append_entry", {"instance_id": "research-9",
+        assert not (await client.call_tool("proposal_append_entry", {"seat": "research-9",
             "proposal_id": "p-x", "domain": "practice", "slug": "threaded-prop",
             "body": "A threaded proposal entry.", "op_id": "th-2", "thread": "weave-test"})).is_error
-        assert not (await client.call_tool("message_send", {"sender": "research-2",
+        assert not (await client.call_tool("message_send", {"seat": "research-2",
             "recipients": ["research-9"], "subject": "threaded note", "body": "chained",
             "op_id": "th-msg-1", "thread": "weave-test"})).is_error
         reg = payload(await client.call_tool("thread_list", {}))
@@ -195,13 +195,13 @@ async def main():
         # THE ARGOT DICTIONARY (the aperture's first bore): distinct definitions collapse once each,
         # holders annotate — concordance (one body, many trees) and divergence (many bodies, one term)
         # both render as what they are; a seat holding a COPY in its own tree is not a cross-propose
-        await client.call_tool("entry_write", {"instance_id": "research-2", "domain": "argot",
+        await client.call_tool("entry_write", {"seat": "research-2", "domain": "argot",
             "slug": "weft", "body": "The crosswise carry of another seat's thread.",
             "op_id": "ag-1", "type": "arg"})
-        await client.call_tool("entry_write", {"instance_id": "research-9", "domain": "argot",
+        await client.call_tool("entry_write", {"seat": "research-9", "domain": "argot",
             "slug": "weft", "body": "The crosswise carry of another seat's thread.",
             "op_id": "ag-2", "type": "arg"})
-        await client.call_tool("entry_write", {"instance_id": "research-7", "domain": "argot",
+        await client.call_tool("entry_write", {"seat": "research-7", "domain": "argot",
             "slug": "weft", "body": "A tangent thread crossing the warp.",
             "op_id": "ag-3", "type": "arg"})
         reg = payload(await client.call_tool("term_list", {}))
@@ -215,19 +215,19 @@ async def main():
         print("term_list: registry + echo-collapsed definitions (concordant pair + divergent third) OK")
         # THE TERMINAL VERB: close is creator-or-approver only, tombstones without deleting, and is
         # terminal for SEAT operations (the gate stays sovereign); the listing carries the lifecycle
-        nc = await client.call_tool("proposal_close", {"instance_id": "research-2", "proposal_id": "p-x",
+        nc = await client.call_tool("proposal_close", {"seat": "research-2", "proposal_id": "p-x",
                                                       "reason": "not mine to close", "op_id": "cl-0"})
         assert nc.is_error, "non-creator close must be denied"
-        cl = payload(await client.call_tool("proposal_close", {"instance_id": "research-9", "proposal_id": "p-x",
+        cl = payload(await client.call_tool("proposal_close", {"seat": "research-9", "proposal_id": "p-x",
                                                               "reason": "superseded by a fresh proposal", "op_id": "cl-1"}))
         assert cl["closed"] and cl["reason"] == "superseded by a fresh proposal", cl
-        again = payload(await client.call_tool("proposal_close", {"instance_id": "research-9", "proposal_id": "p-x",
+        again = payload(await client.call_tool("proposal_close", {"seat": "research-9", "proposal_id": "p-x",
                                                                  "reason": "twice", "op_id": "cl-2"}))
         assert again.get("already") is True, "re-close reports already, changes nothing"
-        dead = await client.call_tool("proposal_append_entry", {"instance_id": "research-9", "proposal_id": "p-x",
+        dead = await client.call_tool("proposal_append_entry", {"seat": "research-9", "proposal_id": "p-x",
             "domain": "practice", "slug": "late-arrival", "body": "too late", "op_id": "cl-3"})
         assert dead.is_error and "closed" in str(dead.content), "propose to closed refuses"
-        dead_r = await client.call_tool("proposal_retract_path", {"instance_id": "research-9", "proposal_id": "p-x",
+        dead_r = await client.call_tool("proposal_retract_path", {"seat": "research-9", "proposal_id": "p-x",
                                                             "path": "practice/renamed-carriage.md", "op_id": "cl-4"})
         assert dead_r.is_error, "retract on closed refuses"
         lp = payload(await client.call_tool("proposal_list", {}))
@@ -241,13 +241,13 @@ async def main():
         assert {"n", "ms", "avg_ms", "max_ms"} <= set(top), top
         print(f"server_stats: {pf['git_calls']} git calls, {pf['git_ms']}ms metered OK")
         # restore the entry so nothing downstream changes
-        await client.call_tool("proposal_append_entry", {"instance_id": "research-2", "proposal_id": "p-1", "domain": "practice",
+        await client.call_tool("proposal_append_entry", {"seat": "research-2", "proposal_id": "p-1", "domain": "practice",
                                            "slug": "principle-durability", "body": "Promote durability to a stated principle.",
                                            "op_id": "op-3b", "title": "Durability principle"})
 
         # supersede-not-edit: the lineage the skill teaches must actually be authorable + readable
         # (research-2 authored practice/durability-notes.md earlier; supersede it with a v2)
-        await client.call_tool("entry_write", {"instance_id": "research-2", "domain": "practice",
+        await client.call_tool("entry_write", {"seat": "research-2", "domain": "practice",
             "slug": "durability-v2", "body": "Durability, restated with the airlock in mind.", "op_id": "sup-1",
             "title": "Durability v2", "references": ["practice/no-silent-loss.md"],
             "supersedes": ["practice/durability-notes.md"]})
@@ -257,7 +257,7 @@ async def main():
             and env2.get("references") == ["practice/no-silent-loss.md"], env2
         # retire the old entry: metadata-only re-commit (same body) flips status — immutability still holds
         old_body = parse_entry(store.read_blob("refs/cap/perspectives/research-2", "practice/durability-notes.md").decode())[1]
-        await client.call_tool("entry_write", {"instance_id": "research-2", "domain": "practice", "slug": "durability-notes",
+        await client.call_tool("entry_write", {"seat": "research-2", "domain": "practice", "slug": "durability-notes",
             "body": old_body, "op_id": "sup-2", "title": "Durability notes", "status": "superseded",
             "superseded_by": ["practice/durability-v2.md"]})
         env1, _ = parse_entry(store.read_blob("refs/cap/perspectives/research-2", "practice/durability-notes.md").decode())
@@ -275,15 +275,15 @@ async def main():
         # FEATURE A — live-only search by default; include_superseded is the deliberate opt-in,
         # and the hit carries its status so the retired edition is apparent
         live_hits = payload(await client.call_tool("entry_search",
-            {"instance_id": "research-2", "query": "durability", "scope": "mine"}))["results"]
+            {"seat": "research-2", "query": "durability", "scope": "mine"}))["results"]
         assert not any(h["path"] == "practice/durability-notes.md" for h in live_hits), live_hits
         all_hits = payload(await client.call_tool("entry_search",
-            {"instance_id": "research-2", "query": "durability", "scope": "mine",
+            {"seat": "research-2", "query": "durability", "scope": "mine",
              "include_superseded": True}))["results"]
         dead = [h for h in all_hits if h["path"] == "practice/durability-notes.md"]
         assert dead and dead[0]["status"] == "superseded", all_hits
         # and a different body on the same path is still refused (the guard the flip rode through)
-        bad = await client.call_tool("entry_write", {"instance_id": "research-2", "domain": "practice",
+        bad = await client.call_tool("entry_write", {"seat": "research-2", "domain": "practice",
             "slug": "durability-notes", "body": "secretly rewritten", "op_id": "sup-3"})
         assert bad.is_error, "body change must still be refused"
         # relevance floor: below-floor hits are withheld WITH a count (an empty result says "N weak
@@ -292,57 +292,57 @@ async def main():
         assert type(emb).score_floor == 0.0, "stub ships with the floor OFF"
         emb.score_floor = 0.99   # force: every stub score sits below this
         floored = payload(await client.call_tool("entry_search",
-            {"instance_id": "research-2", "query": "durability", "scope": "mine"}))
+            {"seat": "research-2", "query": "durability", "scope": "mine"}))
         assert floored["results"] == [] and floored["below_floor"] > 0, floored
         weak = payload(await client.call_tool("entry_search",
-            {"instance_id": "research-2", "query": "durability", "scope": "mine", "include_weak": True}))
+            {"seat": "research-2", "query": "durability", "scope": "mine", "include_weak": True}))
         assert weak["results"] and weak["below_floor"] == 0, weak
         emb.score_floor = 0.0    # restore — later searches in this test must see hits again
         print("relevance floor: withheld-with-count + include_weak opt-in OK")
         print("supersede: forward link + metadata-flip authorable, body still immutable OK")
 
         # message multiple recipients, flag, inbox, read
-        await client.call_tool("message_send", {"sender": "research-2", "recipients": ["research-7", "recto"],
+        await client.call_tool("message_send", {"seat": "research-2", "recipients": ["research-7", "recto"],
             "subject": "Durability is load-bearing", "body": "Look before proposing scaling changes.",
             "op_id": "m-1", "coordinates": ["practice/no-silent-loss.md"]})
-        flag7 = payload(await client.call_tool("message_unread_count", {"instance_id": "research-7"}))
-        inbox7 = payload(await client.call_tool("message_inbox", {"instance_id": "research-7"}))["messages"]
+        flag7 = payload(await client.call_tool("message_unread_count", {"seat": "research-7"}))
+        inbox7 = payload(await client.call_tool("message_inbox", {"seat": "research-7"}))["messages"]
         print("message_unread_count r-7:", flag7, "| inbox r-7:", [(m["from"], m["subject"], m["coordinates"]) for m in inbox7])
-        await client.call_tool("message_mark_read", {"instance_id": "research-7", "message_path": "messages/m-1.md"})
-        after = payload(await client.call_tool("message_unread_count", {"instance_id": "research-7"}))
-        recto = payload(await client.call_tool("message_inbox", {"instance_id": "recto"}))["messages"]
+        await client.call_tool("message_mark_read", {"seat": "research-7", "message_path": "messages/m-1.md"})
+        after = payload(await client.call_tool("message_unread_count", {"seat": "research-7"}))
+        recto = payload(await client.call_tool("message_inbox", {"seat": "recto"}))["messages"]
         print("message_unread_count r-7 after read:", after, "| inbox recto:", [m["path"] for m in recto])
 
         # FEATURE C — inbox supersession, flat-with-tombstones: a reply that supersedes an earlier
         # message tombstones it AT NAVIGATION; nothing is hidden (visibility, not refusal)
-        await client.call_tool("message_send", {"sender": "research-2", "recipients": ["research-7"],
+        await client.call_tool("message_send", {"seat": "research-2", "recipients": ["research-7"],
             "subject": "Durability restated — supersedes m-1", "body": "m-1's ask is resolved.",
             "op_id": "m-2", "supersedes": ["messages/m-1"]})   # missing .md normalized at send
         inbox7b = payload(await client.call_tool("message_inbox",
-            {"instance_id": "research-7", "unread_only": False}))["messages"]
+            {"seat": "research-7", "unread_only": False}))["messages"]
         by_path = {m["path"]: m for m in inbox7b}
         assert "messages/m-1.md" in by_path, "flat-with-tombstones: the superseded message stays visible"
         assert by_path["messages/m-1.md"]["superseded_by"] == "messages/m-2.md", inbox7b
         assert by_path["messages/m-2.md"]["supersedes"] == ["messages/m-1.md"], inbox7b
-        await client.call_tool("message_mark_read", {"instance_id": "research-7", "message_path": "messages/m-2.md"})
+        await client.call_tool("message_mark_read", {"seat": "research-7", "message_path": "messages/m-2.md"})
         print("feature C: inbox tombstone resolved", {p: m["superseded_by"] for p, m in by_path.items()})
 
         # FEATURE C security (review finding 1): a DIFFERENT sender cannot tombstone m-1 (recto's, not
         # research-2's) — the supersedes edge is honored only when superseding + superseded share an author
-        await client.call_tool("message_send", {"sender": "recto", "recipients": ["research-7"],
+        await client.call_tool("message_send", {"seat": "recto", "recipients": ["research-7"],
             "subject": "spoof attempt — supersedes another sender's live message", "body": "should not tombstone m-1",
             "op_id": "m-3", "supersedes": ["messages/m-1"]})
         inbox7c = payload(await client.call_tool("message_inbox",
-            {"instance_id": "research-7", "unread_only": False}))["messages"]
+            {"seat": "research-7", "unread_only": False}))["messages"]
         # m-1 is research-2's and was legitimately retired by research-2's m-2 — the recto edge must NOT
         # be what tombstones it; and if research-2 had NOT superseded it, recto could not either
         m1 = {m["path"]: m for m in inbox7c}["messages/m-1.md"]
         assert m1["superseded_by"] == "messages/m-2.md", "same-author edge stands; cross-author m-3 ignored"
         assert "messages/m-3.md" not in [m["superseded_by"] for m in inbox7c], "no cross-author tombstone"
-        await client.call_tool("message_mark_read", {"instance_id": "research-7", "message_path": "messages/m-3.md"})
+        await client.call_tool("message_mark_read", {"seat": "research-7", "message_path": "messages/m-3.md"})
         print("feature C security: cross-sender supersedes rejected")
 
-        # message_unread_count with NO instance_id (0.1.5: absorbs imp_flags_all): the whole roster's
+        # message_unread_count with NO seat (0.1.5: absorbs imp_flags_all): the whole roster's
         # unread-frontier flags in ONE git crossing. research-7 has read everything; recto still
         # holds m-1 unread — and in RECTO's inbox m-1 is NOT superseded (m-2 was never addressed
         # to recto), so the frontier is per-inbox by construction. Witnessed at the meter.
@@ -355,22 +355,22 @@ async def main():
         assert allf["seats"]["recto"] == {"unread": 1, "from": ["research-2"]}, allf
         # and the single-seat mode: research-7's m-1 is superseded AND read, m-2/m-3 read -> 0;
         # unread-but-superseded stops flagging (message_inbox keeps the flat view)
-        assert payload(await client.call_tool("message_unread_count", {"instance_id": "research-7"}))["unread"] == 0
+        assert payload(await client.call_tool("message_unread_count", {"seat": "research-7"}))["unread"] == 0
         print("message_unread_count roster mode: one crossing, per-inbox frontier", {s: f["unread"] for s, f in allf["seats"].items()})
 
         # the bug fix: read-state lives in the audit log, so a reindex must NOT wipe it
         reindex_from_git(store, index, emb)
-        after_reindex = payload(await client.call_tool("message_unread_count", {"instance_id": "research-7"}))
+        after_reindex = payload(await client.call_tool("message_unread_count", {"seat": "research-7"}))
         # the declared supersedes-edge survives the reindex too — it rides the envelope in git
         inbox7c = payload(await client.call_tool("message_inbox",
-            {"instance_id": "research-7", "unread_only": False}))["messages"]
+            {"seat": "research-7", "unread_only": False}))["messages"]
         assert {m["path"]: m for m in inbox7c}["messages/m-1.md"]["superseded_by"] == "messages/m-2.md", \
             "the inbox tombstone must survive a reindex"
         ok, bad = audit.verify()
         print("after reindex -> message_unread_count r-7:", after_reindex, "| audit:", audit.count(), "verify:", (ok, bad))
 
         # authz seam: a message via entry_write is denied (use message_send), and the denial is audit-logged
-        res = await client.call_tool("entry_write", {"instance_id": "research-2", "domain": "messages",
+        res = await client.call_tool("entry_write", {"seat": "research-2", "domain": "messages",
                                                     "slug": "x", "body": "y", "op_id": "op-deny"})
         denied = bool(res.is_error)
         denial_logged = any(e["outcome"] == "denied" for e in audit.events())

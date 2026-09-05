@@ -50,7 +50,7 @@ for h in idx.search(q, scope="all", limit=10):
     print(f"  {h.score:>6}  {h.authoring_instance:12} canon={h.is_canon!s:5} {h.path}")
 
 print("== search canon ==      ", [h.path for h in idx.search(q, scope="canon")])
-print("== search mine(r-7) ==  ", [h.path for h in idx.search(q, scope="mine", instance_id="research-7")])
+print("== search mine(r-7) ==  ", [h.path for h in idx.search(q, scope="mine", seat="research-7")])
 print("== cartography_of no-silent-loss ==",
       [(r.authoring_instance, r.region_labels) for r in idx.cartography_of("practice/no-silent-loss.md")])
 print("== inbox research-7 ==  ", [(r.authoring_instance, r.subject, r.links) for r in idx.inbox("research-7")])
@@ -66,7 +66,7 @@ assert "messages/look-here.md" not in paths, "messages must be excluded from uni
 assert paths.index("practice/durability-notes.md") < paths.index("practice/scaling-notes.md"), \
     "durability must outrank scaling for a durability query"
 assert [h.path for h in idx.search(q, scope="canon")] == ["practice/no-silent-loss.md"], "canon scope"
-assert all(h.authoring_instance == "research-7" for h in idx.search(q, scope="mine", instance_id="research-7")), "mine scope"
+assert all(h.authoring_instance == "research-7" for h in idx.search(q, scope="mine", seat="research-7")), "mine scope"
 assert [r.authoring_instance for r in idx.cartography_of("practice/no-silent-loss.md")] == ["research-2"], "Q4 material"
 assert idx.inbox("research-2") == [], "sender is not a recipient"
 assert [r.path for r in idx.inbox("research-7")] == ["messages/look-here.md"], "recipient is addressed"

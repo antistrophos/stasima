@@ -58,9 +58,9 @@ class AuditLog(ABC):
     @abstractmethod
     def latest(self, *, op=None, actor=None) -> Optional[dict]: ...
     @abstractmethod
-    def append_read(self, instance_id: str, message_path: str) -> dict: ...
+    def append_read(self, seat: str, message_path: str) -> dict: ...
     @abstractmethod
-    def is_read(self, instance_id: str, message_path: str) -> bool: ...
+    def is_read(self, seat: str, message_path: str) -> bool: ...
 
 
 def _wal(conn, db_path):
@@ -176,13 +176,13 @@ class SqliteAuditLog(AuditLog):
         r = self.conn.execute(sql, params).fetchone()
         return self._row(r) if r else None
 
-    def append_read(self, instance_id, message_path) -> dict:
-        return self.append(instance_id, "read_receipt", target_path=message_path)
+    def append_read(self, seat, message_path) -> dict:
+        return self.append(seat, "read_receipt", target_path=message_path)
 
-    def is_read(self, instance_id, message_path) -> bool:
+    def is_read(self, seat, message_path) -> bool:
         r = self.conn.execute(
             "SELECT 1 FROM audit_events WHERE op='read_receipt' AND actor=? AND target_path=? LIMIT 1",
-            (instance_id, message_path)).fetchone()
+            (seat, message_path)).fetchone()
         return r is not None
 
 

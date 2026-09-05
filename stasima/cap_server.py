@@ -4,7 +4,7 @@ Stasima CAP server — THE DESK: the front end over the stacks (stasima/stacks.p
 
 The desk owns three things and nothing else: the TRANSPORT (stdio, or streamable HTTP on protocol
 2026-07-28 with every earlier revision still served), the WIRE SURFACE (29 MCP tools, derived from
-the stacks' op registry — a write's `principal` becomes `instance_id` on the wire, the description
+the stacks' op registry — a write's `principal` becomes `seat` on the wire, the description
 rides the op, so the surface cannot drift from the law behind it), and AAA at flow grain — the
 binding check that resolves WHO is acting into a `Principal`, then hands the act through the door.
 Store law (authorization policy, immutability, attribution, the reconcile hinge) is the stacks';
@@ -252,7 +252,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                                                     "port": port_token, "restored": True})
 
     @tool()
-    def seat_whoami(instance_id: str) -> dict:
+    def seat_whoami(seat: str) -> dict:
         """How the server sees you — always including this server process's binding (the
         SSH-shaped identity pin with sticky learning; see OPERATIONS): mode, the bound name (pinned,
         port-restored, or learned from your first write — null if nothing has bound yet), its
@@ -260,13 +260,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         shown plainly — like http:// in the address bar. Binding lives at process grain: the
         protocol has no per-conversation session to bind, so a shared service runs `off` until
         per-request identity arrives as tokens."""
-        out = {"instance_id": instance_id, "perspective_ref": persp_ref(instance_id),
-               "namespace": f"perspectives/{instance_id}", "allowed_ops": ["entry_write", "proposal_append_entry", "message_send", "vantage_write"],
+        out = {"seat": seat, "perspective_ref": persp_ref(seat),
+               "namespace": f"perspectives/{seat}", "allowed_ops": ["entry_write", "proposal_append_entry", "message_send", "vantage_write"],
                "note": "identity is a recorded name; the binding (pinned or sticky-learned, at process grain) guards writes"}
         eff = bound_instance or _binding["name"]
-        sb = {"mode": binding_mode, "grain": "process", "bound_instance": eff,
+        sb = {"mode": binding_mode, "grain": "process", "bound_seat": eff,
               "source": "pinned" if bound_instance else _binding["source"],
-              "match": (instance_id == eff) if eff else None}
+              "match": (seat == eff) if eff else None}
         if port_token:
             sb["port"] = port_token
         out["binding"] = sb
@@ -275,8 +275,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     # ---------------------------------------------------------------- the desk over the door
     # One MCP tool per op, its wire signature DERIVED from the handler's: a write's `principal`
-    # becomes `instance_id: str` on the wire (message_send also keeps `sender`, its deprecated 0.1.x
-    # twin), a read's signature passes through. The description rides the op. So the tool surface
+    # becomes `seat: str` on the wire, a read's signature passes through. The description rides the op. So the tool surface
     # cannot drift from the registry, and the desk's only work per write is AAA — resolve WHO
     # (the binding check, in witness mode the stamp) and hand the act through the door.
     S = build_stacks(store, index, embedder, audit, authz, airlock,
@@ -314,29 +313,11 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         sig = inspect.signature(fn)
         params = list(sig.parameters.values())
         if opname in S.writes:
-            wire = [inspect.Parameter("instance_id", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=str)]
-            if opname == "message_send":
-                # the twin rides the wire as an optional pair; the desk resolves exactly-one
-                wire = [inspect.Parameter("instance_id", inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                                          default="", annotation=str),
-                        inspect.Parameter("sender", inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                                          default="", annotation=str)]
-                required = [p for p in params[1:] if p.default is inspect.Parameter.empty]
-                optional = [p for p in params[1:] if p.default is not inspect.Parameter.empty]
-                wire = required + wire + optional
-            else:
-                wire = wire + params[1:]
+            wire = [inspect.Parameter("seat", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=str)]
+            wire = wire + params[1:]
 
             def adapter(**k):
-                if opname == "message_send":
-                    a, b = k.pop("instance_id", ""), k.pop("sender", "")
-                    who = a or b
-                    if not who or (a and b and a != b):
-                        raise Denied("pass your one seat name as instance_id= (canonical; sender= is its "
-                                     "deprecated 0.1.x twin — same meaning, still accepted). Exactly one "
-                                     "identity, or both identical.")
-                else:
-                    who = k.pop("instance_id")
+                who = k.pop("seat")
                 if opname in ARRIVAL:
                     # arrival claims a name; nothing is verified until the first identity-claiming
                     # WRITE (the guard's own rule) — so the door gets the claim, marked as a claim

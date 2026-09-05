@@ -50,10 +50,10 @@ async def main():
             tools = (await s.list_tools()).tools
             assert len(tools) == 29, f"expected 29 tools over stdio, got {len(tools)}"  # 0.1.5 dedup: -orientation -canon_head -proposal_status -sup_who -my_perspective -imp_flags_all
             # the calls that inherited-stdin used to hang: read-only, git-backed
-            res = await s.call_tool("seat_announce", {"instance_id": "stdio-probe"})
+            res = await s.call_tool("seat_announce", {"seat": "stdio-probe"})
             txt = "".join(getattr(c, "text", "") for c in res.content)
             assert "Welcome" in txt, txt[:120]
-            for name, arg in [("seat_whoami", {"instance_id": "stdio-probe"}),
+            for name, arg in [("seat_whoami", {"seat": "stdio-probe"}),
                               ("canon_state", {}), ("seat_list", {})]:
                 rr = await s.call_tool(name, arg)
                 assert not rr.is_error, (name, rr)
@@ -61,14 +61,14 @@ async def main():
             # the WRITE + DELETE path over real stdio (Lintel found proposal_retract_path hanging here —
             # the deletion plumbing runs git the read tools don't). reconcile, propose an entry +
             # log entry, then retract the log entry; all must return promptly.
-            await s.call_tool("canon_diff", {"instance_id": "stdio-probe"})
-            await s.call_tool("canon_reconcile", {"instance_id": "stdio-probe", "body": "read"})
-            await s.call_tool("proposal_append_entry", {"instance_id": "stdio-probe", "proposal_id": "p-stdio",
+            await s.call_tool("canon_diff", {"seat": "stdio-probe"})
+            await s.call_tool("canon_reconcile", {"seat": "stdio-probe", "body": "read"})
+            await s.call_tool("proposal_append_entry", {"seat": "stdio-probe", "proposal_id": "p-stdio",
                                           "domain": "practice", "slug": "x", "body": "x", "op_id": "ps-1"})
-            await s.call_tool("proposal_append_entry", {"instance_id": "stdio-probe", "proposal_id": "p-stdio",
+            await s.call_tool("proposal_append_entry", {"seat": "stdio-probe", "proposal_id": "p-stdio",
                                           "domain": "meta/log", "slug": "1", "body": "::1", "op_id": "ps-2",
                                           "type": "log", "seq": "1"})
-            rt = await s.call_tool("proposal_retract_path", {"instance_id": "stdio-probe",
+            rt = await s.call_tool("proposal_retract_path", {"seat": "stdio-probe",
                                    "proposal_id": "p-stdio", "path": "meta/log/1.md", "op_id": "ps-3"})
             assert not rt.is_error, ("proposal_retract_path", rt)
             print(f"stdio transport OK: {len(tools)} tools; read, propose, AND proposal_retract_path all returned")

@@ -80,12 +80,12 @@ async def main():
             return await client.call_tool(name, kw)
 
         # arrive, reconcile, author two proposals (each with log entry ::3C — both valid pre-land)
-        await call("canon_diff", instance_id="r2")
-        await call("canon_reconcile", instance_id="r2", body="read canon")
+        await call("canon_diff", seat="r2")
+        await call("canon_reconcile", seat="r2", body="read canon")
         for pid, slug in (("p-1", "alpha"), ("p-2", "beta")):
-            assert not err(await call("proposal_append_entry", instance_id="r2", proposal_id=pid, domain="practice",
+            assert not err(await call("proposal_append_entry", seat="r2", proposal_id=pid, domain="practice",
                                       slug=slug, body=f"{slug} entry", op_id=f"{pid}-1"))
-            assert not err(await call("proposal_append_entry", instance_id="r2", proposal_id=pid, domain="meta/log",
+            assert not err(await call("proposal_append_entry", seat="r2", proposal_id=pid, domain="meta/log",
                                       slug="3c", body="::3C — first land.", op_id=f"{pid}-log",
                                       type="log", seq="3c"))
 
@@ -95,10 +95,10 @@ async def main():
         print("stage p-1           OK", st["staged_oid"][:10])
 
         # (4) frozen: mutation against staged p-1 rejected
-        r = await call("proposal_append_entry", instance_id="r2", proposal_id="p-1", domain="practice",
+        r = await call("proposal_append_entry", seat="r2", proposal_id="p-1", domain="practice",
                        slug="late", body="late", op_id="late-1")
         assert err(r) and "frozen" in errtext(r)
-        r = await call("proposal_retract_path", instance_id="r2", proposal_id="p-1",
+        r = await call("proposal_retract_path", seat="r2", proposal_id="p-1",
                        path="practice/alpha.md", op_id="late-2")
         assert err(r) and "frozen" in errtext(r)
         print("freeze (staged)     OK")
@@ -128,7 +128,7 @@ async def main():
         out = payload(await call("proposal_unstage", proposal_id="p-2"))
         assert out["state"] == "open"
         assert "practice/beta.md" in store.list_paths("refs/cap/proposals/p-2")
-        assert not err(await call("proposal_append_entry", instance_id="r2", proposal_id="p-2", domain="practice",
+        assert not err(await call("proposal_append_entry", seat="r2", proposal_id="p-2", domain="practice",
                                   slug="gamma", body="writable again", op_id="p-2-3"))
         print("abort (free)        OK")
 
@@ -162,13 +162,13 @@ async def main():
         print("ceiling auto-revert OK")
 
         # practitioner_attention rides canon_state + announce
-        await call("message_send", sender="r2", recipients=["practitioner"], subject="look here",
+        await call("message_send", seat="r2", recipients=["practitioner"], subject="look here",
                    body="attn", op_id="m-1")
         cs = payload(await call("canon_state"))
         assert cs["practitioner_attention"] == 1, cs
-        an = payload(await call("seat_announce", instance_id="r2"))
+        an = payload(await call("seat_announce", seat="r2"))
         assert an["practitioner_attention"] == 1
-        await call("message_mark_read", instance_id="practitioner", message_path="messages/m-1.md")
+        await call("message_mark_read", seat="practitioner", message_path="messages/m-1.md")
         assert payload(await call("canon_state"))["practitioner_attention"] == 0
         print("attention flag      OK")
 
