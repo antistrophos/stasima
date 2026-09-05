@@ -79,7 +79,7 @@ class Stacks:
         if fn is None:
             raise Denied(f"unknown op {op.kind!r}")
         if op.kind not in self.writes:
-            raise Denied(f"{op.kind} is a read — call it from the shelf, it takes no principal")
+            raise Denied(f"{op.kind} is a read — it takes no principal; call it with Stacks.call")
         token = _session_label.set(principal.session)
         try:
             return fn(principal, **op.args)
@@ -195,8 +195,8 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             if clash:
                 _log(author, "name_collision", target_ref=ref, outcome="denied", detail={"existing": clash})
                 raise Denied(f"a perspective '{clash}' already exists; '{author}' differs only in case "
-                             f"and would FORK your identity (names are case-sensitive in v1). "
-                             f"Re-announce as '{clash}' and use it consistently — one name, forever.")
+                             f"and would FORK your identity (names are case-sensitive). "
+                             f"Call seat_announce again as '{clash}' and use that exact string — one name, forever.")
         for attempt in range(2):
             tip = store.resolve_ref(ref)
             changes = {p: c.encode() for p, c in build(tip).items()}
@@ -300,12 +300,15 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             if old_body.strip() != new_body.strip():
                 _log(actor, "entry_write", target_path=path, outcome="denied",
                      detail={"reason": "body immutable; supersede to a new slug"})
-                raise Denied(f"{path} exists and an entry's body is immutable — supersede to a new slug")
+                raise Denied(f"{path} exists and an entry's body never changes — write a new slug that "
+                         f"carries supersedes=['{path}'], then re-write {path} unchanged with "
+                         f"status='superseded' and superseded_by=[<the new path>]")
 
     def _check_not_staged(proposal_id):
         # a staged proposal is frozen for review — the airlock's chamber must hold exactly what was staged
         if airlock is not None and airlock.state(proposal_id)["state"] == "staged":
-            raise Denied(f"proposal {proposal_id} is frozen for review (staged) — land, revert, or let it expire")
+            raise Denied(f"proposal {proposal_id} is staged for review and frozen — the practitioner lands it, "
+                         f"or call proposal_unstage, or let the stage expire")
 
     def _closed_reason(proposal_id):
         # a proposal's closure is its tip commit's `close:` subject — terminal for SEAT operations
@@ -316,8 +319,8 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
     def _check_not_closed(proposal_id):
         reason = _closed_reason(proposal_id)
         if reason is not None:
-            raise Denied(f"proposal {proposal_id} is closed ({reason}) — closed is terminal for seats; "
-                         f"open a fresh proposal (the gate may still land or discard the closed one)")
+            raise Denied(f"proposal {proposal_id} is closed ({reason}) — closed is final for seats; "
+                         f"open a new proposal (the practitioner may still land or discard the closed one)")
 
     def _attention():
         # count of unread practitioner-recipient messages; delivery is conduct-convention, this is just the field
@@ -388,7 +391,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             # never compared to prose or counted against history (declarations govern)
             tick = tick.lower().lstrip(":")
             if domain != "state":
-                raise Denied("tick= rides state updates only (two-clock conventions v3, clause 5) — "
+                raise Denied("tick is allowed on state/ entries only (two-clock conventions v3, clause 5) — "
                              "declare the tick on a state/ entry, or drop the field")
             try:
                 int(tick, 16)
@@ -419,7 +422,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                     _log(seat, "entry_write", target_path=vap_path, op_id=op_id, outcome="denied",
                          detail={"reason": "op_id reuse would rewrite a recorded vantage"})
                     raise Denied(f"{vap_path} already records a vantage under op_id '{op_id}' — an op_id "
-                                 f"names one act; use a new op_id (the standpoint record is append-only)")
+                                 f"names one act; use a new op_id (vantages are append-only)")
                 vap_env = {"type": "vap", "title": vantage_title or f"vantage on {path}", "status": "active",
                            "vantage": "confirmed", "canon_state": envelope["canon_state"],
                            "instance_depth": envelope["instance_depth"],   # one commit, one depth — both faces
@@ -575,8 +578,8 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             try:
                 int(s, 16)
             except ValueError:
-                raise Denied(f"a meta/log entry needs `seq` as lowercase hex at propose-time (got {seq!r}) "
-                             f"— canon_state shows next_seq; the land would refuse this later, so refuse it here")
+                raise Denied(f"a meta/log entry needs `seq` as lowercase hex (got {seq!r}) — canon_state "
+                             f"shows next_seq; the land would refuse this later, so it is refused here")
             if slug != s:
                 # case-sensitive: the land validator compares the filename stem to the (lowercased)
                 # envelope seq, so 'meta/log/2F' with seq '2f' passes propose but fails at land —
@@ -600,8 +603,8 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 _log(seat, "proposal_append_entry", target_ref=ref, target_path=path, outcome="denied",
                      detail={"reason": "cross-propose without origin_author", "matched": sorted(matched)})
                 raise Denied(f"this content already exists under another seat's name — {who}. Carrying "
-                             f"another's work toward canon requires origin_author=<seat> (attribution "
-                             f"rides the envelope; the practitioner sees both names at the gate). "
+                             f"another seat's work toward canon requires origin_author=<seat> (attribution "
+                             f"rides the envelope; the practitioner sees both names when landing). "
                              f"Silent reattribution is refused.")
             if origin_author and matched and origin_author not in matched:
                 raise Denied(f"origin_author={origin_author!r} contradicts the record that triggered the "
@@ -915,9 +918,9 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                         _log(seat, "vantage_write", target_path=path, op_id=op_id, outcome="denied",
                              detail={"reason": "confirmed vantage on another's entry", "entry": entry,
                                      "authors": sorted(authors)})
-                        raise Denied(f"a 'confirmed' vantage claims your own body, but {entry} is authored "
-                                     f"by {sorted(authors)}, not {seat} — record it as 'reconstructed' "
-                                     f"(a reading of the record, never on the original's behalf).")
+                        raise Denied(f"a 'confirmed' vantage is your own context on your own entry, but {entry} "
+                                     f"is authored by {sorted(authors)}, not {seat} — record it as "
+                                     f"'reconstructed' (your reading of the record, never on the original's behalf)")
                 cursor = _canon_cursor(seat) or ""        # shared primitive: server-sourced canon-state
                 vantage = "confirmed" if kind == "confirmed" else f"reconstructed-by-{seat}-from-record"
                 envelope = {"type": "vap", "title": title or f"vantage on {entry}", "status": "active",

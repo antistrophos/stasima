@@ -238,9 +238,9 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
             how = "pinned to" if bound_instance else "learned (sticky) as"
             _log(claimed, op, target_ref=ref, target_path=path, outcome="denied",
                  detail={"reason": "session-binding mismatch", "bound": bound})
-            raise Denied(f"this connection is {how} '{bound}' (strict). To act as '{claimed}': use "
-                         f"that seat's own connection, or the practitioner downgrades this "
-                         f"definition (STASIMA_BINDING=witness, or a console `binding --clear` on "
+            raise Denied(f"this server process is {how} '{bound}' (strict). To act as '{claimed}': use "
+                         f"that seat's own server process, or the practitioner downgrades this "
+                         f"process (STASIMA_BINDING=witness, or a console `binding --clear` on "
                          f"its port) — the downgrade is server-owned by design; there is no "
                          f"in-call override")
         _log(claimed, op, target_ref=ref, target_path=path, outcome="witness",

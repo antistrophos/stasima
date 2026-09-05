@@ -96,7 +96,7 @@ try:
     S.apply(verso, Op("entry_write", {"domain": "state", "slug": "one", "body": "changed", "op_id": "k3"}, "k3"))
     raise SystemExit("FAIL: an immutable body was rewritten through the door")
 except Denied as e:
-    assert "immutable" in str(e), e
+    assert "never changes" in str(e), e
 try:
     S.apply(verso, Op("canon_reconcile", {"body": "read"}))
     raise SystemExit("FAIL: reconcile without a pull passed the hinge")
