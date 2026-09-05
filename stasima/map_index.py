@@ -56,7 +56,7 @@ class StubEmbedder(Embedder):
     """Deterministic, offline bag-of-hashed-tokens embedding. For dev/tests without a model server.
     It's essentially lexical similarity — enough to prove ranking/scope/index behavior reproducibly."""
 
-    # Relevance floor for map_search: 0.0 = OFF, deliberately. Calibrated on a live ~630-entry
+    # Relevance floor for entry_search: 0.0 = OFF, deliberately. Calibrated on a live ~630-entry
     # corpus (2026-07): junk-query top scores (0.28-0.30) OVERLAP true-match top scores (0.23-0.36)
     # — hashed-token cosine has no absolute meaning, so any floor here silently drops real hits.
     # A deployment may override via config `search_score_floor`; real embedders calibrate their own.
@@ -86,7 +86,7 @@ class LocalServerEmbedder(Embedder):
     badly (verified live: nomic without prefixes ranks related BELOW unrelated). Configure
     `doc_prefix`/`query_prefix` per model; empty strings for models that don't use them."""
 
-    # Relevance floor for map_search: 0.0 = off until calibrated PER MODEL against a real corpus
+    # Relevance floor for entry_search: 0.0 = off until calibrated PER MODEL against a real corpus
     # (score ranges differ wildly across embedding models). Set via config `search_score_floor`
     # once a deployment has measured where its model's true/junk scores separate.
     score_floor = 0.0
@@ -289,7 +289,7 @@ class SqliteMapIndex(MapIndex):
 
     def search(self, query_embedding, *, scope="all", instance_id=None, type=None, status="active", limit=10):
         # universal search excludes the index-scoped types (messages, vantages); they surface only via
-        # their own scoped lookups (inbox / vap_for). INVARIANT: any new universal-retrieval path (e.g. a
+        # their own scoped lookups (inbox / vantage_list). INVARIANT: any new universal-retrieval path (e.g. a
         # future lexical/fusion ranker) MUST inherit this exclusion, or it re-admits the echo it must not.
         where = ["type NOT IN ('msg', 'vap')"]
         params: list = []
@@ -321,7 +321,7 @@ class SqliteMapIndex(MapIndex):
         return [r for r in rows if target_path in r.links]
 
     def inbox(self, instance_id):
-        # Pre-filter in SQL on the quoted JSON token ("name") so the roster sweep (imp_flags over
+        # Pre-filter in SQL on the quoted JSON token ("name") so the roster sweep (message_unread_count over
         # every seat) deserializes only THIS seat's messages, not every message once per seat. The
         # quoted form avoids substring false-matches ("al" vs "alice"); the Python membership check
         # stays authoritative. read-state lives in the audit log.

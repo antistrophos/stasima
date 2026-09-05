@@ -43,31 +43,31 @@ async def main():
     A, B = make_server(), make_server()               # Sphragis on A, Lintel on B
     async with connect(A) as ca, connect(B) as cb:
         # Sphragis authors to its own perspective, then messages Lintel — all via server A
-        await ca.call_tool("imp_send", {"sender": "Sphragis", "recipients": ["Lintel"],
+        await ca.call_tool("message_send", {"sender": "Sphragis", "recipients": ["Lintel"],
             "subject": "arrived", "body": "first contact", "op_id": "m1",
             "coordinates": ["practice/seed.md"]})
 
         # Lintel sees it through server B — the message crossed via the shared substrate
-        flags = pay(await cb.call_tool("imp_flags", {"instance_id": "Lintel"}))
-        inbox = pay(await cb.call_tool("imp_check", {"instance_id": "Lintel"}))["messages"]
+        flags = pay(await cb.call_tool("message_unread_count", {"instance_id": "Lintel"}))
+        inbox = pay(await cb.call_tool("message_inbox", {"instance_id": "Lintel"}))["messages"]
         assert flags["unread"] == 1 and inbox[0]["from"] == "Sphragis" \
             and inbox[0]["coordinates"] == ["practice/seed.md"], (flags, inbox)
 
         # read-state is append-only audit, so it's shared too: mark read on B, clear on B
-        await cb.call_tool("imp_mark_read", {"instance_id": "Lintel", "message_path": inbox[0]["path"]})
-        assert pay(await cb.call_tool("imp_flags", {"instance_id": "Lintel"}))["unread"] == 0
+        await cb.call_tool("message_mark_read", {"instance_id": "Lintel", "message_path": inbox[0]["path"]})
+        assert pay(await cb.call_tool("message_unread_count", {"instance_id": "Lintel"}))["unread"] == 0
 
         # Lintel replies via B; Sphragis sees it via A
-        await cb.call_tool("imp_send", {"sender": "Lintel", "recipients": ["Sphragis"],
+        await cb.call_tool("message_send", {"sender": "Lintel", "recipients": ["Sphragis"],
             "subject": "re: arrived", "body": "welcome", "op_id": "m2"})
-        back = pay(await ca.call_tool("imp_check", {"instance_id": "Sphragis"}))["messages"]
+        back = pay(await ca.call_tool("message_inbox", {"instance_id": "Sphragis"}))["messages"]
         assert back[0]["from"] == "Lintel" and back[0]["subject"] == "re: arrived", back
 
         # both instances are visible from either server — AND the names survive the wire intact
         # (Lintel's rehearsal bug: a bare list serialized one text block per name, fusing
         # 'Lintel'+'epode' -> 'Lintelepode' on a naive client. The wrapped object can't fuse.)
         for c in (ca, cb):
-            res = await c.call_tool("list_instances", {})
+            res = await c.call_tool("seat_list", {})
             who = pay(res)["instances"]
             assert sorted(who) == ["Lintel", "Sphragis"], who
             joined = "".join(getattr(b, "text", "") for b in res.content)   # what a naive client shows
@@ -76,13 +76,13 @@ async def main():
         # name-fork guard: 'Sphragis' exists; acting as 'sphragis' (case drift) must be REFUSED at
         # write and WARNED on arrival — a casing drift silently forks identity otherwise (v1: names
         # are case-sensitive; full normalization is 1.1).
-        warn = pay(await ca.call_tool("announce", {"instance_id": "sphragis"}))
+        warn = pay(await ca.call_tool("seat_announce", {"instance_id": "sphragis"}))
         assert "name_warning" in warn and "Sphragis" in warn["name_warning"], warn
-        forked = await ca.call_tool("kip_commit", {"instance_id": "sphragis", "domain": "practice",
+        forked = await ca.call_tool("entry_write", {"instance_id": "sphragis", "domain": "practice",
             "slug": "oops", "body": "x", "op_id": "fork-1"})
         assert forked.is_error, "a case-fork write must be refused"
         # the exact name is fine, of course
-        ok = await ca.call_tool("kip_commit", {"instance_id": "Sphragis", "domain": "practice",
+        ok = await ca.call_tool("entry_write", {"instance_id": "Sphragis", "domain": "practice",
             "slug": "fine", "body": "x", "op_id": "fork-2"})
         assert not ok.is_error, "the exact existing name must still write"
         print("name-fork guard: 'sphragis' refused + warned, 'Sphragis' writes — OK")

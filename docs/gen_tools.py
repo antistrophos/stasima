@@ -27,15 +27,15 @@ from mcp.client import Client as connect   # v2: the in-process client — one C
 
 # tool -> section; an unmapped tool still renders (under "Other"), so a new tool cannot vanish
 SECTIONS = [
-    ("Arrive & orient", ["announce", "orientation", "canon_head", "canon_state", "whoami", "list_instances"]),
-    ("Author — and the fold", ["kip_commit", "vap_record"]),
-    ("Read", ["kip_get", "list_entries", "my_perspective", "kip_history"]),
-    ("Search (MAP)", ["map_search"]),
-    ("Vantages (VAP)", ["vap_for"]),
-    ("Messages (IMP)", ["imp_send", "imp_check", "imp_flags", "imp_mark_read"]),
-    ("Coherence (SUP)", ["canon_diff", "sup_reconcile", "sup_state", "sup_who"]),
-    ("Propose & track", ["propose", "propose_retract", "proposal_status", "conflict_preview", "list_proposals"]),
-    ("Approval relay (the airlock)", ["stage_approve", "land_approve", "stage_revert"]),
+    ("Arrive & orient", ["seat_announce", "orientation", "canon_head", "canon_state", "seat_whoami", "seat_list"]),
+    ("Author — and the fold", ["entry_write", "vantage_write"]),
+    ("Read", ["entry_read", "entry_list", "my_perspective", "entry_history"]),
+    ("Search (MAP)", ["entry_search"]),
+    ("Vantages (VAP)", ["vantage_list"]),
+    ("Messages (IMP)", ["message_send", "message_inbox", "message_unread_count", "message_mark_read"]),
+    ("Coherence (SUP)", ["canon_diff", "canon_reconcile", "seat_state", "sup_who"]),
+    ("Propose & track", ["proposal_append_entry", "proposal_retract_path", "proposal_status", "proposal_preview", "proposal_list"]),
+    ("Approval relay (the airlock)", ["proposal_stage", "proposal_land", "proposal_unstage"]),
 ]
 
 MIN_EXPECTED = 29   # the generator fails loudly if tools go missing rather than emitting a partial reference (29 = the 0.1.5 dedup floor)

@@ -21,6 +21,6 @@ text = open(out, encoding="utf-8").read()
 assert text.count("### `") == n, "every tool must render exactly once"
 # the contracts this release added must ride the generated page (they live in docstrings/schemas)
 for must in ("horizon", "resolve", "include_superseded", "detail", "with_vantages",
-             "supersedes", "### `stage_approve`", "### `vap_for`", "recovery"):
+             "supersedes", "### `proposal_stage`", "### `vantage_list`", "recovery"):
     assert must in text, f"generated reference is missing {must!r}"
 print(f"OK -- tool reference generates: {n} tools, contracts present, derived-not-authored.")

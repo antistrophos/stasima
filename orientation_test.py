@@ -39,7 +39,7 @@ print("\n" + "=" * 60)
 
 # machinery preamble present (practice-agnostic, suite-level)
 assert MACHINERY.splitlines()[0] in text, "machinery preamble missing"
-assert "map_search" in text and "propose" in text, "machinery should describe the tools"
+assert "entry_search" in text and "proposal_append_entry" in text, "machinery should describe the tools"
 # authored slots rendered from canon
 assert "Be honest; mark uncertainty" in text, "conduct section not rendered from canon"
 assert "you have standing here" in text.lower(), "claims section not rendered from canon"

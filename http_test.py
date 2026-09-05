@@ -85,8 +85,8 @@ try:
     async def arrive(session, label):
         listing = await session.list_tools()
         tools = [t.name for t in listing.tools]                 # wire order, not sorted
-        assert "announce" in tools and "stage_approve" in tools, tools
-        res = await session.call_tool("announce", {"instance_id": "epode"})
+        assert "seat_announce" in tools and "proposal_stage" in tools, tools
+        res = await session.call_tool("seat_announce", {"instance_id": "epode"})
         assert "Welcome to Stasima, epode." in text(res), text(res)[:120]
         print(f"{label:<19} OK ({len(tools)} tools; announce -> Welcome to Stasima, epode.)")
         return tools, listing
@@ -113,13 +113,13 @@ try:
     async def shared_off():
         async with Client(url, mode="legacy") as s1:
             async with Client(url, mode="legacy") as s2:
-                a = await s1.call_tool("kip_commit", {"instance_id": "SeatA", "domain": "state",
+                a = await s1.call_tool("entry_write", {"instance_id": "SeatA", "domain": "state",
                                                       "slug": "a1", "body": "a", "op_id": "ha1"})
                 assert not a.is_error, text(a)[:200]
-                b = await s2.call_tool("kip_commit", {"instance_id": "SeatB", "domain": "state",
+                b = await s2.call_tool("entry_write", {"instance_id": "SeatB", "domain": "state",
                                                       "slug": "b1", "body": "b", "op_id": "hb1"})
                 assert not b.is_error, text(b)[:200]
-                w = await s2.call_tool("whoami", {"instance_id": "SeatB"})
+                w = await s2.call_tool("seat_whoami", {"instance_id": "SeatB"})
                 wt = text(w)
                 assert '"mode": "off"' in wt and '"grain": "process"' in wt and '"bound_instance": null' in wt, wt[:300]
         print("shared service off  OK (two conversations, two seats write; whoami: mode off, grain process)")
@@ -154,13 +154,13 @@ try:
 
     async def pinned():
         async with Client(url) as s:                        # modern protocol: no session exists
-            ok = await s.call_tool("kip_commit", {"instance_id": "SeatA", "domain": "state",
+            ok = await s.call_tool("entry_write", {"instance_id": "SeatA", "domain": "state",
                                                   "slug": "p1", "body": "a", "op_id": "hp1"})
             assert not ok.is_error, text(ok)[:200]
-            x = await s.call_tool("kip_commit", {"instance_id": "SeatB", "domain": "state",
+            x = await s.call_tool("entry_write", {"instance_id": "SeatB", "domain": "state",
                                                  "slug": "p2", "body": "b", "op_id": "hp2"})
             assert x.is_error and "pinned to 'SeatA'" in text(x), text(x)[:200]
-            w = text(await s.call_tool("whoami", {"instance_id": "SeatB"}))
+            w = text(await s.call_tool("seat_whoami", {"instance_id": "SeatB"}))
             assert '"source": "pinned"' in w and '"grain": "process"' in w and '"match": false' in w, w[:300]
         print("pinned service      OK (SeatA writes; SeatB's claim refused with the pinned name; no session needed)")
 

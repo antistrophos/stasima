@@ -252,7 +252,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                                                     "port": port_token, "restored": True})
 
     @tool()
-    def whoami(instance_id: str) -> dict:
+    def seat_whoami(instance_id: str) -> dict:
         """How the server sees you — always including this server process's binding (the
         SSH-shaped identity pin with sticky learning; see OPERATIONS): mode, the bound name (pinned,
         port-restored, or learned from your first write — null if nothing has bound yet), its
@@ -261,7 +261,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         protocol has no per-conversation session to bind, so a shared service runs `off` until
         per-request identity arrives as tokens."""
         out = {"instance_id": instance_id, "perspective_ref": persp_ref(instance_id),
-               "namespace": f"perspectives/{instance_id}", "allowed_ops": ["kip_commit", "propose", "imp_send", "vap_record"],
+               "namespace": f"perspectives/{instance_id}", "allowed_ops": ["entry_write", "proposal_append_entry", "message_send", "vantage_write"],
                "note": "identity is a recorded name; the binding (pinned or sticky-learned, at process grain) guards writes"}
         eff = bound_instance or _binding["name"]
         sb = {"mode": binding_mode, "grain": "process", "bound_instance": eff,
@@ -275,7 +275,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
 
     # ---------------------------------------------------------------- the desk over the door
     # One MCP tool per op, its wire signature DERIVED from the handler's: a write's `principal`
-    # becomes `instance_id: str` on the wire (imp_send also keeps `sender`, its deprecated 0.1.x
+    # becomes `instance_id: str` on the wire (message_send also keeps `sender`, its deprecated 0.1.x
     # twin), a read's signature passes through. The description rides the op. So the tool surface
     # cannot drift from the registry, and the desk's only work per write is AAA — resolve WHO
     # (the binding check, in witness mode the stamp) and hand the act through the door.
@@ -284,7 +284,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                      seq_origin=seq_origin, deployment_name=deployment_name,
                      pull_logs_in_full=pull_logs_in_full)
 
-    ARRIVAL = {"announce"}   # writes that take a principal but run before any binding exists
+    ARRIVAL = {"seat_announce"}   # writes that take a principal but run before any binding exists
 
     def _principal(name, opname, ref=None, path=None):
         stamp = _check_binding(name, opname, ref, path)
@@ -298,13 +298,13 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         ref = persp_ref(name)
         if "domain" in k and "slug" in k:
             return ref, f"{k['domain']}/{k['slug']}.md"
-        if opname == "imp_send":
+        if opname == "message_send":
             return ref, f"messages/{k.get('op_id', '')}.md"
-        if opname == "vap_record":
+        if opname == "vantage_write":
             return ref, f"vantages/{k.get('op_id', '')}.md"
-        if opname == "imp_mark_read":
+        if opname == "message_mark_read":
             return None, k.get("message_path")
-        if opname == "propose_close":
+        if opname == "proposal_close":
             return ref, f"close/{k.get('proposal_id', '')}"
         if "path" in k:
             return ref, k["path"]
@@ -315,7 +315,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
         params = list(sig.parameters.values())
         if opname in S.writes:
             wire = [inspect.Parameter("instance_id", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=str)]
-            if opname == "imp_send":
+            if opname == "message_send":
                 # the twin rides the wire as an optional pair; the desk resolves exactly-one
                 wire = [inspect.Parameter("instance_id", inspect.Parameter.POSITIONAL_OR_KEYWORD,
                                           default="", annotation=str),
@@ -328,7 +328,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 wire = wire + params[1:]
 
             def adapter(**k):
-                if opname == "imp_send":
+                if opname == "message_send":
                     a, b = k.pop("instance_id", ""), k.pop("sender", "")
                     who = a or b
                     if not who or (a and b and a != b):

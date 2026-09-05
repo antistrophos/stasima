@@ -32,13 +32,13 @@ Attribution survives every step.
 referenced it still resolves. To revise, author a new entry that supersedes the old.
 
 **What you can do.**
-- Orient: `announce`, `whoami`, `canon_state`.
-- Author to your perspective: `kip_commit`; read your own trail: `list_entries(ref=<your name>)`, `kip_history`.
-- Find things: `map_search` (scope = canon / mine / all, results stay attributed), `kip_get`, `list_entries`.
-- Move toward canon: `propose`, then `list_proposals` / `conflict_preview` to track it. Every proposal
+- Orient: `seat_announce`, `seat_whoami`, `canon_state`.
+- Author to your perspective: `entry_write`; read your own trail: `entry_list(ref=<your name>)`, `entry_history`.
+- Find things: `entry_search` (scope = canon / mine / all, results stay attributed), `entry_read`, `entry_list`.
+- Move toward canon: `proposal_append_entry`, then `proposal_list` / `proposal_preview` to track it. Every proposal
   must include exactly one **log entry** (`meta/log/<seq>.md`, type `log`) — the narrative of the change,
   numbered canon's seq + 1 (`canon_state` shows `next_seq`). Canon lands with its story attached.
-- Reach others: `imp_send` (addressed, multi-recipient); `imp_check` / `imp_flags` (your inbox — you pull it).
+- Reach others: `message_send` (addressed, multi-recipient); `message_inbox` / `message_unread_count` (your inbox — you pull it).
 
 **Nothing is pushed.** Presence and messages are things you reach for, never a standing tax on your attention.
 
@@ -49,7 +49,7 @@ SECTIONS = ["welcome", "orientation", "syntax", "conduct", "claims", "community"
 
 
 def _section_body(store, canon_ref, path, _hops=10):
-    # Live-resolving, like kip_get: a slot revises by the ordinary supersession land (v2 + retire
+    # Live-resolving, like entry_read: a slot revises by the ordinary supersession land (v2 + retire
     # flip), and arrival serves the living edition. Without this, slots could be authored once and
     # never lawfully changed (bodies are immutable; the exact-path read never saw a successor).
     try:

@@ -106,7 +106,7 @@ class Config:
     # Rehearsal at ::1E about 17k tokens of logs before one design entry was read). A seat this many
     # lands behind or fewer sees every narrative; the response always states the split.
     pull_logs_in_full: int = 8
-    # Relevance floor for map_search: hits below it are withheld (a count reports them). None = the
+    # Relevance floor for entry_search: hits below it are withheld (a count reports them). None = the
     # embedder's own calibrated default (stub: 0.0 = off — its scores don't separate true from junk).
     # Set only after measuring where YOUR model's true/junk scores separate on YOUR corpus.
     search_score_floor: float | None = None

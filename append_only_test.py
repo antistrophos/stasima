@@ -63,7 +63,7 @@ prep = store.prepare_merge("refs/cap/proposals/p-good")
 assert prep.summary.removed == [] and "practice/extra.md" in prep.summary.added
 print("3. additive proposal prepares fine: adds =", prep.summary.added, "removes =", prep.summary.removed)
 
-# 4. INSTANCE-SIDE mirror: conflict_preview (the tool an instance actually calls) surfaces the
+# 4. INSTANCE-SIDE mirror: proposal_preview (the tool an instance actually calls) surfaces the
 # removal typed, so a naive arriving instance self-catches BEFORE involving the practitioner. This
 # is the property the rehearsal cares about most — confirmed here through the real tool, not just
 # the store primitive. (Lintel's point: the self-catch is what a stranger's instance depends on.)
@@ -75,11 +75,11 @@ from _testkit import payload as _payload   # the suite's shared result reader
 
 async def _instance_side():
     async with connect(build_server(store, binding_mode="off")) as client:   # multi-seat via one connection
-        bad = _payload(await client.call_tool("conflict_preview", {"proposal_id": "p-bad"}))
+        bad = _payload(await client.call_tool("proposal_preview", {"proposal_id": "p-bad"}))
         assert bad["would_remove_canon"] and "practice/keep.md" in bad["removes"], bad
-        good = _payload(await client.call_tool("conflict_preview", {"proposal_id": "p-good"}))
+        good = _payload(await client.call_tool("proposal_preview", {"proposal_id": "p-good"}))
         assert not good["would_remove_canon"] and "practice/extra.md" in good["adds"], good
-    print("4. instance-side conflict_preview: would_remove_canon fires on the bad proposal, "
+    print("4. instance-side proposal_preview: would_remove_canon fires on the bad proposal, "
           "empty on the additive one")
 
 

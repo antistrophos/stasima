@@ -32,7 +32,7 @@ S = build_stacks(store, index, emb, audit, DefaultPolicy())
 
 # an EMPTY deployment first: the reconcile hinge must refuse cleanly, not fall over on a missing tip
 try:
-    S.apply(Principal(name="Verso"), Op("sup_reconcile", {"body": "read"}))
+    S.apply(Principal(name="Verso"), Op("canon_reconcile", {"body": "read"}))
     raise SystemExit("FAIL: reconcile against no canon passed")
 except Denied as e:
     assert "no canon exists yet" in str(e), e
@@ -68,45 +68,45 @@ print("legenda relief      OK (bound 2: the two most recent narratives in full, 
 # ---- the registry is the surface: the wire's 29 minus whoami (the desk's own) minus the three
 # relay verbs (no airlock in this assembly) = 25; writes identified by their signature ----
 assert len(S.ops) == 25, sorted(S.ops)
-assert {"kip_commit", "propose", "imp_send", "vap_record", "sup_reconcile", "canon_diff",
-        "imp_mark_read", "propose_retract", "propose_close", "announce"} <= S.writes, S.writes
-assert "kip_get" not in S.writes and "whoami" not in S.ops   # whoami is the desk's: it reports binding
+assert {"entry_write", "proposal_append_entry", "message_send", "vantage_write", "canon_reconcile", "canon_diff",
+        "message_mark_read", "proposal_retract_path", "proposal_close", "seat_announce"} <= S.writes, S.writes
+assert "entry_read" not in S.writes and "seat_whoami" not in S.ops   # whoami is the desk's: it reports binding
 print(f"registry            OK ({len(S.ops)} ops, {len(S.writes)} writes; whoami stays at the desk)")
 
 # ---- door 1: an authored op, no MCP anywhere ----
 verso = Principal(name="Verso", source="pinned", session="s0000test")
-r = S.apply(verso, Op("kip_commit", {"domain": "state", "slug": "one", "body": "first", "op_id": "k1"}, "k1"))
+r = S.apply(verso, Op("entry_write", {"domain": "state", "slug": "one", "body": "first", "op_id": "k1"}, "k1"))
 assert r["author"] == "Verso" and r["path"] == "state/one.md", r
-got = S.call("kip_get", ref="Verso", path="state/one.md")
+got = S.call("entry_read", ref="Verso", path="state/one.md")
 env, body = parse_entry(got["text"])
 assert body.strip() == "first" and "authored_via" not in env, (env, body)
-rows = [e for e in audit.events(op="kip_commit") if e["actor"] == "Verso"]
+rows = [e for e in audit.events(op="entry_write") if e["actor"] == "Verso"]
 assert rows and rows[-1]["detail"].get("session") == "s0000test", rows[-1]   # the label rides the row
-print("door 1 apply        OK (kip_commit through the door; read back off the shelf; session label on the audit row)")
+print("door 1 apply        OK (entry_write through the door; read back off the shelf; session label on the audit row)")
 
 # the witness stamp is the FRONT END's decision — the stacks record what they were handed
 recto_as_verso = Principal(name="Recto", stamp={"authored_via": "Verso"}, source="process")
-r2 = S.apply(recto_as_verso, Op("kip_commit", {"domain": "state", "slug": "wit", "body": "w", "op_id": "k2"}, "k2"))
-env2, _ = parse_entry(S.call("kip_get", ref="Recto", path="state/wit.md")["text"])
+r2 = S.apply(recto_as_verso, Op("entry_write", {"domain": "state", "slug": "wit", "body": "w", "op_id": "k2"}, "k2"))
+env2, _ = parse_entry(S.call("entry_read", ref="Recto", path="state/wit.md")["text"])
 assert env2.get("authored_via") == "Verso", env2
 print("witness stamp       OK (the desk's stamp lands in the envelope; the stacks judge nothing about WHO)")
 
 # store law runs BEHIND the door: immutability, the reconcile hinge, attribution
 try:
-    S.apply(verso, Op("kip_commit", {"domain": "state", "slug": "one", "body": "changed", "op_id": "k3"}, "k3"))
+    S.apply(verso, Op("entry_write", {"domain": "state", "slug": "one", "body": "changed", "op_id": "k3"}, "k3"))
     raise SystemExit("FAIL: an immutable body was rewritten through the door")
 except Denied as e:
     assert "immutable" in str(e), e
 try:
-    S.apply(verso, Op("sup_reconcile", {"body": "read"}))
+    S.apply(verso, Op("canon_reconcile", {"body": "read"}))
     raise SystemExit("FAIL: reconcile without a pull passed the hinge")
 except Denied as e:
     assert "canon_diff" in str(e), e
 print("store law           OK (immutability + the reconcile hinge refuse behind the door, not at the desk)")
 
 # the doors are typed: a read cannot come through apply, a write cannot come off the shelf
-for bad in (lambda: S.apply(verso, Op("kip_get", {"ref": "Verso", "path": "state/one.md"})),
-            lambda: S.call("kip_commit", domain="state", slug="x", body="x", op_id="x"),
+for bad in (lambda: S.apply(verso, Op("entry_read", {"ref": "Verso", "path": "state/one.md"})),
+            lambda: S.call("entry_write", domain="state", slug="x", body="x", op_id="x"),
             lambda: S.call("no_such_op")):
     try:
         bad()
@@ -117,7 +117,7 @@ print("typed doors         OK (reads off the shelf, writes through the door, unk
 
 # ---- door 2: a carrier advances a replica ref by fast-forward only ----
 t1 = store.resolve_ref("refs/cap/perspectives/Verso")
-S.apply(verso, Op("kip_commit", {"domain": "state", "slug": "two", "body": "second", "op_id": "k4"}, "k4"))
+S.apply(verso, Op("entry_write", {"domain": "state", "slug": "two", "body": "second", "op_id": "k4"}, "k4"))
 t2 = store.resolve_ref("refs/cap/perspectives/Verso")
 assert t1 and t2 and t1 != t2
 mirror = "refs/replicas/verso"
