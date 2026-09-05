@@ -27,12 +27,14 @@ connect exactly as before. What changes is the server's own environment and one 
   service restart — measured with `bridge_smoke.py`; audit rows from legacy clients then read
   `session: stateless`).
 
-Sequence (the full runbook is OPERATIONS → "Cutover to the v2 service"): build the venv → set
-`service_python` (+ `http_stateless = true` after the smoke) in the http toml → run the smoke →
-back up → stop the old service, start the new one on the old port with the same toml → bounce the
-client ONE last time (the old bridges hold sessions the new service does not have) → `whoami` in
-one conversation shows `"grain": "process"`. Rollback is the reverse: stop the new service, start
-the old one from the old interpreter, bounce the client.
+Sequence (the full runbook is OPERATIONS → "Cutover to the v2 service"): build the venv → give the
+new generation its OWN config pair (`<stem>-v2.toml`, `<stem>-v2-http.toml` with `service_python` and
+`http_stateless = true`; same data, same port) and its own `cockpit-v2` launcher — never add the v2
+fields to the 0.1.5 toml, whose loader refuses unknown keys → run the smoke → back up → stop the
+old service from the old cockpit, start the new one from the new cockpit → bounce the client ONE
+last time (the old bridges hold sessions the new service does not have) → `whoami` in one
+conversation shows `"grain": "process"`. Rollback is two keystrokes: stop the new service from its
+cockpit, start the old one from its cockpit, bounce the client; nothing is edited either way.
 
 ## 0.1.4 → 0.1.5 (the dedup — six tools removed or folded)
 

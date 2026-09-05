@@ -277,14 +277,20 @@ v2 SDK); the service gets its own venv, and the bridge's interpreter stays exact
 1. **Build the venv** beside the checkout and install the release into it:
    `python -m venv <dir>\.venv` → `<dir>\.venv\Scripts\python.exe -m pip install stasima==0.2.0`
    (or `-e <checkout>` for a source deployment). Do not touch `pip` in the bridge's interpreter.
-2. **Point the toml at it** — three lines in the http toml:
-   `service_python = "<dir>/.venv/Scripts/python.exe"` (the cockpit's start button uses it and
-   drops `PYTHONPATH`, so the launcher's source path cannot shadow the venv), `binding_mode = "off"`
-   (already there on a bridge deployment), and `http_stateless = true` (after the smoke).
+2. **Give the new generation its own config pair and launcher** — do NOT add the v2 fields to the
+   0.1.5 http toml: the 0.1.5 config loader refuses unknown keys, so the old cockpit's start button
+   would fail and the trivial rollback with it. Copy the base toml to `<stem>-v2.toml` and the http
+   toml to `<stem>-v2-http.toml` (same `git_dir`, same databases, same port, `binding_mode = "off"`),
+   and add to the http copy: `service_python = "<dir>/.venv/Scripts/python.exe"` and
+   `http_stateless = true` (after the smoke). Write a `cockpit-v2` launcher that clears `PYTHONPATH`
+   (no source path may shadow the venv), sets `STASIMA_CONFIG` to the v2 base toml, and runs
+   `<dir>\.venv\Scripts\python.exe -m stasima.tui`. Each cockpit now derives its own http toml and its
+   own pidfile, and manages its own service generation; the old files are never edited.
 3. **Run the smoke** from the venv: `<dir>\.venv\Scripts\python.exe bridge_smoke.py`. Two rows,
    both `tools=29 announce=OK write=OK`; the stateless row `survives-restart=YES`.
-4. **Back up** (`admin backup`), then **stop the old service and start the new one** on the same
-   port with the same toml (cockpit → HTTP service → x, s; the start line names the interpreter).
+4. **Back up** (`admin backup`), then **stop the old service from the OLD cockpit** (HTTP service →
+   `x`) and **start the new one from the NEW cockpit** (HTTP service → `s`; the start line names the
+   venv interpreter). Same port, same data, new code.
 5. **Bounce the desktop client once** — this is the LAST time the bridge rule applies: the bridges
    were born against the old, session-holding service. From here on a stateless service restarts
    under open bridges.
@@ -292,9 +298,11 @@ v2 SDK); the service gets its own venv, and the bridge's interpreter stays exact
    `canon_state` answers; a deliberate refusal (e.g. a `kip_commit` re-using a slug) comes back as
    its own sentence, not "Error executing tool".
 
-**Rollback** is the reverse and needs no data step (git, the audit log, the map index, and
-`auth.sqlite` are untouched by the port): stop the new service, clear `service_python` (or start the
-old interpreter's `python -m stasima.cap_server` by hand with the same toml), bounce the client.
+**Rollback** is two keystrokes and needs no data step (git, the audit log, the map index, and
+`auth.sqlite` are untouched by the port): stop the new service from the new cockpit (`x`), start
+the old one from the old cockpit (`s`), bounce the client. Nothing is edited in either direction.
+After the merge to `main`, re-point the venv at the merged checkout (`pip install -e <checkout>`)
+and retire the 0.1.5 launcher and toml pair when the old generation is no longer wanted.
 
 **Binding over the bridge — `binding_mode = "off"`, as for any shared service.** The bridge
 multiplexes every conversation onto ONE transport session per bridge process, so even in the era
