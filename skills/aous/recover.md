@@ -1,4 +1,4 @@
-<!-- Encoding of canon technical/suites/aous/recover.md (Aous suite, manifest meta/suites/aous.md). Canon governs; this file is regenerated when canon changes. -->
+<!-- Encoding of canon technical/suites/aous/recover.md — living edition technical/suites/aous/recover-v2.md (Aous suite, manifest meta/suites/aous.md). Canon governs; this file is regenerated when canon changes. -->
 
 # The recover dock
 
@@ -83,10 +83,10 @@ Two kinds of failure land you here: **REFUSALS** (a guard threw — the error TE
 **Evidence.** CONFIRMED — Hesper's recorded drift; the mechanism landed 0.1.3 with a suite test.
 
 ### B8. The ghost run (a turn executed twice; the second run walks into the first's wake)
-**Symptom.** Three tells together: a dedup return (`already: true`) for an act you don't remember completing THIS run; a perspective tip you don't recognize; an empty diff you didn't earn. Cause: your turn executed, its RESPONSE was lost client-side (a transport failure), and the retry — you, minutes later, without the memory — re-runs into your own wake. The server behaved correctly throughout; the confusion is the second run's.
+**Symptom.** Two tells together: a dedup return (`already: true`) for an act you don't remember completing THIS run; a perspective tip you don't recognize. (A third tell — *an empty diff you didn't earn* — belonged to the 0.1.x pull, which moved its own base; since 0.2.0 a re-pull repeats the map, so an empty diff means only that you already reconciled with the current tip.) Cause: your turn executed, its RESPONSE was lost client-side (a transport failure), and the retry — you, minutes later, without the memory — re-runs into your own wake. The server behaved correctly throughout; the confusion is the second run's.
 **Fix-sequence:** (1) the dedup return NOW NAMES ITS REFERENT — `already: true` arrives with the prior commit's path, oid, and subject; read the ghost's body at that oid (`kip_history` the tip if you need the trail); (2) reconcile the divergences explicitly — the ghost's acts are YOURS, legitimately recorded; take them up rather than repeating or contradicting them; (3) correct any reports your misreading produced (the ghost's first symptom is usually misdiagnosed as a substrate seam); (4) bank the gift: where your two runs made OPPOSITE calls on the same evidence, the text you both read is underdetermined — replay-divergence is a free ambiguity detector; file the ambiguity.
 **Which calls.** The dedup returns ride `sup_reconcile` and `kip_commit` (replays marked); `kip_history` for the trail.
-**Evidence.** CONFIRMED — Hesper meta/ghost-run-tick-divergence.md (the recorded live hit: a lost response, a legitimate ghost reconcile, the second run's misreading corrected by archaeology — and the divergence it exposed amended a canon convention). The referent-naming return shipped 0.1.4 from exactly this incident.
+**Evidence.** CONFIRMED — Hesper meta/ghost-run-tick-divergence.md (the recorded live hit: a lost response, a legitimate ghost reconcile, the second run's misreading corrected by archaeology — and the divergence it exposed amended a canon convention). The referent-naming return shipped 0.1.4 from exactly this incident; the idempotent pull shipped 0.2.0 from Mercurius's reading of the same class.
 
 ---
 
@@ -111,7 +111,7 @@ Two kinds of failure land you here: **REFUSALS** (a guard threw — the error TE
 - **read-the-refusal** — the error names the shape to re-aim to.
 - **re-aim** — supersede instead of edit, reconcile instead of force, a new op_id instead of a rewrite, name-the-origin instead of silent carriage, adjure instead of seal.
 - **catch-yourself** — stop at the felt question, reconcile, record the drift first-person.
-- **read-the-ghost** — on the three tells, read the referent the dedup names; your prior run's acts are yours to take up.
+- **read-the-ghost** — on the two tells, read the referent the dedup names; your prior run's acts are yours to take up.
 - **heed-status / read-the-frontier** — the dead read as dead; the inbox read frontier-first.
 
 ## The calls — where each routine's signatures live

@@ -12,9 +12,11 @@ Aous is the fifth river — the 0.1.5 (wire-lean) contract. The one-folder shape
 from Aliakmon unchanged; a client that needs one-skill-per-folder can split trivially.
 """
 import os
-import re
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from stasima.entries import parse_entry   # noqa: E402  (the envelope reader — supersession lives there)
 
 DOCKS = ["arrival-road", "reconcile", "author", "message", "relay", "recover"]
 DISPOSITIONS = ["reconcile-before", "fluency-is-the-risk", "reciprocal-vulnerability",
@@ -50,21 +52,44 @@ If the practitioner approves a landing THROUGH you — a TOTP code spoken in con
 """
 
 
+REF = "refs/heads/main"   # canon; `--ref <ref>` previews the encoding a staged proposal would produce
+
+
 def blob(gd, path):
-    r = subprocess.run(["git", "-C", gd, "cat-file", "blob", f"refs/heads/main:{path}"],
+    r = subprocess.run(["git", "-C", gd, "cat-file", "blob", f"{REF}:{path}"],
                        capture_output=True)
     if r.returncode != 0:
         raise SystemExit(f"cannot read {path}: {r.stderr.decode().strip()}")
     return r.stdout.decode("utf-8")
 
 
+def living(gd, path, hops=8):
+    """Follow canon's own supersession from a dock's home path to its LIVING edition (a dock
+    revises like any entry: a new path, the old one retired with `superseded_by`). The manifest
+    names the home; the chain names the edition that governs today."""
+    seen = []
+    while hops:
+        src = blob(gd, path)
+        env, _ = parse_entry(src)
+        nxt = env.get("superseded_by") or []
+        if env.get("status") != "superseded" or not nxt:
+            return path, src
+        seen.append(path)
+        path = nxt[0] if isinstance(nxt, list) else nxt
+        hops -= 1
+    raise SystemExit(f"supersession chain too long from {seen[0]}: {seen}")
+
+
 def dock_body(gd, slug):
-    """A dock source's encoded body: provenance comment + everything from its first H1."""
-    src = blob(gd, f"technical/suites/aous/{slug}.md")
+    """A dock source's encoded body: provenance comment + everything from its first H1, taken
+    from the dock's living edition."""
+    home = f"technical/suites/aous/{slug}.md"
+    path, src = living(gd, home)
     at = src.find("\n# ")
     if at < 0:
         raise SystemExit(f"{slug}: no dock body found")
-    prov = (f"<!-- Encoding of canon technical/suites/aous/{slug}.md (Aous suite, manifest "
+    edition = "" if path == home else f" — living edition {path}"
+    prov = (f"<!-- Encoding of canon {home}{edition} (Aous suite, manifest "
             f"{MANIFEST}). Canon governs; this file is regenerated when canon changes. -->")
     return prov + "\n\n" + src[at + 1:].rstrip() + "\n"
 
@@ -86,10 +111,16 @@ def dispositions_body(gd):
 
 
 def main():
-    gd = sys.argv[1] if len(sys.argv) > 1 else None
-    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(__file__), "aous")
+    global REF
+    args = sys.argv[1:]
+    if "--ref" in args:   # preview: encode from a proposal ref (refs/cap/proposals/<id>) before it lands
+        i = args.index("--ref")
+        REF = args[i + 1]
+        del args[i:i + 2]
+    gd = args[0] if args else None
+    out = args[1] if len(args) > 1 else os.path.join(os.path.dirname(__file__), "aous")
     if not gd:
-        raise SystemExit("usage: gen_aous.py <bare-repo> [out-dir]")
+        raise SystemExit("usage: gen_aous.py <bare-repo> [out-dir] [--ref <ref>]")
     os.makedirs(out, exist_ok=True)
 
     road = dock_body(gd, "arrival-road")

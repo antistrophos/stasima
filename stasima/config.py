@@ -74,11 +74,22 @@ class Config:
     # address + localhost automatically). Needed when a proxy forwards with its own Host —
     # e.g. tailscale serve: http_allowed_hosts = ["yourbox.your-tailnet.ts.net"]
     http_allowed_hosts: list = field(default_factory=list)
-    # Session-binding mode for the whole server: "strict" (default), "witness", or "off". Blank =
-    # the built-in default (strict). Set "off" when clients reach the server through a bridge that
-    # multiplexes many conversations onto ONE transport session (e.g. mcp-proxy): per-session
-    # binding then binds the BRIDGE (a trunk), not the conversation, so two seats sharing a bridge
-    # collide — don't sticky a trunk. The STASIMA_BINDING env var overrides this if set.
+    # Stateless http: serve every request on a fresh transport, assign no Mcp-Session-Id (protocol
+    # 2026-07-28 has no sessions; this also stops offering one to handshake-era clients). The prize
+    # is a service that can restart under open connections without terminating them — the bridge
+    # rule in OPERATIONS goes away. The cost: audit rows from legacy clients lose their transport-
+    # session label (they read `stateless`). Run bridge_smoke.py before flipping it on a fleet.
+    http_stateless: bool = False
+    # The interpreter the cockpit starts the http service with. Blank = the cockpit's own. Set it
+    # when the service runs from its own venv (the v2 port's deployment shape — the SDK upgrade must
+    # not land in the interpreter that runs the mcp-proxy bridge), e.g.
+    # service_python = "C:/path/to/stasima-venv/Scripts/python.exe"
+    service_python: str = ""
+    # Binding mode for the whole server process: "strict" (default), "witness", or "off". Blank =
+    # the built-in default (strict). A shared http service must run "off" (or be pinned with
+    # STASIMA_INSTANCE): the protocol has no per-conversation session to bind, and a service that
+    # learned would bind the whole fleet to its first writer — the server refuses to start one that
+    # could. The STASIMA_BINDING env var overrides this if set.
     binding_mode: str = ""
     # Per-git-op timeout (seconds). A local git op on a text corpus is sub-second; a hang means
     # contention (e.g. a second server process on the repo). 0 = auto by transport: 2s for stdio
@@ -90,6 +101,11 @@ class Config:
     # are NOT bound by the tight steady-state git_timeout above. Raise it for a huge corpus over a slow
     # link; lower it to fail a stuck remote faster.
     git_network_timeout: float = 300.0
+    # How many of the most recent land narratives canon_diff carries IN FULL; older logs ride as
+    # pointers (the legenda relief: a first pull of a grown canon carried every narrative — on
+    # Rehearsal at ::1E about 17k tokens of logs before one design entry was read). A seat this many
+    # lands behind or fewer sees every narrative; the response always states the split.
+    pull_logs_in_full: int = 8
     # Relevance floor for map_search: hits below it are withheld (a count reports them). None = the
     # embedder's own calibrated default (stub: 0.0 = off — its scores don't separate true from junk).
     # Set only after measuring where YOUR model's true/junk scores separate on YOUR corpus.
@@ -150,6 +166,12 @@ class Config:
             if not (0 < self.http_port < 65536):
                 raise ConfigError("http_port must be 1-65535")
             self._check_bind_address(self.http_host)
+        if int(self.pull_logs_in_full) < 0:
+            raise ConfigError("pull_logs_in_full must be >= 0 (0 = every narrative rides as a pointer)")
+        if self.http_stateless and self.transport != "http":
+            raise ConfigError("http_stateless is only meaningful with transport='http'")
+        if self.service_python and not os.path.exists(self.service_python):
+            raise ConfigError(f"service_python does not exist: {self.service_python!r}")
         if self.binding_mode and self.binding_mode not in ("strict", "witness", "off"):
             raise ConfigError(f"binding_mode must be 'strict', 'witness', or 'off' (or blank for "
                               f"the default), got {self.binding_mode!r}")

@@ -44,12 +44,19 @@ transport  = "stdio"
 http_host  = "127.0.0.1"
 http_port  = 8787
 # http_allowed_hosts = ["yourbox.your-tailnet.ts.net"]   # extra Host values (e.g. a tailscale serve proxy)
+# Stateless http: no transport sessions at all, so the service can restart under open bridges
+# without terminating them (measured with bridge_smoke.py). Legacy clients' audit rows then read
+# `session: stateless`. Recommended for a fleet service (OPERATIONS, "Stateless http").
+# http_stateless = true
+# The interpreter the cockpit starts the http service with — the service's own venv (the SDK
+# upgrade must never land in the interpreter that runs an mcp-proxy bridge). Blank = the cockpit's.
+# service_python = "C:/path/to/stasima-venv/Scripts/python.exe"
 
-# Session binding: "strict" (default when blank — a mismatched identity-claiming write refuses),
-# "witness" (proceeds + stamps authored_via), "off". Set "off" when a bridge (e.g. mcp-proxy)
-# trunks many conversations onto ONE transport session — the binding would bind the bridge, not
-# the conversation, and seats sharing it collide (OPERATIONS, "Seat identity"). Env
-# STASIMA_BINDING overrides this field.
+# Binding (process grain): "strict" (default when blank — a mismatched identity-claiming write
+# refuses), "witness" (proceeds + stamps authored_via), "off". A SHARED http service must run
+# "off" or be pinned with STASIMA_INSTANCE — the protocol has no per-conversation session to bind,
+# and the server refuses to start a shared service that could learn (OPERATIONS, "Seat
+# identity"). Env STASIMA_BINDING overrides this field.
 # binding_mode = "strict"
 
 # The OAuth door. Setting this turns the authorization server ON (discovery + DCR + PKCE + a
@@ -57,6 +64,11 @@ http_port  = 8787
 # from the cockpit console). https required unless loopback; the host is auto-added to
 # http_allowed_hosts. Blank = no auth (loopback/tailnet trust).
 # http_public_url = "https://yourbox.your-tailnet.ts.net"
+# How many of the most recent land narratives canon_diff carries in full; older logs ride as
+# pointers (a first pull of a grown canon otherwise carries every narrative). The response always
+# states the split (logs_in_full / logs_as_pointers). 0 = all pointers.
+# pull_logs_in_full = 8
+
 # Per-git-op timeout (s). A local git op is sub-second; a hang means contention, and this bounds it
 # so it fails LOUD instead of hanging forever. 0 = auto: 2s stdio / 20s http. Raise for a huge corpus.
 # The FIRST git op of each server process gets a one-time grace window (cold start: Windows scanning

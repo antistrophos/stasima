@@ -24,14 +24,14 @@ from stasima.authz import DefaultPolicy
 from stasima.cap_server import build_server, compose_entry, land_and_record
 from stasima.canon import reindex_from_git
 from stasima.entries import parse_entry
-from mcp.shared.memory import create_connected_server_and_client_session as connect
+from mcp.client import Client as connect   # v2: the in-process client — one Client, one connection
 
 CANON = "refs/heads/main"
 def persp(i): return f"refs/cap/perspectives/{i}"
 
 
 def payload(res):
-    sc = getattr(res, "structuredContent", None)
+    sc = res.structured_content
     if sc is not None:
         return sc["result"] if isinstance(sc, dict) and set(sc.keys()) == {"result"} else sc
     txt = "".join(getattr(c, "text", "") for c in res.content)
@@ -42,7 +42,7 @@ def payload(res):
 
 
 def err(res):
-    return bool(getattr(res, "isError", False))
+    return bool(res.is_error)
 
 
 def setup():
@@ -91,7 +91,13 @@ async def main():
         assert all("content" not in c for c in cd["changed"]), "diff returns pointers, never full bodies"
         assert all("title" in c for c in cd["changed"] if not c.get("removed")), "pointers carry the envelope"
         assert cd["changed_count"] == len(cd["changed"])
+        # the pull is idempotent until the seat reconciles: a lost response is re-pulled for free
+        # (Mercurius's finding — the base is the last RECONCILED position, not the last pull)
+        cd_again = payload(await call("canon_diff", instance_id="r2"))
+        assert cd_again["changed"] == cd["changed"] and cd_again["from"] == cd["from"], "re-pull must repeat the diff"
         sr = payload(await call("sup_reconcile", instance_id="r2", body="I've read current canon."))
+        after = payload(await call("canon_diff", instance_id="r2"))
+        assert after["changed"] == [] and after["from"] == sr["canon_cursor"], "after reconciling, the diff is empty"
         old_tip = sr["canon_cursor"]
         # dedup names its referent: a replayed reconcile must say WHAT it duplicated (path+oid+subject),
         # so a ghost-run hunt costs zero extra reads (the soak's ghost-run finding)

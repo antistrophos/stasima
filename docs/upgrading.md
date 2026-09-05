@@ -4,6 +4,38 @@ The cutover checklist for a **live deployment** moving between suite versions. W
 practitioner running the upgrade; the suite's own discipline applies — trust the process table over
 status badges, back up before you touch anything, and prefer boring sequences to clever ones.
 
+## 0.1.5 → 0.2.0 (the MCP v2 port — SDK 2.1, protocol 2026-07-28)
+
+No data migration: git, the audit log, the map index, and `auth.sqlite` are untouched, and the
+29-tool registry, its parameters, and its refusal texts are unchanged. Every earlier protocol
+revision is still served, so existing clients — the desktop app's `mcp-proxy` bridge included —
+connect exactly as before. What changes is the server's own environment and one `whoami` field:
+
+- **The SDK floor moves to `mcp>=2.1`.** Install the new version into its **own venv** and run the
+  service from there. Do NOT upgrade `mcp` in an interpreter that also runs `mcp-proxy`: the bridge
+  declares `mcp>=1.17.0` with no ceiling and predates the v2 SDK, so the resolver would accept the
+  upgrade and every seat's connector would break at once.
+- **A shared http service must run `binding_mode = "off"`** (or be pinned with `STASIMA_INSTANCE`).
+  The protocol has no per-conversation session any more, so the server refuses to start an http
+  service that could sticky-learn — the error names the fix. Deployments already running `off`
+  behind a bridge (the recommended 0.1.5 shape) need no change.
+- **`whoami`'s `session_binding` block is now `binding`**, with a `grain` field (`process`); the
+  learned-binding `source` reads `process` where it read `session`. Audit op names are unchanged.
+
+- **Two new toml fields**, both optional: `service_python` (the interpreter the cockpit starts the
+  service with — the venv's) and `http_stateless` (no sessions at all; an open bridge survives a
+  service restart — measured with `bridge_smoke.py`; audit rows from legacy clients then read
+  `session: stateless`).
+
+Sequence (the full runbook is OPERATIONS → "Cutover to the v2 service"): build the venv → give the
+new generation its OWN config pair (`<stem>-v2.toml`, `<stem>-v2-http.toml` with `service_python` and
+`http_stateless = true`; same data, same port) and its own `cockpit-v2` launcher — never add the v2
+fields to the 0.1.5 toml, whose loader refuses unknown keys → run the smoke → back up → stop the
+old service from the old cockpit, start the new one from the new cockpit → bounce the client ONE
+last time (the old bridges hold sessions the new service does not have) → `whoami` in one
+conversation shows `"grain": "process"`. Rollback is two keystrokes: stop the new service from its
+cockpit, start the old one from its cockpit, bounce the client; nothing is edited either way.
+
 ## 0.1.4 → 0.1.5 (the dedup — six tools removed or folded)
 
 No data migration — but two server-side defaults change underneath you (session binding arms, and

@@ -70,11 +70,11 @@ print("3. additive proposal prepares fine: adds =", prep.summary.added, "removes
 import json as _json
 import anyio
 from stasima.cap_server import build_server
-from mcp.shared.memory import create_connected_server_and_client_session as connect
+from mcp.client import Client as connect   # v2: the in-process client — one Client, one connection
 
 
 def _payload(res):
-    sc = getattr(res, "structuredContent", None)
+    sc = res.structured_content
     if isinstance(sc, dict):
         return sc.get("result", sc)
     return _json.loads("".join(getattr(c, "text", "") for c in res.content))

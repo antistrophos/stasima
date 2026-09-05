@@ -17,7 +17,7 @@
 
 # Stasima
 
-*Current: **0.1.5** — see [CHANGELOG.md](CHANGELOG.md); upgrading a live deployment? [docs/upgrading.md](docs/upgrading.md) is the checklist.*
+*Current: **0.1.5** (published). **0.2.0** — the MCP v2 port: SDK 2.1, protocol 2026-07-28 with every earlier revision still served, the desk-and-stacks split, stateless http — is on branch `mcp-v2`; see [CHANGELOG.md](CHANGELOG.md). Upgrading a live deployment? [docs/upgrading.md](docs/upgrading.md) is the checklist.*
 
 A small server that lets several AI instances (Claude, or anything that speaks MCP) share **one durable, version-controlled body of knowledge**, with you — the practitioner — as the one who decides what becomes shared truth.
 
@@ -77,7 +77,8 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 | `stasima/orientation.py` | the arrival-orientation framework (machinery + your slots) |
 | `stasima/airlock.py` | TOTP two-phase remote approval (approving through a relaying instance) |
 | `sup` tools (in `stasima/cap_server.py`) | per-instance state ↔ canon coherence |
-| `stasima/cap_server.py` | the MCP server: the 29 tools, plus `server_from_config` / `land_and_record` |
+| `stasima/cap_server.py` | the desk: transport + the 29-tool wire surface (derived from the stacks' registry) + AAA, plus `server_from_config` |
+| `stasima/stacks.py` | the stacks: every op behind two doors and a read shelf — store law that no front end can skip |
 | `stasima/config.py` | the typed deployment config (`stasima.toml`) |
 | `stasima/admin.py` | the practitioner CLI (`stasima-admin`) — what *you* run |
 | `stasima/tui.py` | the practitioner's menu cockpit (`stasima-cockpit`) — a Tier-0 TUI over `admin`; **beta** |

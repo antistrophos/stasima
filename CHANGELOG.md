@@ -5,6 +5,130 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
+- **The legenda relief: `canon_diff` bounds the narratives it carries in full.** The legenda
+  criterion (canon ::13) names the failure — a canon no longer readable entire — and the practitioner
+  reported it firing on Rehearsal: a fresh seat's first pull was too large to read as content, so fresh
+  seats read titles. Measured at ::1E: 106 entries, ~159k tokens of canon; a first pull carried all
+  30 land narratives in full, ~17k tokens of logs plus ~4k of pointers before one design entry was
+  read. Now the pull carries the most recent `pull_logs_in_full` narratives in full (new toml field,
+  default 8; on Rehearsal ~6.7k tokens instead of ~17k) and older logs as pointers in the map, and the
+  response says what it did: `logs_in_full`, `logs_as_pointers`, and on a first pull `first_pull:
+  true` with a `note` naming the reading order (orientation, the suite manifest, then what governs
+  your next act). The map itself is never bounded — every changed entry is still a pointer; a seat
+  eight lands behind or fewer sees every narrative, exactly as before. `stacks_test` proves the bound
+  at 2 and at 0. This is relief inside one canon; the structural answer is the area split the
+  subsidiarity design already describes, drafted at the seat's grain on epode's branch
+  (technical/seat-across-canons-home-and-memberships.md) for a review round.
+
+- **The 0.2.0 polish pass — the documents say what the code does.** STATUS, ARCHITECTURE (the
+  trust model, the HTTP era, four new invariants — store law behind the door, the derived wire
+  surface, fast-forward-only carriers — and the two doors as extension points), SETUP, README,
+  OPERATIONS' rekeying note, the cockpit's screen title, and the binding test's title all describe
+  binding at process grain and the desk-and-stacks shape; nothing left says "session binding"
+  except the ledger's own op names. `skills/gen_aous.py` now follows canon's supersession from a
+  dock's home path to its living edition, so a dock revised at a new path (the 0.2.0 `canon_diff`
+  semantics want one) is picked up by regeneration without touching the generator; regenerated
+  from live canon today it is byte-identical; `--ref refs/cap/proposals/<id>` previews the encoding a
+  staged proposal would produce, so the gate can read the skill diff before the land (the 0.2.0
+  dock editions preview as 22 lines in reconcile, 8 in recover, nothing else). Two `server_test`
+  assertions the phase-one rename
+  had missed (multi-line `getattr(..., "isError", False)`) were passing vacuously and now check
+  `is_error`. Unused imports pruned from the desk and the stacks; the desk's re-exports (the
+  content model's serialization, the canon lifecycle) are marked as such. `bridge_smoke.py` ships
+  in the sdist.
+
+- **The MCP v2 port, phase four: stateless http, measured against the real bridge; the tool list
+  carries a cache hint; the cockpit learns the venv.** `http_stateless = true` (new toml field,
+  default off) serves every request on a fresh transport with no `Mcp-Session-Id` — the protocol
+  has none since 2026-07-28, and this stops offering one to handshake-era clients too. The prize
+  the early-port clause named: **a service can restart under open bridges without terminating
+  them.** `bridge_smoke.py` (new; the pre-cutover check, not part of the suite — it needs the
+  deploying machine's own `mcp-proxy`) drives the ported server through the REAL bridge (mcp
+  1.28.1 / mcp-proxy 0.12.0, in the other interpreter) in both modes, then restarts the service
+  under the open bridge: sessions `survives-restart=NO` ("Session terminated"), stateless `YES`.
+  The cost is one forensic label (legacy clients' audit rows read `session: stateless`). The
+  restart rule in OPERATIONS is now conditional on the mode, and the cutover runbook is written.
+  `tools/list` carries `ttlMs 300000 / cacheScope private` (the surface is fixed per process and
+  comes back in registration order — deterministic, as the protocol asks; the http test checks
+  both). `service_python` (new toml field) tells the cockpit which interpreter starts the service
+  and drops `PYTHONPATH` for it, so a venv service cannot be shadowed by the launcher's source
+  path — the knob the v2 deployment shape needs.
+
+- **The MCP v2 port, phase two (second half): the desk-and-stacks split — a layer boundary
+  between the front end and the store law.** `cap_server.py` is now THE DESK: transport, the
+  29-tool wire surface, and AAA (the binding check resolves WHO into a `Principal`). New
+  `stasima/stacks.py` is THE STACKS: every helper and every op body, moved verbatim, behind two
+  doors and a read shelf — `apply(principal, op)` for an authored act, `advance_replica(carrier,
+  ref, new, expected_old)` for a carrier's structural fast-forward (new store primitive
+  `LocalCapStore.fast_forward`: CAS + fast-forward-only, bypasses the origin-only guard, never
+  history), `call(name, ...)` for reads. Store law — authorization policy, immutability,
+  attribution, thread form, the reconcile hinge — runs behind the door whoever knocks; the stacks
+  know no transport. The desk's tool surface is DERIVED from the stacks' registry (a write's
+  `principal` becomes `instance_id` on the wire; the description rides the op), so it cannot drift:
+  `docs/tools.md` regenerated with NO diff for 28 of 29 tools. `stacks_test.py` drives both doors
+  and the shelf with no MCP in the process — the proof the boundary is real. Two ride-alongs and one
+  latent fix ride the move:
+  - **`canon_diff` is idempotent until you reconcile** (Mercurius's finding): the diff is measured
+    from the canon you last RECONCILED with, not from your last pull, so a lost response is re-pulled
+    for free; the pull still leaves its row, which is what the reconcile hinge reads. (The one tool
+    whose description changed.)
+  - **Log entries lead the diff in sequence order** (Alidade's cold-arrival finding): git listed
+    `meta/log/10.md` before `meta/log/2.md`; the pull now sorts logs by their hex value, then the
+    rest in path order.
+  - **Reconciling against an empty canon refuses with an instruction** instead of falling over on
+    the missing tip (`None == None` passed the hinge before).
+  Arrival (`announce`) reaches the door with a CLAIMED principal — nothing is verified until the
+  first identity-claiming write, the guard's own rule, unchanged. AAA order at the desk is now
+  authentication (binding) before authorization (policy); both refusals read as before.
+
+- **The MCP v2 port, phase two (first half): binding demotes to PROCESS grain — the ruling
+  ("demote deliberately", 2026-08-02) made code.** The protocol has no per-conversation session to
+  bind: 2026-07-28 removed sessions, and phase one found that even a handshake-era client is handed
+  a fresh session object per request. So the per-session sticky table phase one carried across is
+  gone, and binding keeps exactly the grains where enforcement always worked — a pinned definition,
+  a ported definition (durable sticky), and the process itself (stdio: the client spawned it, so
+  that IS one conversation). Consequences, all shipped:
+  - **A shared http service refuses to start if it could learn** (`strict`/`witness` with no
+    `STASIMA_INSTANCE`): a service that learned would bind the whole fleet to its first writer —
+    the trunk problem, now structural rather than a caution. The error names the fix (`off`, or
+    pin). The fleet's own toml already runs `off`, so the live deployment needs no change.
+  - **`whoami`'s block is `binding` (was `session_binding`) and carries `grain: "process"`**; a
+    learned binding's `source` reads `process` (was `session`). Audit op names (`session_binding`,
+    `port_binding`) are ledger vocabulary and stay, so the rotation trail reads as one history.
+  - **The transport session survives as an audit LABEL, never as identity**: rows from the http
+    transport carry `session: s<id>` for a legacy client and `stateless` for the modern protocol,
+    so "writes on your branch from conversations other than yours" stays a query.
+  - The http test now proves the three honest shared-service shapes end to end: `off` (two
+    conversations, two seats, both write, attribution rides each envelope), strict-unpinned
+    (refused at startup with the instruction), and pinned (one seat's door enforced over the
+    modern protocol with no session at all). OPERATIONS and `docs/upgrading.md` (0.1.5 → 0.2.0)
+    say the same thing the code does. Per-request identity for a shared service is the token door
+    — the port's auth phase, not this one.
+
+- **The MCP v2 port, phase one: the server runs on SDK 2.1 (`mcp>=2.1,<3`) — protocol
+  2026-07-28 — and still serves every earlier revision.** The pin below is lifted. `FastMCP`
+  becomes `MCPServer`; the bind address and the DNS-rebinding allowlist become transport options
+  passed at `run()` / `streamable_http_app()` instead of construction; the suite drives the server
+  through the SDK's one `Client` (in-process, stdio, and HTTP alike) and reads snake_case result
+  fields (`is_error`, `structured_content`, `input_schema`). 23/23 green. Two things the suite
+  forced into the open, both shipped here:
+  - **Refusals stay instructions.** The 2.1 SDK renders a `ToolError` with its message but wraps
+    any other exception first, so a `Denied` raised inside a tool would have reached the seat as
+    the wrapper's text — and every recover routine the docks teach reads the refusal's sentence.
+    Every tool now lifts what it raises into a `ToolError` carrying that sentence (a `Denied`
+    verbatim; a store error prefixed with its class). The wire text is unchanged from 0.1.5
+    (`Error executing tool <name>: <message>`); the suite's refusal assertions are the proof. This
+    was the port's planned later phase, pulled forward because the suite cannot pass without it.
+  - **The session seam keys on the transport's own session id.** v2 builds a fresh session object
+    per request, even for a handshake-era client; the only conversation identity such a client
+    carries is its `Mcp-Session-Id`, so sticky binding keys on that (a bounded table), stdio stays
+    process-sticky, and a stateless modern-protocol request has no conversation to bind — its
+    audit row says `stateless`. The http test arrives as both protocol eras and proves two legacy
+    sessions bind two seats independently — the `mcp-proxy` bridge's case exactly.
+  Deployment note for the cutover: do NOT install the SDK upgrade into the interpreter that runs
+  the `mcp-proxy` bridge (it declares `mcp>=1.17.0` with no ceiling and predates v2); the ported
+  service runs from its own venv. The cutover sequence lands in OPERATIONS before release.
+
 - **`mcp` is pinned below 2.0** (`mcp>=1.10,<2`). The MCP 2026-07-28 protocol revision removed
   protocol-level sessions and the initialize handshake, and the SDK's same-day 2.0 release renames
   `FastMCP` to `MCPServer` and rebuilds the low-level server — the session-binding seam this suite

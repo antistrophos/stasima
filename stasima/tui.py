@@ -311,7 +311,7 @@ def _http_service(config):
     stem, _ = os.path.splitext(config)
     http_cfg = stem + "-http.toml"
     pidfile = http_cfg + ".pid"
-    print(BOLD("\nHTTP service") + DIM("  — one process serves the fleet; sessions self-bind"))
+    print(BOLD("\nHTTP service") + DIM("  — one process serves the fleet; a shared service runs binding off"))
     if not os.path.exists(http_cfg):
         print(DIM(f"  no {os.path.basename(http_cfg)} yet — the service wants its OWN toml "
                   f"(flipping the shared one would break stdio definitions)."))
@@ -394,14 +394,25 @@ def _http_service(config):
     if act == "s":
         if up:
             print(DIM("already up — nothing started.")); return
-        p = _sp.Popen([sys.executable, "-m", "stasima.cap_server"],
-                      env=dict(os.environ, STASIMA_CONFIG=http_cfg),
+        # the service's interpreter: the toml's service_python when set (the service runs from its
+        # own venv — the v2 deployment shape), else this cockpit's own. PYTHONPATH is dropped for a
+        # venv service: the launcher's source path would shadow the venv's installed package.
+        _sp_py = ""
+        try:
+            _sp_py = Config.load(http_cfg).service_python or ""
+        except Exception:
+            pass
+        _env = dict(os.environ, STASIMA_CONFIG=http_cfg)
+        if _sp_py:
+            _env.pop("PYTHONPATH", None)
+        p = _sp.Popen([_sp_py or sys.executable, "-m", "stasima.cap_server"],
+                      env=_env,
                       creationflags=(_sp.DETACHED_PROCESS | _sp.CREATE_NEW_PROCESS_GROUP)
                       if os.name == "nt" else 0,
                       stdout=_sp.DEVNULL, stderr=_sp.DEVNULL, stdin=_sp.DEVNULL)
         with open(pidfile, "w", encoding="utf-8") as f:
             f.write(str(p.pid))
-        print(GREEN(f"✓ started (pid {p.pid})") + DIM(" — probe again from this screen in a moment"))
+        print(GREEN(f"✓ started (pid {p.pid})") + DIM(f" with {_sp_py or sys.executable} — probe again from this screen in a moment"))
     elif act == "x":
         if pid is None:
             print(RED("no pidfile — if it was started elsewhere, stop it where it was started.")); return

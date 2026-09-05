@@ -146,10 +146,11 @@ Then `reindex` once to re-embed the corpus. Swapping models is always a clean re
   `rev-parse(memo)` rows in the ledger are hits, not subprocess crossings — a healthy burst shows
   few `rev-parse` spawns and many memo hits.)
 
-## Seat identity and session binding (the SSH shape)
+## Seat identity and binding (the SSH shape)
 
 Identity in Stasima is TOFU, deliberately — and the binding layer manages it the way SSH does,
-with three postures per connection:
+with three postures per server process (binding lives at **process grain**: the MCP protocol since
+2026-07-28 has no per-conversation session for anything to bind to — see the trunk caveat below):
 
 - **Pinned** (archive seats, and any seat you never act-as-others through): set
   `STASIMA_INSTANCE=<seat>` in that server definition's env. Trust comes from a config entry you
@@ -168,15 +169,20 @@ with three postures per connection:
 **The trunk caveat (field-found, 2026-07-18).** Some clients share ONE server process across many
 chats — the Claude desktop app does. A shared definition there is a TRUNK, and sticky on a trunk
 means first-chat-wins: the first seat to write binds the process and every other seat's writes
-refuse (strict) or mis-stamp (witness — the `authored_via` would name the wrong session, so
-witness is dishonest on a shared process). Rule: **shared definitions run `off`; binding belongs
-on per-seat pinned definitions** (each enabled only in its seat's chat — the definition is the
-access port), or — the resolution — on the **HTTP transport**, where each conversation is its own
-session and sticky learning lands per conversation natively (`transport = "http"`; every audit row
-gains a `session` tag there, so cross-session forensics is a query). Never sticky a trunk; on
-HTTP, there is no trunk.
-- (Accept-new-and-hold at `announce` — classic TOFU over real per-session headers — remains the
-  designed shape for the HTTP transport. Not built; the design is on record.)
+refuse (strict) or mis-stamp (witness — the `authored_via` would name the wrong chat, so witness
+is dishonest on a shared process). Rule: **shared definitions run `off`; binding belongs on
+per-seat pinned definitions** (each enabled only in its seat's chat — the definition is the access
+port). The HTTP fleet service is a shared process by nature, and the protocol gives it nothing
+finer to bind: MCP 2026-07-28 removed protocol sessions (even a handshake-era client is handed a
+fresh session object per request). So the service runs `off` — attribution still rides every
+write, and every audit row from the http transport carries a `session` label (a legacy client's
+transport-session id, or `stateless`) so cross-conversation forensics stays a query — or it is
+**pinned** to one seat and becomes that seat's own door. The server **refuses to start** an http
+service that could learn (`strict`/`witness` with no `STASIMA_INSTANCE`): a shared service that
+learned would bind the whole fleet to its first writer. Never sticky a trunk.
+- Per-request identity for a shared service is the **token door** (the OAuth layer, below): the
+  seat's credential rides each request, and adoption mints the credential together with the name.
+  That is the designed shape; the binding modes above are the process-grain guard until it lands.
 
 `STASIMA_BINDING` picks what a bound connection does on a MISMATCHED identity-claiming write
 (reads are never guarded; the corpus is world-readable and the inbox is pull):
@@ -192,8 +198,8 @@ HTTP, there is no trunk.
 
 ## Running the HTTP service (the fleet server)
 
-One long-running process serves every seat; each conversation is its own transport session, so
-sticky binding is per-conversation natively and one meter/memo/sidecar warms for the whole fleet.
+One long-running process serves every seat, and one meter/memo/sidecar warms for the whole fleet.
+It is a shared process, so it runs with binding `off` (or pinned to one seat) — see "Seat identity".
 
 **Config — a SEPARATE toml for the service.** Do not flip the shared stdio toml to
 `transport = "http"`: stdio definitions spawn children that read the same file and would each try
@@ -206,8 +212,9 @@ to serve HTTP. Copy it (e.g. `stasima-http.toml`), same `git_dir` and derived DB
 **Start it** (console): set `STASIMA_CONFIG` to the http toml and run `python -m
 stasima.cap_server` — the window IS the service; Ctrl+C stops it. To survive logins, put a
 one-line `.cmd` (set the env, start the module) in the Startup folder or a Task Scheduler
-logon task. Run the fleet service UNPINNED (no `STASIMA_INSTANCE`) — sessions self-bind;
-a pinned or ported env would make the whole service a single-seat door.
+logon task. Run the fleet service with `binding_mode = "off"` in its toml (the server refuses to
+start a shared service that could learn); `STASIMA_INSTANCE` in its env would make the whole
+service a single-seat door — legitimate, but only if that is what you mean.
 
 **HTTPS for the desktop connector (the client requires TLS on remote connectors).** Terminate
 TLS in front of the loopback service — `tailscale serve --bg 8787` gives a real cert on your
@@ -245,30 +252,67 @@ Migration is per-seat and reversible — stdio definitions keep working unchange
 locking, the same multi-process reality the stdio fleet always had). Rollback = stop the
 service; seats reopen on stdio.
 
-**Verify**: `whoami` in any conversation shows the session binding block; audit rows from HTTP
-sessions carry a `session` tag; `perf_scry` becomes the whole fleet's one ledger.
+**Verify**: `whoami` in any conversation shows the `binding` block (`grain: process`, `mode: off`
+on a shared service); audit rows from the http transport carry a `session` label; `perf_scry`
+becomes the whole fleet's one ledger.
 
-**Restart sequence (bridge deployments — READ THIS).** When clients reach the server through the
-`mcp-proxy` bridge, the bridge holds ONE upstream transport session and **does not reconnect if the
+**Stateless http — `http_stateless = true` — and the restart rule it dissolves.** With sessions
+(the default), a bridge holds ONE upstream transport session and **does not reconnect if the
 service restarts** — the old session goes stale and every seat's next tool call terminates
-("Server transport closed unexpectedly"). So the order is a rule, not a preference:
+("Session terminated" / "Server transport closed unexpectedly"). The order was therefore a rule:
+restart the service first, THEN fully quit and relaunch the desktop client so it respawns fresh
+bridges. `http_stateless = true` serves every request on a fresh transport and assigns no session
+at all (the protocol has none since 2026-07-28; this stops offering one to handshake-era clients
+too), so an open bridge simply carries on across a service restart. Measured, not assumed:
+`bridge_smoke.py` drives the ported server through the real `mcp-proxy` bridge in both modes and
+restarts the service under the open bridge — sessions: `survives-restart=NO`; stateless: `YES`.
+The cost is one forensic label: audit rows from legacy clients read `session: stateless` instead of
+the bridge's session id. Recommended for the fleet. Run the smoke on the deploying machine before
+flipping it; keep the old rule for any deployment that stays on sessions.
 
-1. **Restart the HTTP service first** (cockpit → HTTP service → stop, start) — for any config change.
-2. **Then bounce the desktop client** (fully quit and relaunch) so it respawns fresh bridges
-   against the now-running service.
+**Cutover to the v2 service (0.1.5 → 0.2.0) — the sequence.** The SDK upgrade must NOT land in the
+interpreter that runs the bridge (`mcp-proxy` declares `mcp>=1.17` with no ceiling and predates the
+v2 SDK); the service gets its own venv, and the bridge's interpreter stays exactly as it is.
 
-Doing it the other way — or restarting the service under live bridges — leaves every open seat
-with a dead bridge until the client is bounced. There is no partial fix; the client bounce is what
-respawns the bridges.
+1. **Build the venv** beside the checkout and install the release into it:
+   `python -m venv <dir>\.venv` → `<dir>\.venv\Scripts\python.exe -m pip install stasima==0.2.0`
+   (or `-e <checkout>` for a source deployment). Do not touch `pip` in the bridge's interpreter.
+2. **Give the new generation its own config pair and launcher** — do NOT add the v2 fields to the
+   0.1.5 http toml: the 0.1.5 config loader refuses unknown keys, so the old cockpit's start button
+   would fail and the trivial rollback with it. Copy the base toml to `<stem>-v2.toml` and the http
+   toml to `<stem>-v2-http.toml` (same `git_dir`, same databases, same port, `binding_mode = "off"`),
+   and add to the http copy: `service_python = "<dir>/.venv/Scripts/python.exe"` and
+   `http_stateless = true` (after the smoke). Write a `cockpit-v2` launcher that clears `PYTHONPATH`
+   (no source path may shadow the venv), sets `STASIMA_CONFIG` to the v2 base toml, and runs
+   `<dir>\.venv\Scripts\python.exe -m stasima.tui`. Each cockpit now derives its own http toml and its
+   own pidfile, and manages its own service generation; the old files are never edited.
+3. **Run the smoke** from the venv: `<dir>\.venv\Scripts\python.exe bridge_smoke.py`. Two rows,
+   both `tools=29 announce=OK write=OK`; the stateless row `survives-restart=YES`.
+4. **Back up** (`admin backup`), then **stop the old service from the OLD cockpit** (HTTP service →
+   `x`) and **start the new one from the NEW cockpit** (HTTP service → `s`; the start line names the
+   venv interpreter). Same port, same data, new code.
+5. **Bounce the desktop client once** — this is the LAST time the bridge rule applies: the bridges
+   were born against the old, session-holding service. From here on a stateless service restarts
+   under open bridges.
+6. **Verify** in one conversation: `whoami` shows `"grain": "process"`, `"mode": "off"`;
+   `canon_state` answers; a deliberate refusal (e.g. a `kip_commit` re-using a slug) comes back as
+   its own sentence, not "Error executing tool".
 
-**Binding over the bridge — set `binding_mode = "off"`.** The bridge multiplexes every conversation
-onto ONE transport session per bridge process, so per-session binding binds the *bridge* (a trunk),
-not the conversation: two seats that share a bridge collide (one binds it, the other's writes
-refuse). Don't sticky a trunk — put `binding_mode = "off"` in the http toml. Attribution still
-rides every write; per-conversation binding (and its anti-spoofing) returns with native HTTP + OAuth,
-where each conversation is its own session.
+**Rollback** is two keystrokes and needs no data step (git, the audit log, the map index, and
+`auth.sqlite` are untouched by the port): stop the new service from the new cockpit (`x`), start
+the old one from the old cockpit (`s`), bounce the client. Nothing is edited in either direction.
+After the merge to `main`, re-point the venv at the merged checkout (`pip install -e <checkout>`)
+and retire the 0.1.5 launcher and toml pair when the old generation is no longer wanted.
 
-**Rekeying.** Per source: a session-sticky binding dies with its process (rekey = close and
+**Binding over the bridge — `binding_mode = "off"`, as for any shared service.** The bridge
+multiplexes every conversation onto ONE transport session per bridge process, so even in the era
+when binding keyed on transport sessions it would have bound the *bridge* (a trunk), not the
+conversation: two seats that share a bridge collide (one binds it, the other's writes refuse).
+Today the server refuses to start a shared service that could learn, so the toml carries `off`.
+Attribution still rides every write; per-request identity (and its anti-spoofing) returns with the
+token door, where each request carries the seat's credential.
+
+**Rekeying.** Per source: a process-sticky binding dies with its process (rekey = close and
 reopen the chat); a port-sticky binding is cleared from the console — `stasima-admin binding`
 lists the learned table, `stasima-admin binding --clear <port>` appends a clear event and re-arms
 learning (the history is never erased — the ledger keeps every learn and clear in order); a

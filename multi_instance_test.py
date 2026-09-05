@@ -20,7 +20,7 @@ from stasima.map_index import SqliteMapIndex, StubEmbedder
 from stasima.audit_log import SqliteAuditLog
 from stasima.authz import DefaultPolicy
 from stasima.cap_server import build_server, compose_entry
-from mcp.shared.memory import create_connected_server_and_client_session as connect
+from mcp.client import Client as connect   # v2: the in-process client — one Client, one connection
 
 work = tempfile.mkdtemp(prefix="cap-multi-")
 gd = os.path.join(work, "stasima.git")
@@ -38,7 +38,7 @@ def make_server():
 
 
 def pay(r):
-    sc = getattr(r, "structuredContent", None)
+    sc = r.structured_content
     return sc.get("result", sc) if isinstance(sc, dict) else \
         json.loads("".join(getattr(c, "text", "") for c in r.content))
 
@@ -84,11 +84,11 @@ async def main():
         assert "name_warning" in warn and "Sphragis" in warn["name_warning"], warn
         forked = await ca.call_tool("kip_commit", {"instance_id": "sphragis", "domain": "practice",
             "slug": "oops", "body": "x", "op_id": "fork-1"})
-        assert getattr(forked, "isError", False), "a case-fork write must be refused"
+        assert forked.is_error, "a case-fork write must be refused"
         # the exact name is fine, of course
         ok = await ca.call_tool("kip_commit", {"instance_id": "Sphragis", "domain": "practice",
             "slug": "fine", "body": "x", "op_id": "fork-2"})
-        assert not getattr(ok, "isError", False), "the exact existing name must still write"
+        assert not ok.is_error, "the exact existing name must still write"
         print("name-fork guard: 'sphragis' refused + warned, 'Sphragis' writes — OK")
 
     print("multi-instance OK: IMP send/flag/check/mark-read + reply round-trip across two servers; "
