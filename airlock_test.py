@@ -125,7 +125,7 @@ async def main():
         print("strict ordering     OK")
 
         # (8) abort: no code, back to open, entries intact
-        out = payload(await call("proposal_unstage", proposal_id="p-2"))
+        out = payload(await call("proposal_unstage", seat="r2", proposal_id="p-2"))
         assert out["state"] == "open"
         assert "practice/beta.md" in store.list_paths("refs/cap/proposals/p-2")
         assert not err(await call("proposal_append_entry", seat="r2", proposal_id="p-2", domain="practice",

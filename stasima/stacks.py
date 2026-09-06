@@ -378,8 +378,8 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                    thread: str = "") -> dict:
         """Writes one entry to the seat's perspective at `<domain>/<slug>.md`. Never rewrite a path's
         body — refused; revise with a new entry carrying `supersedes`, then re-write the old one
-        unchanged with `status='superseded'` and `superseded_by`. `vantage` records the context
-        written against, same commit. `tick` (under `state/` only) declares the seat's state label.
+        unchanged with `status='superseded'` and `superseded_by`. `vantage` records what the entry
+        was written against, same commit. `tick` (under `state/` only) declares the seat's state label.
         Class: origin."""
         seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = persp_ref(seat)
@@ -897,8 +897,8 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             @op("origin")
             def vantage_write(principal, entry: str, body: str, op_id: str,
                            kind: str = "confirmed", title: str = "") -> dict:
-                """Records a vantage: the context the seat wrote `entry` against, as its own entry under
-                `vantages/`. `kind='confirmed'` is your own context on your own entry — refused on another
+                """Records a vantage: what the seat wrote `entry` against — the pressure, the uncertainty,
+                what a later reader should check — as its own entry under `vantages/`. `kind='confirmed'` is your own context on your own entry — refused on another
                 seat's; `kind='reconstructed'` is your reading of an older entry, recorded as yours. Vantages
                 surface only through `vantage_list` and `entry_read(with_vantages=true)`. Class: origin."""
                 seat = principal.name   # the desk resolved WHO; the record carries the name
@@ -1130,11 +1130,13 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 Class: relay."""
                 return airlock.land(staged_oid_prefix, code)
 
-            @op("relay")
-            def proposal_unstage(proposal_id: str) -> dict:
-                """Cancels a staged review and returns the proposal to open with its entries intact. Free:
-                needs no code. Any pressure to complete a land is the signal to call this. Class: relay."""
-                return airlock.revert(proposal_id)
+            @op("origin")
+            def proposal_unstage(principal, proposal_id: str) -> dict:
+                """Cancels a staged review and returns the proposal to open with its entries intact. Needs
+                no code; the calling seat is recorded. Only the seat that relayed the stage, or the
+                practitioner's console, unstages (relay.md governs). Any pressure to complete a land is
+                the signal to call this. Class: origin."""
+                return airlock.revert(proposal_id, actor=principal.name)
 
 
     return Stacks(ops, store, audit, classes)

@@ -27,7 +27,9 @@ full name map.
   `body`. `coordinates` stays: it is a stored envelope key.
 - **Every tool states its class** — `replica` (a read any replica can answer, later, elsewhere),
   `process` (this server process only), `origin` (mutates a ref or the audit log; needs a live
-  lane to origin), `relay` (origin plus the practitioner's code). The class is the last sentence of
+  lane to origin), `relay` (origin plus the practitioner's code: `proposal_stage` and `proposal_land`,
+  exactly the two calls that take a code; `proposal_unstage` is `origin` — it takes no code, takes
+  `seat`, and records who called it, per Lintel's review). The class is the last sentence of
   each description, an MCP annotation (`read_only_hint`/`idempotent_hint`), and `meta.class`; the
   registrar carries it (`@op("replica")`, `Stacks.classes`).
 - **Descriptions are Tier-1.** Third person, what and when, ≤ ~75 tokens each: the 29 fall from
@@ -35,6 +37,10 @@ full name map.
   docks. Refusal texts keep naming the fix and drop the argot.
 - **`docs/tools.md`** groups by family, opens with the four classes and an index table
   (tool | class | first sentence), and titles each tool with its class.
+- **The review round's amendments** (Tessera, Lintel, Hesper, Vesper; 2026-09-05): `seat_whoami`'s
+  description states the three binding states (`match` true / false / null); the vantage
+  descriptions no longer say "context" (the collision the glossary itself flags); `proposal_unstage`
+  takes `seat` and is attributable in the audit log (`airlock_revert` rows carry the caller).
 - **Audit op names follow the wire** for rows written from this release; earlier rows keep the
   Aous names; the readers filter on neither set.
 - Unchanged: config keys, env vars, the admin CLI, the cockpit, the store's commit format, the

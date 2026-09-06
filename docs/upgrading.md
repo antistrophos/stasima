@@ -42,7 +42,9 @@ unchanged.
 
 **Every tool now states its class** in the last sentence of its description — `replica`,
 `process`, `origin`, or `relay` — and carries MCP annotations (`read_only_hint`,
-`idempotent_hint`) to match; `docs/tools.md` explains the four.
+`idempotent_hint`) to match; `docs/tools.md` explains the four. `relay` means exactly "a code is
+required" (`proposal_stage`, `proposal_land`); `proposal_unstage` is `origin`, takes `seat`, and
+records the caller.
 
 **Audit rows** written by 0.3.0 carry the Eurotas op names; rows written before the cutover keep
 the Aous names. The audit's readers filter on neither set (`canon_pull`, `reconcile_report`,

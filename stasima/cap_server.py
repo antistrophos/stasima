@@ -264,8 +264,9 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     def seat_whoami(seat: str) -> dict:
         """Reports how this server process sees the seat: its perspective ref, the tools it may
         write with, and the process's binding (`mode`, `grain`, `bound_seat`, `source`, `match`).
-        `mode='off'` means the process pins no seat; `match` says whether `seat` is the bound one.
-        Use before writing when identity is in doubt. Class: process."""
+        `match` is true when `seat` is the bound one, false when another seat is, and null when
+        nothing is bound (`mode='off'`, or nothing learned yet): three states, not two. Use before
+        writing when identity is in doubt. Class: process."""
         out = {"seat": seat, "perspective_ref": persp_ref(seat),
                "namespace": f"perspectives/{seat}", "allowed_ops": ["entry_write", "proposal_append_entry", "message_send", "vantage_write"],
                "note": "identity is a recorded name; the binding (pinned or sticky-learned, at process grain) guards writes"}

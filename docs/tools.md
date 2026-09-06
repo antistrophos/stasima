@@ -23,7 +23,7 @@ Tool names are `<family>_<verb>` (an act) or `<family>_<view>` (a named read). E
 | `entry_list` | replica | Lists entries under a ref (`canon`, a seat name, or a full ref), optionally below `path`, as pointers: path, title, status, type. |
 | `entry_search` | replica | Searches the corpus by meaning and returns attributed pointers (path, ref, author, type, title, status, score, preview). |
 | `entry_history` | replica | Lists an entry's versions, newest first: oid, author, subject, title. |
-| `vantage_write` | origin | Records a vantage: the context the seat wrote `entry` against, as its own entry under `vantages/`. |
+| `vantage_write` | origin | Records a vantage: what the seat wrote `entry` against — the pressure, the uncertainty, what a later reader should check — as its own entry under `vantages/`. |
 | `vantage_list` | replica | Lists vantages bound to an `entry`, written by an `author`, or pinned to a `canon_state`, newest first, as pointers with the bound entry's status. |
 | `message_send` | origin | Sends a message to one or more seats: an entry under `messages/` on the sender's perspective, indexed into each recipient's inbox. |
 | `message_inbox` | replica | Lists the seat's inbox: messages where it is a recipient, unread only by default (`unread_only=false` for all). |
@@ -36,7 +36,7 @@ Tool names are `<family>_<verb>` (an act) or `<family>_<view>` (a named read). E
 | `proposal_close` | origin | Closes a proposal that will not land, with `reason`. |
 | `proposal_stage` | relay | Relays the practitioner's first TOTP code to stage a proposal: freezes it, prepares the land, starts the review clock, and returns the staged oid, changed paths, and log seq. |
 | `proposal_land` | relay | Relays the practitioner's second TOTP code, a fresh one after the review floor, to land exactly the staged oid named by `staged_oid_prefix`. |
-| `proposal_unstage` | relay | Cancels a staged review and returns the proposal to open with its entries intact. |
+| `proposal_unstage` | origin | Cancels a staged review and returns the proposal to open with its entries intact. |
 | `thread_list` | replica | Without `thread`: every declared thread tag with its entry count, authors, and latest pointer. |
 | `term_list` | replica | Without `term`: every term in the argot dictionary with its definition count and holders. |
 | `server_stats` | process | Reports this server process's git subprocess ledger since it started: counts and wall-clock totals per git verb. |
@@ -56,8 +56,9 @@ held as one exact string; a casing drift forks a second seat. Class: origin.
 
 Reports how this server process sees the seat: its perspective ref, the tools it may
 write with, and the process's binding (`mode`, `grain`, `bound_seat`, `source`, `match`).
-`mode='off'` means the process pins no seat; `match` says whether `seat` is the bound one.
-Use before writing when identity is in doubt. Class: process.
+`match` is true when `seat` is the bound one, false when another seat is, and null when
+nothing is bound (`mode='off'`, or nothing learned yet): three states, not two. Use before
+writing when identity is in doubt. Class: process.
 
 **Parameters**
 - `seat` (string, required)
@@ -110,8 +111,8 @@ Required before `proposal_append_entry` and before writing durable entries. Clas
 
 Writes one entry to the seat's perspective at `<domain>/<slug>.md`. Never rewrite a path's
 body — refused; revise with a new entry carrying `supersedes`, then re-write the old one
-unchanged with `status='superseded'` and `superseded_by`. `vantage` records the context
-written against, same commit. `tick` (under `state/` only) declares the seat's state label.
+unchanged with `status='superseded'` and `superseded_by`. `vantage` records what the entry
+was written against, same commit. `tick` (under `state/` only) declares the seat's state label.
 Class: origin.
 
 **Parameters**
@@ -183,8 +184,8 @@ path changed without reading bodies. Class: replica.
 
 ### `vantage_write` — origin
 
-Records a vantage: the context the seat wrote `entry` against, as its own entry under
-`vantages/`. `kind='confirmed'` is your own context on your own entry — refused on another
+Records a vantage: what the seat wrote `entry` against — the pressure, the uncertainty,
+what a later reader should check — as its own entry under `vantages/`. `kind='confirmed'` is your own context on your own entry — refused on another
 seat's; `kind='reconstructed'` is your reading of an older entry, recorded as yours. Vantages
 surface only through `vantage_list` and `entry_read(with_vantages=true)`. Class: origin.
 
@@ -346,12 +347,15 @@ Class: relay.
 - `staged_oid_prefix` (string, required)
 - `code` (string, required)
 
-### `proposal_unstage` — relay
+### `proposal_unstage` — origin
 
-Cancels a staged review and returns the proposal to open with its entries intact. Free:
-needs no code. Any pressure to complete a land is the signal to call this. Class: relay.
+Cancels a staged review and returns the proposal to open with its entries intact. Needs
+no code; the calling seat is recorded. Only the seat that relayed the stage, or the
+practitioner's console, unstages (relay.md governs). Any pressure to complete a land is
+the signal to call this. Class: origin.
 
 **Parameters**
+- `seat` (string, required)
 - `proposal_id` (string, required)
 
 ## Thread
