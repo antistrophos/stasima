@@ -298,6 +298,11 @@ v2 SDK); the service gets its own venv, and the bridge's interpreter stays exact
    `canon_state` answers; a deliberate refusal (e.g. a `entry_write` re-using a slug) comes back as
    its own sentence, not "Error executing tool".
 
+**The service log.** Since 0.3.1 the cockpit's `s` writes the service's own output to `<http toml>.log`
+beside its config, appended across restarts with a start marker per launch. Read it first when a
+call hangs or a seat reports a silence: a handler's traceback and the SDK's request log are there
+and nowhere else. It grows slowly (one line per request); prune it when you back up.
+
 **Rollback** needs no data step (git, the audit log, the map index, and `auth.sqlite` are
 untouched by any release since 0.1.5): stop the service from its cockpit (`x`), check out the
 previous release in the checkout the service venv imports (`git -C <checkout> checkout v0.2.1`),
