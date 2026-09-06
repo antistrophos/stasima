@@ -1,9 +1,10 @@
-# Changelog
-
-All notable changes to the Stasima suite. The suite follows the practice's own discipline: entries
-are added, never rewritten — corrections appear as later entries.
-
 ## Unreleased
+
+(nothing yet)
+
+## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
+
+### Added after the try-on, before the tag
 
 - **The join gate** (the practitioner's rule, 2026-09-06): a seat's first write to its perspective
   is its ::1 state update. Until it is written, `entry_write` (to any other domain, or to `state/`
@@ -18,7 +19,6 @@ are added, never rewritten — corrections appear as later entries.
   finding (parallax's fresh-seat arrival, 2026-09-06: a ghost connector in the desktop client hid
   the two tool names Aous and Eurotas share). Additive; no other field changes.
 
-## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
 
 ### What Eurotas is
 
