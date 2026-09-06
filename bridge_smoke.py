@@ -73,9 +73,9 @@ async def drive(mode, cfgpath, port):
     try:
         async with Client(params) as c:            # the bridge speaks stdio to us, 1.x streamable HTTP to the server
             tools = sorted(t.name for t in (await c.list_tools()).tools)
-            a = await c.call_tool("announce", {"instance_id": "bridge-probe"})
+            a = await c.call_tool("seat_announce", {"seat": "bridge-probe"})
             ok_arrive = "Welcome" in text(a)
-            w = await c.call_tool("kip_commit", {"instance_id": "bridge-probe", "domain": "state",
+            w = await c.call_tool("entry_write", {"seat": "bridge-probe", "domain": "state",
                                                  "slug": "b1", "body": "over the bridge", "op_id": "bb1"})
             ok_write = not w.is_error
             # the restart: service down and up on the SAME port while the bridge stays open

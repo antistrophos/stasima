@@ -31,7 +31,7 @@ log = compose_entry({"type": "log", "title": "::3C", "status": "active", "seq": 
                     "::3C — first land.").encode()
 store.commit("refs/cap/proposals/p-1",
              {"practice/principle.md": entry("Principle", "a principle"), "meta/log/3c.md": log},
-             "propose", Identity("research-2"),
+             "proposal_append_entry", Identity("research-2"),
              expected_parent=store.resolve_ref("refs/cap/proposals/p-1"), op_id="op-2")
 
 cfgpath = os.path.join(work, "stasima.toml")

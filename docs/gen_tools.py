@@ -25,18 +25,34 @@ from stasima.config import Config                     # noqa: E402
 from stasima.cap_server import server_from_config     # noqa: E402
 from mcp.client import Client as connect   # v2: the in-process client — one Client, one connection  # noqa: E402
 
-# tool -> section; an unmapped tool still renders (under "Other"), so a new tool cannot vanish
-SECTIONS = [
-    ("Arrive & orient", ["announce", "orientation", "canon_head", "canon_state", "whoami", "list_instances"]),
-    ("Author — and the fold", ["kip_commit", "vap_record"]),
-    ("Read", ["kip_get", "list_entries", "my_perspective", "kip_history"]),
-    ("Search (MAP)", ["map_search"]),
-    ("Vantages (VAP)", ["vap_for"]),
-    ("Messages (IMP)", ["imp_send", "imp_check", "imp_flags", "imp_mark_read"]),
-    ("Coherence (SUP)", ["canon_diff", "sup_reconcile", "sup_state", "sup_who"]),
-    ("Propose & track", ["propose", "propose_retract", "proposal_status", "conflict_preview", "list_proposals"]),
-    ("Approval relay (the airlock)", ["stage_approve", "land_approve", "stage_revert"]),
+# family (the tool name's first segment) -> section title, in the order the reference reads best;
+# an unmapped family still renders (under "Other"), so a new tool cannot vanish
+FAMILIES = [
+    ("seat", "Seat — identity and arrival"),
+    ("canon", "Canon — the shared branch and reconcile"),
+    ("entry", "Entry — write, read, list, search, history"),
+    ("vantage", "Vantage — the context an entry was written against"),
+    ("message", "Message — the inbox"),
+    ("proposal", "Proposal — the path into canon, and the practitioner's relay"),
+    ("thread", "Thread"),
+    ("term", "Term — the argot dictionary"),
+    ("server", "Server"),
 ]
+# the order the glossary lists the tools in (technical/suites/eurotas/glossary.md); unknown names follow
+ORDER = ["seat_announce", "seat_whoami", "seat_list", "seat_state",
+         "canon_state", "canon_diff", "canon_reconcile",
+         "entry_write", "entry_read", "entry_list", "entry_search", "entry_history",
+         "vantage_write", "vantage_list",
+         "message_send", "message_inbox", "message_unread_count", "message_mark_read",
+         "proposal_append_entry", "proposal_retract_path", "proposal_preview", "proposal_list", "proposal_close",
+         "proposal_stage", "proposal_land", "proposal_unstage",
+         "thread_list", "term_list", "server_stats"]
+CLASSES = {
+    "replica": "a read any replica holding the refs can answer, later, elsewhere",
+    "process": "answered only by the process the seat is connected to",
+    "origin": "mutates origin state (a ref or the audit log); needs a live lane to origin",
+    "relay": "origin, plus the practitioner's TOTP code in the conversation",
+}
 
 MIN_EXPECTED = 29   # the generator fails loudly if tools go missing rather than emitting a partial reference (29 = the 0.1.5 dedup floor)
 
@@ -87,14 +103,24 @@ async def _collect():
     cfg = Config(git_dir=gd)
     async with connect(server_from_config(cfg)) as client:
         result = await client.list_tools()
-        return [(t.name, t.description or "", t.input_schema or {}) for t in result.tools]
+        return [(t.name, t.description or "", t.input_schema or {}, (getattr(t, "meta", None) or {}).get("class", ""))
+                for t in result.tools]
 
 
 def generate(out_path: str) -> int:
     tools = anyio.run(_collect)
     if len(tools) < MIN_EXPECTED:
         raise SystemExit(f"expected at least {MIN_EXPECTED} tools, found {len(tools)} — refusing to emit a partial reference")
-    by_name = {name: (desc, schema) for name, desc, schema in tools}
+    by_name = {name: (desc, schema, cls) for name, desc, schema, cls in tools}
+    order = {fam: i for i, (fam, _) in enumerate(FAMILIES)}
+    grouped = {}
+    for n in by_name:
+        grouped.setdefault(n.split("_", 1)[0], []).append(n)
+    sections = sorted(grouped, key=lambda f: (order.get(f, len(order)), f))
+    rank = {n: i for i, n in enumerate(ORDER)}
+
+    def in_order(names):
+        return sorted(names, key=lambda x: (rank.get(x, len(rank)), x))
 
     lines = [
         "# Tool reference",
@@ -102,36 +128,31 @@ def generate(out_path: str) -> int:
         f"*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; "
         f"regenerate with `python docs/gen_tools.py`. Suite version at generation: **{_suite_version()}**. "
         f"{len(tools)} tools. This page is the wire contract: names, parameters, and behavior exactly as a "
-        f"connecting instance receives them. Your deployment's canon governs practice-level conventions "
+        f"connecting seat receives them. Your deployment's canon governs practice-level conventions "
         f"(state lines, conduct, naming); this page documents the machinery.*",
         "",
+        "Tool names are `<family>_<verb>` (an act) or `<family>_<view>` (a named read). Every tool states its "
+        "**class** — whether the call tolerates being answered later, from a replica, or needs a live lane to origin:",
+        "",
     ]
-    seen = set()
-    for section, names in SECTIONS:
-        present = [n for n in names if n in by_name]
-        if not present:
-            continue
-        lines.append(f"## {section}")
+    for cls, meaning in CLASSES.items():
+        lines.append(f"- `{cls}` — {meaning}")
+    lines.append("")
+    lines.append("| tool | class | what it does |")
+    lines.append("|---|---|---|")
+    for fam in sections:
+        for n in in_order(grouped[fam]):
+            desc, _, cls = by_name[n]
+            first = " ".join(desc.split()).split(". ")[0].rstrip(".") + "."
+            lines.append(f"| `{n}` | {cls} | {first} |")
+    lines.append("")
+    titles = dict(FAMILIES)
+    for fam in sections:
+        lines.append(f"## {titles.get(fam, fam.capitalize())}")
         lines.append("")
-        for n in present:
-            seen.add(n)
-            desc, schema = by_name[n]
-            lines.append(f"### `{n}`")
-            lines.append("")
-            lines.append(desc.strip())
-            lines.append("")
-            params = _render_params(schema)
-            if params:
-                lines.append("**Parameters**")
-                lines.extend(params)
-                lines.append("")
-    leftovers = sorted(set(by_name) - seen)
-    if leftovers:
-        lines.append("## Other")
-        lines.append("")
-        for n in leftovers:
-            desc, schema = by_name[n]
-            lines.append(f"### `{n}`")
+        for n in in_order(grouped[fam]):
+            desc, schema, cls = by_name[n]
+            lines.append(f"### `{n}` — {cls}")
             lines.append("")
             lines.append(desc.strip())
             lines.append("")

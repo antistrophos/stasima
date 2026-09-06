@@ -217,11 +217,12 @@ class Airlock:
                                     summary=MergeSummary(st.get("changed_paths", []), [], []))
         return self.land_fn(prepared, Approval(st["staged_oid"], self.approver, f"airlock-totp-w{w2}"))
 
-    def revert(self, proposal_id) -> dict:
+    def revert(self, proposal_id, actor="system") -> dict:
         """Abort a staged review. FREE — never requires a code (charging for decline would
-        incentivize landing). Returns the proposal to open with its entries intact."""
+        incentivize landing). Returns the proposal to open with its entries intact. `actor` is
+        the seat that called it (the console passes "system"): attributable, never gated."""
         if self.state(proposal_id)["state"] != "staged":
             raise AirlockError(f"{proposal_id} is not staged")
-        self.audit.append("system", "airlock_revert", target_ref=self.prop_prefix + proposal_id,
+        self.audit.append(actor, "airlock_revert", target_ref=self.prop_prefix + proposal_id,
                           detail={"proposal": proposal_id, "reason": "manual"})
         return {"proposal_id": proposal_id, "state": "open"}

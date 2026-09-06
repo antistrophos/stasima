@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 """
 Proves SUP + canon coherence through the MCP client:
-  - body-immutability guard on kip_commit (supersede, don't overwrite)
-  - the reconcile-before-propose chain: propose blocked -> canon_diff (loads the diff) -> sup_reconcile
+  - body-immutability guard on entry_write (supersede, don't overwrite)
+  - the reconcile-before-propose chain: propose blocked -> canon_diff (loads the diff) -> canon_reconcile
     (forced self-report, gated on having pulled) -> propose allowed
   - a canon land re-staleness: propose blocked again -> re-pull -> re-reconcile -> propose allowed
   - three-way agreement (audit canon_pull + reconcile_report, git state/ entry) on the same canon oid
-  - sup_state / sup_who / canon_state symmetry
+  - seat_state / sup_who / canon_state symmetry
 """
 import os
 import subprocess as sp
@@ -55,10 +55,10 @@ async def main():
             return await client.call_tool(name, kw)
 
         # --- body immutability ---
-        assert not err(await call("kip_commit", instance_id="r2", domain="practice", slug="notes", body="Body A", op_id="k1"))
-        assert err(await call("kip_commit", instance_id="r2", domain="practice", slug="notes", body="Body B", op_id="k2")), \
+        assert not err(await call("entry_write", seat="r2", domain="practice", slug="notes", body="Body A", op_id="k1"))
+        assert err(await call("entry_write", seat="r2", domain="practice", slug="notes", body="Body B", op_id="k2")), \
             "overwriting an existing body must be denied"
-        assert not err(await call("kip_commit", instance_id="r2", domain="practice", slug="notes2", body="Body C", op_id="k3")), \
+        assert not err(await call("entry_write", seat="r2", domain="practice", slug="notes2", body="Body C", op_id="k3")), \
             "a new slug is fine"
         # a fresh perspective is BORN at depth 1 — no canon fallback on a parentless first commit
         first = store.read_blob(persp("r2"), "practice/notes.md").decode()
@@ -66,12 +66,12 @@ async def main():
         print("body-immutability   OK")
 
         # --- reconcile-before-propose ---
-        assert err(await call("propose", instance_id="r2", proposal_id="p-1", domain="practice",
+        assert err(await call("proposal_append_entry", seat="r2", proposal_id="p-1", domain="practice",
                               slug="principle", body="a principle", op_id="pr1")), "propose blocked before reconcile"
-        # sup_reconcile without pulling is also blocked
-        assert err(await call("sup_reconcile", instance_id="r2", body="skipping the read")), "reconcile needs a pull first"
+        # canon_reconcile without pulling is also blocked
+        assert err(await call("canon_reconcile", seat="r2", body="skipping the read")), "reconcile needs a pull first"
 
-        cd = payload(await call("canon_diff", instance_id="r2"))
+        cd = payload(await call("canon_diff", seat="r2"))
         assert any(c["path"] == "practice/seed.md" for c in cd["changed"]), "first pull loads all canon"
         # pointer diff: full bodies must NOT ride along (a large land would overflow the response and
         # break the reconcile hinge for every non-author seat) — titles/status do, so the map is triageable
@@ -80,40 +80,40 @@ async def main():
         assert cd["changed_count"] == len(cd["changed"])
         # the pull is idempotent until the seat reconciles: a lost response is re-pulled for free
         # (Mercurius's finding — the base is the last RECONCILED position, not the last pull)
-        cd_again = payload(await call("canon_diff", instance_id="r2"))
+        cd_again = payload(await call("canon_diff", seat="r2"))
         assert cd_again["changed"] == cd["changed"] and cd_again["from"] == cd["from"], "re-pull must repeat the diff"
-        sr = payload(await call("sup_reconcile", instance_id="r2", body="I've read current canon."))
-        after = payload(await call("canon_diff", instance_id="r2"))
+        sr = payload(await call("canon_reconcile", seat="r2", body="I've read current canon."))
+        after = payload(await call("canon_diff", seat="r2"))
         assert after["changed"] == [] and after["from"] == sr["canon_cursor"], "after reconciling, the diff is empty"
         old_tip = sr["canon_cursor"]
         # dedup names its referent: a replayed reconcile must say WHAT it duplicated (path+oid+subject),
         # so a ghost-run hunt costs zero extra reads (the soak's ghost-run finding)
-        dup = payload(await call("sup_reconcile", instance_id="r2", body="same cursor again"))
+        dup = payload(await call("canon_reconcile", seat="r2", body="same cursor again"))
         assert dup["already"] is True and dup["oid"] == sr["oid"], "dedup carries the prior commit's oid"
         assert dup.get("subject"), "dedup carries the prior commit's subject"
-        # kip_history speaks the pointer grammar: each version carries its title (and .md normalizes)
-        kh = payload(await call("kip_history", ref="r2", path="practice/notes"))
+        # entry_history speaks the pointer grammar: each version carries its title (and .md normalizes)
+        kh = payload(await call("entry_history", ref="r2", path="practice/notes"))
         assert kh["history"] and kh["history"][0]["title"] == "notes", "history versions carry titles"
         # tick= (the mirror field, conventions v3): state-scope + hex-form are structure; the value
         # is the seat's — accepted, normalized, surfaced; never compared to prose or history
-        assert err(await call("kip_commit", instance_id="r2", domain="practice", slug="no-tick-here",
+        assert err(await call("entry_write", seat="r2", domain="practice", slug="no-tick-here",
                               body="x", op_id="t1", tick="2")), "tick off state/ must be refused"
-        assert err(await call("kip_commit", instance_id="r2", domain="state", slug="bad-tick",
+        assert err(await call("entry_write", seat="r2", domain="state", slug="bad-tick",
                               body="x", op_id="t2", tick="xyz")), "non-hex tick must be refused"
-        tk = payload(await call("kip_commit", instance_id="r2", domain="state", slug="r2-tick-1a",
+        tk = payload(await call("entry_write", seat="r2", domain="state", slug="r2-tick-1a",
                                 body="Tick ::1a declared, field mirrored.", op_id="t3", tick="::1A"))
-        assert not err(await call("sup_state", instance_id="r2")) and tk["oid"]
-        ss = payload(await call("sup_state", instance_id="r2"))
+        assert not err(await call("seat_state", seat="r2")) and tk["oid"]
+        ss = payload(await call("seat_state", seat="r2"))
         assert ss["ticks"].get("state/r2-tick-1a.md") == "1a", ss["ticks"]  # normalized: lowercase, no '::'
-        mpt = payload(await call("list_entries", ref="r2"))   # 0.1.5: my_perspective folded in here
+        mpt = payload(await call("entry_list", ref="r2"))   # 0.1.5: my_perspective folded in here
         row = next(e for e in mpt["entries"] if e["path"] == "state/r2-tick-1a.md")
         assert row.get("tick") == "1a", "listing pointer carries the declared tick"
         assert all("tick" not in e for e in mpt["entries"] if e["path"] != "state/r2-tick-1a.md"), \
             "absence is normal: un-ticked pointers carry NO tick key"
-        assert not err(await call("propose", instance_id="r2", proposal_id="p-1", domain="practice",
+        assert not err(await call("proposal_append_entry", seat="r2", proposal_id="p-1", domain="practice",
                                   slug="principle", body="a principle", op_id="pr1")), "propose allowed after reconcile"
         # every proposal carries its log entry (canon sits at ::3B pre-land, so this one is ::3C)
-        assert not err(await call("propose", instance_id="r2", proposal_id="p-1", domain="meta/log",
+        assert not err(await call("proposal_append_entry", seat="r2", proposal_id="p-1", domain="meta/log",
                                   slug="3c", body="::3C — first land in the new substrate.",
                                   op_id="pr1-log", type="log", seq="3c"))
         print("reconcile->propose  OK")
@@ -144,9 +144,9 @@ async def main():
         assert row_depth("practice/principle.md") == 2 and row_depth("practice/seed.md") == 1
         print("canon positions      OK (derived, envelope untouched)")
 
-        assert err(await call("propose", instance_id="r2", proposal_id="p-2", domain="practice",
+        assert err(await call("proposal_append_entry", seat="r2", proposal_id="p-2", domain="practice",
                               slug="principle2", body="another", op_id="pr2")), "stale again after a land"
-        cd2 = payload(await call("canon_diff", instance_id="r2"))
+        cd2 = payload(await call("canon_diff", seat="r2"))
         assert any(c["path"] == "practice/principle.md" for c in cd2["changed"]), "pull loads the landed change"
         # the land's log narrative rides in FULL (small by design; the story exists for the reconciling seat)
         assert any(l["path"] == "meta/log/3c.md" and "::3C" in l["body"] for l in cd2["logs"]), \
@@ -155,11 +155,11 @@ async def main():
         # lifecycle across a real land: the landed proposal reads landed (off-spine ancestry), and a
         # branch opened at the OLD canon reads open with the mechanical lands_behind surfaced
         store.create_branch("refs/cap/proposals/p-behind", old_tip)
-        lp = payload(await call("list_proposals"))
+        lp = payload(await call("proposal_list"))
         assert lp["statuses"]["p-1"]["status"] == "landed", lp["statuses"]["p-1"]
         assert lp["statuses"]["p-behind"] == {"status": "open", "lands_behind": 1}, lp["statuses"]["p-behind"]
-        payload(await call("sup_reconcile", instance_id="r2", body="Read the new principle; adjusting."))
-        assert not err(await call("propose", instance_id="r2", proposal_id="p-2", domain="practice",
+        payload(await call("canon_reconcile", seat="r2", body="Read the new principle; adjusting."))
+        assert not err(await call("proposal_append_entry", seat="r2", proposal_id="p-2", domain="practice",
                                   slug="principle2", body="another", op_id="pr2")), "propose allowed after re-reconcile"
         print("land->re-reconcile  OK")
 
@@ -172,13 +172,13 @@ async def main():
         print("three-way agreement OK")
 
         # --- symmetry reads ---
-        ss = payload(await call("sup_state", instance_id="r2"))
+        ss = payload(await call("seat_state", seat="r2"))
         assert ss["current_with_canon"] and any("reconciled-" in p for p in ss["state_entries"])
-        sw = payload(await call("list_instances"))            # 0.1.5: sup_who folded in here
-        assert "r2" in sw["instances"] and sw["current_with_canon"]["r2"] is True, sw
+        sw = payload(await call("seat_list"))            # 0.1.5: sup_who folded in here
+        assert "r2" in sw["seats"] and sw["current_with_canon"]["r2"] is True, sw
         cs = payload(await call("canon_state"))
         assert cs["canon_tip"] == new_tip and len(cs["lands"]) >= 1
-        print("sup_state/who/canon OK")
+        print("seat_state/who/canon OK")
 
         ok, bad = audit.verify()
         assert ok, (ok, bad)

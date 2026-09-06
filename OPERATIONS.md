@@ -22,7 +22,7 @@ stasima-admin --config stasima.toml <command>
 
 ## Your job: review and land proposals
 
-This is the part only you can do. An instance creates a proposal (`propose`); it sits as a branch until you decide. The loop:
+This is the part only you can do. A seat creates a proposal (`proposal_append_entry`); it sits as a branch until you decide. The loop:
 
 ```bash
 stasima-admin --config stasima.toml status        # what's open
@@ -46,11 +46,11 @@ When you're not at the console and approving *through an instance conversation* 
 
 **One-time setup:** `stasima-admin --config stasima.toml totp-provision` — add the printed `otpauth://` URI to your authenticator app (every major app also accepts the `secret=` value via "enter a setup key", time-based, 6 digits). The secret stays server-side (never in git; it's gitignored). Then confirm the pairing with a code from your phone: `stasima-admin … totp-check 123456` — it verifies without consuming anything and diagnoses clock skew if the code doesn't match.
 
-**The flow** (you speak the codes; the instance relays them to `stage_approve` / `land_approve`):
+**The flow** (you speak the codes; the instance relays them to `proposal_stage` / `proposal_land`):
 1. Give the instance your **current code** → it stages the proposal: frozen for review, merge prepared, and you're shown the staged oid, changed paths, and log-entry seq.
 2. **Review** — at least 2 minutes, at most 2 hours (configurable). No code from staging time survives this window, so a harvested code can't land.
 3. Give a **fresh code** (a later window) plus the staged oid prefix → it lands exactly what was staged: the full land chain runs (audit, state tag, reindex, anchor).
-4. **To decline: just say so** — `stage_revert` needs no code, ever. Expired stages auto-revert.
+4. **To decline: just say so** — `proposal_unstage` needs no code, ever. Expired stages auto-revert.
 
 Trust note: what the relaying instance *shows* you is its own rendering. Content-binding guarantees what lands is byte-identical to what was staged, and the audit trail records everything — but for anything you're unsure about, the console (`preview`) is the stronger channel.
 
@@ -130,14 +130,14 @@ Then `reindex` once to re-embed the corpus. Swapping models is always a clean re
 
 ## Troubleshooting
 
-- **An instance says it can't propose ("reconcile with current canon first").** Working as intended — canon advanced since it last reconciled. It must call `canon_diff` then `sup_reconcile`, then it can propose. You don't need to do anything.
-- **`land` refuses: missing log entry, or wrong seq.** Also working as intended. Missing → the instance authors one (`propose` with `domain='meta/log'`, the expected seq from `preview`). Wrong seq → another proposal landed first; the instance re-reconciles, retracts the stale log entry (`propose_retract`), and re-authors it at the new seq.
+- **An instance says it can't propose ("reconcile with current canon first").** Working as intended — canon advanced since it last reconciled. It must call `canon_diff` then `canon_reconcile`, then it can propose. You don't need to do anything.
+- **`land` refuses: missing log entry, or wrong seq.** Also working as intended. Missing → the instance authors one (`proposal_append_entry` with `domain='meta/log'`, the expected seq from `preview`). Wrong seq → another proposal landed first; the instance re-reconciles, retracts the stale log entry (`proposal_retract_path`), and re-authors it at the new seq.
 - **Search returns nothing / stale results.** `reindex`. (Also do this after changing the embedding model.)
 - **Lost or corrupted `map_index.sqlite`.** Delete it and `reindex` — it's a cache.
 - **`verify` reports a bad seq, or audit-vs-anchor is false.** The `audit.sqlite` was altered or corrupted out of band. Restore it from backup; the git-anchored head tells you the last known-good checkpoint.
 - **A committed op has no audit entry** (e.g., the server died mid-write). `reconcile` backfills it from git.
 - **Server won't start.** Check the config: `git_dir` must point at the bare repo; if `embed_backend = "local-server"`, `embed_url` is required. Config errors print a specific message.
-- **Something feels slow.** `perf_scry` (any connected instance can call it) is the server-git
+- **Something feels slow.** `server_stats` (any connected instance can call it) is the server-git
   boundary's complete ledger since the server spawned: per-git-verb call counts and total/avg/max
   wall-clock. Read it before and after the slow act — the delta names the cost. A verb hot by
   COUNT wants batching; hot by MAX wants an algorithmic look. (Blob reads ride a persistent
@@ -163,7 +163,7 @@ with three postures per server process (binding lives at **process grain**: the 
   meaningless unique string, not an identity decision.
 - **Off** (`STASIMA_BINDING=off`, explicit): the rip-cord — no learning, no enforcement, the
   HTTPS→HTTP downgrade. Deliberately server-owned: it exists only in env/console, never as
-  anything a caller could request. `whoami` shows the downgrade plainly, like http:// in the
+  anything a caller could request. `seat_whoami` shows the downgrade plainly, like http:// in the
   address bar.
 
 **The trunk caveat (field-found, 2026-07-18).** Some clients share ONE server process across many
@@ -252,8 +252,8 @@ Migration is per-seat and reversible — stdio definitions keep working unchange
 locking, the same multi-process reality the stdio fleet always had). Rollback = stop the
 service; seats reopen on stdio.
 
-**Verify**: `whoami` in any conversation shows the `binding` block (`grain: process`, `mode: off`
-on a shared service); audit rows from the http transport carry a `session` label; `perf_scry`
+**Verify**: `seat_whoami` in any conversation shows the `binding` block (`grain: process`, `mode: off`
+on a shared service); audit rows from the http transport carry a `session` label; `server_stats`
 becomes the whole fleet's one ledger.
 
 **Stateless http — `http_stateless = true` — and the restart rule it dissolves.** With sessions
@@ -294,8 +294,8 @@ v2 SDK); the service gets its own venv, and the bridge's interpreter stays exact
 5. **Bounce the desktop client once** — this is the LAST time the bridge rule applies: the bridges
    were born against the old, session-holding service. From here on a stateless service restarts
    under open bridges.
-6. **Verify** in one conversation: `whoami` shows `"grain": "process"`, `"mode": "off"`;
-   `canon_state` answers; a deliberate refusal (e.g. a `kip_commit` re-using a slug) comes back as
+6. **Verify** in one conversation: `seat_whoami` shows `"grain": "process"`, `"mode": "off"`;
+   `canon_state` answers; a deliberate refusal (e.g. a `entry_write` re-using a slug) comes back as
    its own sentence, not "Error executing tool".
 
 **Rollback** is two keystrokes and needs no data step (git, the audit log, the map index, and

@@ -18,10 +18,10 @@ def persp(i): return f"refs/cap/perspectives/{i}"
 # ============================================================ 1. chain, read-state, tamper
 print("== chain integrity + read-state + tamper ==")
 a = SqliteAuditLog(":memory:")
-a.append("research-2", "kip_commit", target_ref=persp("research-2"), op_id="op-1", result_oid="oid1")
-a.append("research-2", "imp_send", target_path="messages/m-1.md", op_id="op-2", result_oid="oid2",
+a.append("research-2", "entry_write", target_ref=persp("research-2"), op_id="op-1", result_oid="oid1")
+a.append("research-2", "message_send", target_path="messages/m-1.md", op_id="op-2", result_oid="oid2",
          detail={"recipients": ["research-7"]})
-e3 = a.append("research-7", "kip_commit", target_ref=persp("research-7"), op_id="op-3", outcome="error:StaleRef")
+e3 = a.append("research-7", "entry_write", target_ref=persp("research-7"), op_id="op-3", outcome="error:StaleRef")
 ok, bad = a.verify()
 head_ok = a.head() == e3["hash"]   # capture before append_read moves the head
 print("  verify clean:", (ok, bad), "| head==last:", head_ok)
@@ -53,7 +53,7 @@ rb = store.commit(ref, {"practice/b.md": b"beta"}, "KIP b", Identity("research-2
                   expected_parent=ra.oid, op_id="op-b")
 
 audit = SqliteAuditLog(":memory:")
-audit.append("research-2", "kip_commit", target_ref=ref, op_id="op-a", result_oid=ra.oid)  # op-a logged
+audit.append("research-2", "entry_write", target_ref=ref, op_id="op-a", result_oid=ra.oid)  # op-a logged
 # op-b NOT logged — simulate a crash after the commit, before the audit append
 
 n = reconcile_from_git(store, audit)

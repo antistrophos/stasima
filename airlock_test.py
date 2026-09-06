@@ -80,37 +80,37 @@ async def main():
             return await client.call_tool(name, kw)
 
         # arrive, reconcile, author two proposals (each with log entry ::3C — both valid pre-land)
-        await call("canon_diff", instance_id="r2")
-        await call("sup_reconcile", instance_id="r2", body="read canon")
+        await call("canon_diff", seat="r2")
+        await call("canon_reconcile", seat="r2", body="read canon")
         for pid, slug in (("p-1", "alpha"), ("p-2", "beta")):
-            assert not err(await call("propose", instance_id="r2", proposal_id=pid, domain="practice",
+            assert not err(await call("proposal_append_entry", seat="r2", proposal_id=pid, domain="practice",
                                       slug=slug, body=f"{slug} entry", op_id=f"{pid}-1"))
-            assert not err(await call("propose", instance_id="r2", proposal_id=pid, domain="meta/log",
+            assert not err(await call("proposal_append_entry", seat="r2", proposal_id=pid, domain="meta/log",
                                       slug="3c", body="::3C — first land.", op_id=f"{pid}-log",
                                       type="log", seq="3c"))
 
         # stage p-1 (code 1 at window W0)
-        st = payload(await call("stage_approve", proposal_id="p-1", code=code()))
+        st = payload(await call("proposal_stage", proposal_id="p-1", code=code()))
         assert len(st["staged_oid"]) == 40 and st["log_seq"] == "3c"
         print("stage p-1           OK", st["staged_oid"][:10])
 
         # (4) frozen: mutation against staged p-1 rejected
-        r = await call("propose", instance_id="r2", proposal_id="p-1", domain="practice",
+        r = await call("proposal_append_entry", seat="r2", proposal_id="p-1", domain="practice",
                        slug="late", body="late", op_id="late-1")
         assert err(r) and "frozen" in errtext(r)
-        r = await call("propose_retract", instance_id="r2", proposal_id="p-1",
+        r = await call("proposal_retract_path", seat="r2", proposal_id="p-1",
                        path="practice/alpha.md", op_id="late-2")
         assert err(r) and "frozen" in errtext(r)
         print("freeze (staged)     OK")
 
         # (2) floor: +40s, fresh next-window code -> rejected with both values
         clock.advance(40)
-        r = await call("land_approve", staged_oid_prefix=st["staged_oid"][:12], code=code())
+        r = await call("proposal_land", staged_oid_prefix=st["staged_oid"][:12], code=code())
         assert err(r) and "40" in errtext(r) and "120" in errtext(r), errtext(r)
         print("floor reject @+40s  OK")
 
         # (5) content-binding: valid code, wrong oid -> no match, fails closed (and burns no code)
-        r = await call("land_approve", staged_oid_prefix="deadbeef00", code=code())
+        r = await call("proposal_land", staged_oid_prefix="deadbeef00", code=code())
         assert err(r) and "content-binding" in errtext(r)
         print("content-binding     OK")
 
@@ -125,10 +125,10 @@ async def main():
         print("strict ordering     OK")
 
         # (8) abort: no code, back to open, entries intact
-        out = payload(await call("stage_revert", proposal_id="p-2"))
+        out = payload(await call("proposal_unstage", seat="r2", proposal_id="p-2"))
         assert out["state"] == "open"
         assert "practice/beta.md" in store.list_paths("refs/cap/proposals/p-2")
-        assert not err(await call("propose", instance_id="r2", proposal_id="p-2", domain="practice",
+        assert not err(await call("proposal_append_entry", seat="r2", proposal_id="p-2", domain="practice",
                                   slug="gamma", body="writable again", op_id="p-2-3"))
         print("abort (free)        OK")
 
@@ -147,7 +147,7 @@ async def main():
 
         # (3) land p-1 past the floor with a fresh code -> full chain
         clock.advance(60)                                    # now +130s since p-1 staged
-        out = payload(await call("land_approve", staged_oid_prefix=st["staged_oid"][:12], code=code()))
+        out = payload(await call("proposal_land", staged_oid_prefix=st["staged_oid"][:12], code=code()))
         assert out["seq"] == "3c" and out["display"] == "::3C"
         assert store.resolve_ref("refs/tags/state/3c") == out["landed"]
         assert canon_seq(store) == 0x3C
@@ -162,13 +162,13 @@ async def main():
         print("ceiling auto-revert OK")
 
         # practitioner_attention rides canon_state + announce
-        await call("imp_send", sender="r2", recipients=["practitioner"], subject="look here",
+        await call("message_send", seat="r2", recipients=["practitioner"], subject="look here",
                    body="attn", op_id="m-1")
         cs = payload(await call("canon_state"))
         assert cs["practitioner_attention"] == 1, cs
-        an = payload(await call("announce", instance_id="r2"))
+        an = payload(await call("seat_announce", seat="r2"))
         assert an["practitioner_attention"] == 1
-        await call("imp_mark_read", instance_id="practitioner", message_path="messages/m-1.md")
+        await call("message_mark_read", seat="practitioner", message_path="messages/m-1.md")
         assert payload(await call("canon_state"))["practitioner_attention"] == 0
         print("attention flag      OK")
 

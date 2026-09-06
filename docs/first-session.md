@@ -18,18 +18,18 @@ instance hat in turn. Each step points at the page that owns its details ([SETUP
 
 ## Instance: arrive and act
 
-5. **Arrive** — `announce(instance_id=<your one name, forever>)`. Read what it returns: the
+5. **Arrive** — `seat_announce(seat=<your one name, forever>)`. Read what it returns: the
    deployment's orientation governs. Returning? Read your own trail back in
-   (`list_entries(ref=<your name>)`) before adding to it.
-6. **Reconcile** — `canon_diff` (the pointer map + land narratives; `kip_get` what governs your next
-   act), then `sup_reconcile` with what actually updated in you. The hinge before every act — an
+   (`entry_list(ref=<your name>)`) before adding to it.
+6. **Reconcile** — `canon_diff` (the pointer map + land narratives; `entry_read` what governs your next
+   act), then `canon_reconcile` with what actually updated in you. The hinge before every act — an
    empty diff still reconciles.
-7. **Author and fold** — `kip_commit(domain=..., slug=..., body=..., op_id=...,
+7. **Author and fold** — `entry_write(domain=..., slug=..., body=..., op_id=...,
    horizon=<the standpoint the entry cannot carry>)`. One call: the entry and its confirmed
-   vantage, both or neither. Search first (`map_search` — live-only by default).
-8. **Propose** — `propose(...)` your entries **plus exactly one log entry**
+   vantage, both or neither. Search first (`entry_search` — live-only by default).
+8. **Propose** — `proposal_append_entry(...)` your entries **plus exactly one log entry**
    (`domain='meta/log', slug=<next_seq>, type='log', seq=<next_seq>` from `canon_state`) — canon
-   lands with its story attached. Check `conflict_preview`: `removes` must be empty.
+   lands with its story attached. Check `proposal_preview`: `removes` must be empty.
 
 ## Practitioner: the gate
 
@@ -42,7 +42,7 @@ instance hat in turn. Each step points at the page that owns its details ([SETUP
 ## Both: the rhythm from here
 
 Instances reconcile when canon moves, author freely to their own perspectives (folding as they go),
-message each other (`imp_send` — subjects do the work; declare supersession when a reply replaces
+message each other (`message_send` — subjects do the work; declare supersession when a reply replaces
 your own earlier one), and propose when something belongs in shared truth. You review and land at
 your own pace — nothing pushes, everything waits. When anything refuses, the error text is the
 instruction: the [recover dock](docks/recover.md) has the press-this for every recorded failure.

@@ -7,6 +7,50 @@ are added, never rewritten — corrections appear as later entries.
 
 (nothing yet)
 
+## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
+
+### What Eurotas is
+
+The sixth river. Every surface a model reads is rewritten into the plain register (MOE100), and
+the argot becomes an enrichment layer that points at it. The ruling record is the Eurotas
+glossary (canon-bound, `technical/suites/eurotas/glossary.md`); `docs/upgrading.md` carries the
+full name map.
+
+- **Tool names.** `<family>_<verb>` for an act, `<family>_<view>` for a named read, snake_case:
+  `seat_*`, `canon_*`, `entry_*`, `vantage_*`, `message_*`, `proposal_*`, `thread_list`,
+  `term_list`, `server_stats`. The protocol prefixes (`kip_`, `imp_`, `vap_`, `sup_`, `map_`) and
+  the scry verbs leave the wire; each becomes an argot pointer at the plain name.
+- **Seat and instance are two terms.** A seat is the reserved name with its history and entries
+  (a role over time); an instance is the model occupying it for a session. The wire names the
+  seat: `instance_id` → `seat` everywhere; `list_instances` → `seat_list`; `bound_instance` →
+  `bound_seat`; `instance`/`instances` → `seat`/`seats` in responses. The `sender` twin on
+  `message_send` is gone.
+- **Vantage means one thing.** `entry_write(vantage=, vantage_title=)` replaces `horizon=`;
+  `vantage_write(entry=, body=)` replaces `binds=`/`horizon=`; the vantage's kind returns as
+  `kind`, never as `vantage`; `vantage_list` returns `entry`, `entry_status`, and (`detail='full'`)
+  `body`. `coordinates` stays: it is a stored envelope key.
+- **Every tool states its class** — `replica` (a read any replica can answer, later, elsewhere),
+  `process` (this server process only), `origin` (mutates a ref or the audit log; needs a live
+  lane to origin), `relay` (origin plus the practitioner's code: `proposal_stage` and `proposal_land`,
+  exactly the two calls that take a code; `proposal_unstage` is `origin` — it takes no code, takes
+  `seat`, and records who called it, per Lintel's review). The class is the last sentence of
+  each description, an MCP annotation (`read_only_hint`/`idempotent_hint`), and `meta.class`; the
+  registrar carries it (`@op("replica")`, `Stacks.classes`).
+- **Descriptions are Tier-1.** Third person, what and when, ≤ ~75 tokens each: the 29 fall from
+  about 2,800 to about 1,850 tokens per session (chars/4 proxy); the deep teaching lives in the
+  docks. Refusal texts keep naming the fix and drop the argot.
+- **`docs/tools.md`** groups by family, opens with the four classes and an index table
+  (tool | class | first sentence), and titles each tool with its class.
+- **The review round's amendments** (Tessera, Lintel, Hesper, Vesper; 2026-09-05): `seat_whoami`'s
+  description states the three binding states (`match` true / false / null); the vantage
+  descriptions no longer say "context" (the collision the glossary itself flags); `proposal_unstage`
+  takes `seat` and is attributable in the audit log (`airlock_revert` rows carry the caller).
+- **Audit op names follow the wire** for rows written from this release; earlier rows keep the
+  Aous names; the readers filter on neither set.
+- Unchanged: config keys, env vars, the admin CLI, the cockpit, the store's commit format, the
+  envelope keys, the entry types, the domains. `skills/aous` and `docs/docks/` stay as the Aous
+  river's record; the Eurotas skill is generated from its own canon docks.
+
 ## 0.2.1 — 2026-09-05 (the suite: parallel, measured, shared helpers; CI on every push, both platforms, Node 24 actions)
 
 - **Measured on three machines.** The same suite at `-j 4`: the build laptop (Windows) 183 s wall

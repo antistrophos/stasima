@@ -138,7 +138,7 @@ try:
     sh = {**hdr, "mcp-session-id": sid}
     c.post("/mcp", headers=sh, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
     call = c.post("/mcp", headers=sh, json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-    assert call.status_code == 200 and "announce" in call.text, (call.status_code, call.text[:200])
+    assert call.status_code == 200 and "seat_announce" in call.text, (call.status_code, call.text[:200])
     print("   bearer calls tools OK (the token opens /mcp; initialize→tools/list over the session)")
 
     # 4. replay: the SAME window cannot approve a second connector

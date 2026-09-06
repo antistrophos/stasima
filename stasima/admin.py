@@ -164,7 +164,7 @@ def run(args) -> dict:
         return {"unread" if not args.all else "all":
                 [{"path": m.path, "from": m.authoring_instance, "subject": m.subject,
                   "coordinates": m.links} for m in msgs],
-                "note": "read a message body with: kip_get equivalent -> git show <perspective>:<path>; "
+                "note": "read a message body with: entry_read equivalent -> git show <perspective>:<path>; "
                         "mark handled with: inbox --read <path>"}
 
     if args.cmd == "backup":

@@ -120,7 +120,7 @@ def close_proposal(store, audit, proposal_id: str, reason: str, actor: str, op_i
                 "reason": sub[len("close: "):], "already": True}
     r = store.commit(ref, {}, f"close: {reason}", Identity(actor),
                      expected_parent=tip, op_id=op_id or f"close-{proposal_id}-{tip[:8]}")
-    audit.append(actor, "propose_close", target_ref=ref, op_id=r.op_id, result_oid=r.oid,
+    audit.append(actor, "proposal_close", target_ref=ref, op_id=r.op_id, result_oid=r.oid,
                  detail={"reason": reason})
     return {"proposal_id": proposal_id, "closed": True, "reason": reason, "oid": r.oid}
 
@@ -144,7 +144,7 @@ def validate_log_entry(store, prepared, origin: int = CHAT_ERA_FREEZE) -> str:
     """A proposal lands with its story attached: exactly one new log entry under meta/log/, whose
     seq (hex front-matter, matching the filename) is canon's seq + 1. Raises ValueError otherwise."""
     base = store.resolve_ref(prepared.into)
-    # Diff the MERGE CANDIDATE against canon — the same tree conflict_preview reads. A raw
+    # Diff the MERGE CANDIDATE against canon — the same tree proposal_preview reads. A raw
     # canon-vs-proposal-tip diff is bidirectional: when canon advances mid-review, canon's own
     # newer logs (absent from the earlier-branched proposal) read as "changed", and the count
     # refuses a log the proposer never touched (::15's recorded defect — predicted by two seats
@@ -153,7 +153,7 @@ def validate_log_entry(store, prepared, origin: int = CHAT_ERA_FREEZE) -> str:
     if len(logs) != 1:
         raise ValueError(
             f"a proposal must contain exactly one log entry under {LOG_DIR} — found {len(logs)} "
-            f"({logs or 'none'}); author it with propose(domain='meta/log', slug='<seq>', type='log', seq='<seq>')")
+            f"({logs or 'none'}); author it with proposal_append_entry(domain='meta/log', slug='<seq>', type='log', seq='<seq>')")
     path = logs[0]
     env, _ = parse_entry(store.read_blob_at(prepared.candidate_oid, path).decode("utf-8", "replace"))
     seq = str(env.get("seq", "")).lower()
@@ -168,7 +168,7 @@ def validate_log_entry(store, prepared, origin: int = CHAT_ERA_FREEZE) -> str:
     if n != expected:
         raise ValueError(
             f"log entry is {seq_display(n)} but canon is at {seq_display(current)} — expected {seq_display(expected)}. "
-            f"Re-pull (canon_diff), reconcile, renumber the log entry, and retract the stale one (propose_retract).")
+            f"Re-pull (canon_diff), reconcile, renumber the log entry, and retract the stale one (proposal_retract_path).")
     return seq
 
 
