@@ -1,15 +1,19 @@
-# Changelog
-
-All notable changes to the Stasima suite. The suite follows the practice's own discipline: entries
-are added, never rewritten — corrections appear as later entries.
-
 ## Unreleased
 
+<<<<<<< HEAD
 - **The service keeps a log.** The cockpit's `s` now sends the service's stdout and stderr to
   `<http toml>.log` beside its config (appended, one start marker per launch) instead of DEVNULL.
   Found the hard way: a write that got no response for four minutes on the live fleet left nothing
   to read — same process throughout, no audit row, no commit, no git call in the ledger. The next
   one leaves its trace.
+=======
+(nothing yet)
+
+## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
+
+### Added after the try-on, before the tag
+
+>>>>>>> origin/main
 - **The join gate** (the practitioner's rule, 2026-09-06): a seat's first write to its perspective
   is its ::1 state update. Until it is written, `entry_write` (to any other domain, or to `state/`
   without `tick='1'`), `message_send`, `vantage_write`, and `proposal_append_entry` are refused, and
@@ -23,7 +27,6 @@ are added, never rewritten — corrections appear as later entries.
   finding (parallax's fresh-seat arrival, 2026-09-06: a ghost connector in the desktop client hid
   the two tool names Aous and Eurotas share). Additive; no other field changes.
 
-## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
 
 ### What Eurotas is
 
