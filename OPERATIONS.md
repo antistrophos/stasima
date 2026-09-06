@@ -298,11 +298,14 @@ v2 SDK); the service gets its own venv, and the bridge's interpreter stays exact
    `canon_state` answers; a deliberate refusal (e.g. a `entry_write` re-using a slug) comes back as
    its own sentence, not "Error executing tool".
 
-**Rollback** is two keystrokes and needs no data step (git, the audit log, the map index, and
-`auth.sqlite` are untouched by the port): stop the new service from the new cockpit (`x`), start
-the old one from the old cockpit (`s`), bounce the client. Nothing is edited in either direction.
-After the merge to `main`, re-point the venv at the merged checkout (`pip install -e <checkout>`)
-and retire the 0.1.5 launcher and toml pair when the old generation is no longer wanted.
+**Rollback** needs no data step (git, the audit log, the map index, and `auth.sqlite` are
+untouched by any release since 0.1.5): stop the service from its cockpit (`x`), check out the
+previous release in the checkout the service venv imports (`git -C <checkout> checkout v0.2.1`),
+start it again (`s`), put the previous suite's skill back in every client, bounce the client.
+`git checkout main` in that checkout brings the code forward again; nothing is edited in either
+direction. The 0.1.5 launcher (`cockpit.cmd`: the shared interpreter with `PYTHONPATH` on the
+checkout) cannot start anything on `main` from 0.2.0 on — that interpreter lacks SDK 2.1, so it
+exits on import — and is not a rollback path; retire it and its toml pair.
 
 **Binding over the bridge — `binding_mode = "off"`, as for any shared service.** The bridge
 multiplexes every conversation onto ONE transport session per bridge process, so even in the era

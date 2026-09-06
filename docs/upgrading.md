@@ -52,8 +52,10 @@ the Aous names. The audit's readers filter on neither set (`canon_pull`, `reconc
 
 Sequence: install 0.3.0 into the service venv → regenerate and install the **Eurotas skill** in
 every client (the Aous skill names tools that no longer exist) → restart the service → bounce the
-client → `seat_whoami` answers. Rollback: the 0.2.x service from its cockpit, the Aous skill back in
-the client, bounce.
+client → `seat_whoami` answers. Rollback: `git checkout v0.2.1` in the checkout the service venv
+imports, restart the service from its cockpit, the Aous skill back in the client, bounce; `git
+checkout main` there to come forward again. The 0.1.5 launcher cannot run 0.2.0 or later code and
+is not a rollback path.
 
 ## 0.1.5 → 0.2.0 (the MCP v2 port — SDK 2.1, protocol 2026-07-28)
 
