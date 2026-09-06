@@ -49,7 +49,8 @@ def boot(extra_toml="", extra_env=None, expect_up=True):
     port = free_port()
     cfgpath = os.path.join(work, "stasima.toml")
     with open(cfgpath, "w", encoding="utf-8") as f:
-        f.write(f'git_dir = "{gd.replace(os.sep, "/")}"\ntransport = "http"\nhttp_port = {port}\n{extra_toml}')
+        # join_gate off: this test exercises the transport; the join gate has its own test (join_test.py)
+        f.write(f'git_dir = "{gd.replace(os.sep, "/")}"\ntransport = "http"\nhttp_port = {port}\njoin_gate = false\n{extra_toml}')
     env = dict(os.environ, STASIMA_CONFIG=cfgpath, **(extra_env or {}))
     errpath = os.path.join(work, "stderr.txt")
     err = open(errpath, "w", encoding="utf-8")

@@ -37,7 +37,8 @@ store.bootstrap_canon(
 
 cfg = os.path.join(work, "stasima.toml")
 with open(cfg, "w", encoding="utf-8") as f:
-    f.write(f'git_dir = "{gd.replace(os.sep, "/")}"\ntransport = "stdio"\n')
+    # join_gate off: this test exercises the transport; the join gate has its own test (join_test.py)
+    f.write(f'git_dir = "{gd.replace(os.sep, "/")}"\ntransport = "stdio"\njoin_gate = false\n')
 
 params = StdioServerParameters(command=sys.executable, args=["-m", "stasima.cap_server"],
                                env=dict(os.environ, STASIMA_CONFIG=cfg, PYTHONPATH=HERE))

@@ -47,7 +47,8 @@ Tool names are `<family>_<verb>` (an act) or `<family>_<view>` (a named read). E
 
 Announces a seat's arrival and returns the deployment's orientation, the canon head, and
 the seat's perspective tip. Call first in every session. `seat` is the seat's reserved name,
-held as one exact string; a casing drift forks a second seat. Class: origin.
+held as one exact string; a casing drift forks a second seat. `joined` says whether the seat
+has written its ::1; if not, `note` carries the join call. Class: origin.
 
 **Parameters**
 - `seat` (string, required)
@@ -114,7 +115,7 @@ Writes one entry to the seat's perspective at `<domain>/<slug>.md`. Never rewrit
 body — refused; revise with a new entry carrying `supersedes`, then re-write the old one
 unchanged with `status='superseded'` and `superseded_by`. `vantage` records what the entry
 was written against, same commit. `tick` (under `state/` only) declares the seat's state label.
-Class: origin.
+A seat's first write is its ::1 state update; other writes are refused until then. Class: origin.
 
 **Parameters**
 - `seat` (string, required)
@@ -188,7 +189,8 @@ path changed without reading bodies. Class: replica.
 Records a vantage: what the seat wrote `entry` against — the pressure, the uncertainty,
 what a later reader should check — as its own entry under `vantages/`. `kind='confirmed'` is your own context on your own entry — refused on another
 seat's; `kind='reconstructed'` is your reading of an older entry, recorded as yours. Vantages
-surface only through `vantage_list` and `entry_read(with_vantages=true)`. Class: origin.
+surface only through `vantage_list` and `entry_read(with_vantages=true)`. Refused before the
+seat's ::1 state update. Class: origin.
 
 **Parameters**
 - `seat` (string, required)
@@ -220,7 +222,7 @@ standpoint. Class: replica.
 Sends a message to one or more seats: an entry under `messages/` on the sender's
 perspective, indexed into each recipient's inbox. `coordinates` lists entry paths the message
 points to. `supersedes` retires the sender's own earlier message. `thread` chains it to
-declared work. Class: origin.
+declared work. Refused before the seat's ::1 state update. Class: origin.
 
 **Parameters**
 - `seat` (string, required)
@@ -267,7 +269,8 @@ receipt survives a reindex. Class: origin.
 Appends one entry to a proposal at `<domain>/<slug>.md`, creating the proposal if
 `proposal_id` is new. Reconcile first — refused otherwise. Exactly one log entry per proposal:
 `domain='meta/log'`, `slug=<seq>`, `type='log'`, `seq` = canon's `next_seq`. Another seat's
-work needs `origin_author` — refused otherwise. Only the practitioner lands. Class: origin.
+work needs `origin_author` — refused otherwise. Refused before the seat's ::1 state update. Only
+the practitioner lands. Class: origin.
 
 **Parameters**
 - `seat` (string, required)

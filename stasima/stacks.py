@@ -117,7 +117,7 @@ class Stacks:
 def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, authz=None, airlock=None, *,
                  orientation_text: str = None, orientation_base: str = "technical/orientation",
                  seq_origin: int = CHAT_ERA_FREEZE, deployment_name: str = "",
-                 pull_logs_in_full: int = 8) -> Stacks:
+                 pull_logs_in_full: int = 8, join_gate: bool = True) -> Stacks:
     """Assemble the back end over its components. The body below is the operational law of the
     practice — every helper and every op, registered by name as it is defined."""
     ops = {}
@@ -231,6 +231,43 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         except Denied as e:
             _log(actor, op, target_ref=ref, target_path=path, outcome="denied", detail={"msg": str(e)})
             raise
+
+    _joined_cache = set()   # seats known to have joined — a join is never undone
+
+    def _joined(seat):
+        """A seat has joined once its perspective holds any entry other than a reconcile report.
+        For a seat arriving after the join gate, that first entry is its ::1 state update; a seat
+        from before the gate has entries already and is never gated."""
+        if seat in _joined_cache:
+            return True
+        ref = persp_ref(seat)
+        if not store.resolve_ref(ref):
+            return False
+        for p in store.list_paths(ref):
+            if not p.startswith("state/reconciled-"):
+                _joined_cache.add(seat)
+                return True
+        return False
+
+    JOIN_CALL = ("entry_write(seat='{seat}', domain='state', slug='<your-first-standing>', "
+                 "body='<where you stand>', tick='1', vantage='<what you wrote it against>')")
+
+    def _join_gate(seat, op, *, domain=None, tick=""):
+        """The join. A seat's first write to its perspective is its ::1 state update; until it is
+        written, every other write is refused with the join call in the refusal. Reads, canon_diff,
+        and canon_reconcile stay open — the new ability first, then the rest (the practitioner's
+        rule, 2026-09-06)."""
+        if not join_gate or _joined(seat):
+            return
+        if op == "entry_write" and domain == "state":
+            try:
+                if int(tick, 16) == 1:
+                    return
+            except ValueError:
+                pass
+        raise Denied(f"{seat} has no state label yet — a seat's first write is its ::1 state update, "
+                     f"and {op} opens after it. Write it: {JOIN_CALL.format(seat=seat)}. Reads, "
+                     f"canon_diff, and canon_reconcile are open now.")
 
     def _exists(ref, path):
         try:
@@ -350,13 +387,19 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
     def seat_announce(principal) -> dict:
         """Announces a seat's arrival and returns the deployment's orientation, the canon head, and
         the seat's perspective tip. Call first in every session. `seat` is the seat's reserved name,
-        held as one exact string; a casing drift forks a second seat. Class: origin."""
+        held as one exact string; a casing drift forks a second seat. `joined` says whether the seat
+        has written its ::1; if not, `note` carries the join call. Class: origin."""
         seat = principal.name   # the desk resolved WHO; the record carries the name
         home = deployment_name or "Stasima"
         out = {"welcome": f"Welcome to {home}, {seat}.", "orientation": _orientation(),
                "canon_head": store.resolve_ref(store.canon_ref),
                "your_perspective_tip": store.resolve_ref(persp_ref(seat)),
                "practitioner_attention": _attention()}
+        out["joined"] = _joined(seat)
+        if join_gate and not out["joined"]:
+            out["note"] = (f"no state label yet: your first write is your ::1 state update. Reconcile "
+                           f"(canon_diff, then canon_reconcile), then write it: {JOIN_CALL.format(seat=seat)}. "
+                           f"Entries, messages, vantages, and proposals open after it.")
         clash = _name_collision(seat)   # surface a fork-by-casing on arrival, before any write
         if clash:
             out["name_warning"] = (f"a perspective '{clash}' already exists and '{seat}' differs "
@@ -380,7 +423,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         body — refused; revise with a new entry carrying `supersedes`, then re-write the old one
         unchanged with `status='superseded'` and `superseded_by`. `vantage` records what the entry
         was written against, same commit. `tick` (under `state/` only) declares the seat's state label.
-        Class: origin."""
+        A seat's first write is its ::1 state update; other writes are refused until then. Class: origin."""
         seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = persp_ref(seat)
         path = f"{domain}/{slug}.md"
@@ -397,6 +440,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 int(tick, 16)
             except ValueError:
                 raise Denied(f"tick= must be a hex seq (e.g. '1a' — lowercase, no '::'), got {tick!r}")
+        _join_gate(seat, "entry_write", domain=domain, tick=tick)
         if thread:
             _check_thread(thread)
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
@@ -556,7 +600,8 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         """Appends one entry to a proposal at `<domain>/<slug>.md`, creating the proposal if
         `proposal_id` is new. Reconcile first — refused otherwise. Exactly one log entry per proposal:
         `domain='meta/log'`, `slug=<seq>`, `type='log'`, `seq` = canon's `next_seq`. Another seat's
-        work needs `origin_author` — refused otherwise. Only the practitioner lands. Class: origin."""
+        work needs `origin_author` — refused otherwise. Refused before the seat's ::1 state update. Only
+        the practitioner lands. Class: origin."""
         seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = prop_ref(proposal_id)
         if domain != domain.strip("/") or "//" in f"{domain}/{slug}":
@@ -566,6 +611,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                          f"<domain>/<slug>.md); got a path that would contain a double slash")
         path = f"{domain}/{slug}.md"
         _authz(seat, "proposal_append_entry", ref, path)
+        _join_gate(seat, "proposal_append_entry")
         _binding_stamp = principal.stamp
         _check_not_staged(proposal_id)
         _check_not_closed(proposal_id)
@@ -810,11 +856,12 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 """Sends a message to one or more seats: an entry under `messages/` on the sender's
                 perspective, indexed into each recipient's inbox. `coordinates` lists entry paths the message
                 points to. `supersedes` retires the sender's own earlier message. `thread` chains it to
-                declared work. Class: origin."""
+                declared work. Refused before the seat's ::1 state update. Class: origin."""
                 who = principal.name   # the desk resolved WHO (the seat/sender twin included)
                 ref = persp_ref(who)
                 path = f"messages/{op_id}.md"
                 _authz(who, "message_send", ref, path)
+                _join_gate(who, "message_send")
                 stamp = principal.stamp
                 if thread:
                     _check_thread(thread)
@@ -900,7 +947,8 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 """Records a vantage: what the seat wrote `entry` against — the pressure, the uncertainty,
                 what a later reader should check — as its own entry under `vantages/`. `kind='confirmed'` is your own context on your own entry — refused on another
                 seat's; `kind='reconstructed'` is your reading of an older entry, recorded as yours. Vantages
-                surface only through `vantage_list` and `entry_read(with_vantages=true)`. Class: origin."""
+                surface only through `vantage_list` and `entry_read(with_vantages=true)`. Refused before the
+                seat's ::1 state update. Class: origin."""
                 seat = principal.name   # the desk resolved WHO; the record carries the name
                 if kind not in ("confirmed", "reconstructed"):
                     raise Denied("kind must be 'confirmed' or 'reconstructed'")
@@ -909,6 +957,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 ref = persp_ref(seat)
                 path = f"vantages/{op_id}.md"
                 _authz(seat, "vantage_write", ref, path)
+                _join_gate(seat, "vantage_write")
                 _binding_stamp = principal.stamp
                 # dignity guard (fork-guard posture): a 'confirmed' vantage claims YOUR OWN body.
                 # Confirming an entry authored by someone else speaks for absent attention — refuse it.

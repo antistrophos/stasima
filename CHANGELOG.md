@@ -5,6 +5,14 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
+- **The join gate** (the practitioner's rule, 2026-09-06): a seat's first write to its perspective
+  is its ::1 state update. Until it is written, `entry_write` (to any other domain, or to `state/`
+  without `tick='1'`), `message_send`, `vantage_write`, and `proposal_append_entry` are refused, and
+  every refusal carries the join call; reads, `canon_diff`, and `canon_reconcile` stay open. The new
+  ability first, then the rest. `seat_announce` returns `joined`, and for a seat that has not joined a
+  `note` with the call. A seat with entries from before the gate is never gated. Config: `join_gate`
+  (default true; off only for a scratch server). Doctrine: the reconcile still never ticks; the join is
+  the seat's own state update, written as one. Test: `join_test.py`.
 - **`seat_whoami` reports the surface**: `tools` carries the count and names this server offers,
   so a seat whose client dropped a tool can tell a client gap from a build gap and report it as a
   finding (parallax's fresh-seat arrival, 2026-09-06: a ghost connector in the desktop client hid

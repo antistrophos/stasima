@@ -27,7 +27,12 @@ from stasima.map_index import SqliteMapIndex, StubEmbedder, index_entry
 from stasima.audit_log import SqliteAuditLog
 from stasima.authz import DefaultPolicy
 from stasima.airlock import Airlock, AirlockError, totp_at, verify_code, generate_secret
-from stasima.cap_server import build_server, compose_entry, land_and_record, _validate_log_entry, canon_seq
+from stasima.cap_server import build_server as _build_server_gated, compose_entry, land_and_record, _validate_log_entry, canon_seq
+
+def build_server(*a, **k):   # this test exercises other machinery; the join gate has its own test (join_test.py)
+    k.setdefault("join_gate", False)
+    return _build_server_gated(*a, **k)
+
 from mcp.client import Client as connect   # v2: the in-process client — one Client, one connection
 
 CANON = "refs/heads/main"

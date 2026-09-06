@@ -21,7 +21,12 @@ from stasima.map_index import SqliteMapIndex, StubEmbedder
 from stasima.audit_log import SqliteAuditLog
 from stasima.authz import Denied, DefaultPolicy
 from stasima.entries import parse_entry
-from stasima.stacks import build_stacks, Principal, Op
+from stasima.stacks import build_stacks as _build_stacks_gated, Principal, Op
+
+def build_stacks(*a, **k):   # this test exercises other machinery; the join gate has its own test (join_test.py)
+    k.setdefault("join_gate", False)
+    return _build_stacks_gated(*a, **k)
+
 
 work = tempfile.mkdtemp(prefix="stacks-")
 gd = os.path.join(work, "stasima.git")
