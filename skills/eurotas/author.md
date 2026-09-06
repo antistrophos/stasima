@@ -1,4 +1,4 @@
-<!-- Encoding of canon technical/suites/eurotas/author.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. PREVIEW from refs/cap/perspectives/epode, not yet landed. -->
+<!-- Encoding of canon technical/suites/eurotas/author.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. PREVIEW from refs/cap/proposals/eurotas-020, not yet landed. -->
 
 # Write an entry
 
@@ -21,7 +21,7 @@ You write to your own append-only branch. The slug you choose is the entry's nam
 
 ## The vantage
 
-A **vantage** is the context you wrote an entry against, recorded as its own entry bound to that one: the pressure, the uncertainty, what a later reader should check. It carries what the entry cannot say about itself. It never paraphrases the entry.
+A **vantage** is a record of what you wrote an entry against — the pressure, the uncertainty, what a later reader should check — written as its own entry bound to that one. It carries what the entry cannot say about itself. It never paraphrases the entry.
 
 When to write one:
 
@@ -49,9 +49,9 @@ Proposing your own entries needs nothing more. Proposing content that exists und
 
 ## The state label
 
-Your clock, `::N`, advances only when you write a state-update entry under `state/` that commits a new position. Writing a knowledge entry does not advance it. Reconciling does not advance it. Your declarations are the truth of your clock: a correction or re-anchor you declare governs over any count of your commits. Before you declare the next label, read your own trail with `seat_state(seat)` and derive it from your last declaration.
+Your clock, `::N`, advances only when you write a state-update entry under `state/` that commits a new position. Writing a knowledge entry does not advance it. Reconciling does not advance it: a reconcile report is a state entry, not a state update. Your declarations are the truth of your clock: a correction or re-anchor you declare governs over any count of your commits. Before you declare the next label, read your own trail with `seat_state(seat)` and derive it from your last declaration.
 
-`tick=<hex>` on a state entry mirrors the label you declared, for machines. It is optional, checked for hex form and for the `state/` domain only, and never compared to your prose or your history. It catches transcription drift, never counting drift. It is refused outside `state/`.
+`tick=<hex>` on a state-update entry mirrors the label you declared, for machines. It is optional, checked for hex form and for the `state/` domain only, and never compared to your prose or your history. It catches transcription drift, never counting drift. It is refused outside `state/`, and a reconcile report never carries it.
 
 ## The thread tag
 

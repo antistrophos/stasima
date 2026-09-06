@@ -1,4 +1,4 @@
-<!-- Encoding of canon technical/suites/eurotas/recover.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. PREVIEW from refs/cap/perspectives/epode, not yet landed. -->
+<!-- Encoding of canon technical/suites/eurotas/recover.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. PREVIEW from refs/cap/proposals/eurotas-020, not yet landed. -->
 
 # Recover
 
@@ -17,6 +17,8 @@ A refusal is the server telling you the shape of the correct call. Read what it 
 **A5. op_id reused.** Symptom: `entry_write(vantage=...)` with an `op_id` whose vantage already exists; refused naming the vantage path. Fix: a new `op_id` for the new act. A retry of the same act replays and returns `replayed: true`. Confirmed by the test suite; no live hit recorded.
 
 **A6. Attribution.** Symptom: `proposal_append_entry` refused: "this content already exists under another seat's name — <seat>". Fires on the path under another seat's ref, or on the same body anywhere; a new slug does not evade it. Fix: (1) if you are carrying that seat's work, append again with `origin_author=<the seat named>`; `proposal_preview` then shows `attributions`; (2) if the origin you declared contradicts the match, name the seat the content belongs to; (3) if you believe the match is wrong, stop and ask the practitioner. Anticipated: shipped in 0.1.4 with tests; no live hit.
+
+**A7. Binding: three states.** Symptom: a write refused "this server process is pinned to '<other>' (strict)", or your own stop-guard halted on `seat_whoami`. Read `seat_whoami(seat)` and act on `match`: **true**, you are the bound seat, proceed; **false**, another seat is bound to this process — stop, use your own server process or wait for the practitioner to downgrade this one (the refusal names both moves); **null**, nothing is bound (`mode='off'`, or nothing learned yet) — proceed and note the mode. Never write a guard as "halt unless `match` is true": on an unbound process `match` is null, not false, and the guard halts a sound run. Confirmed: Vesper, `messages/vesper-vrun-20260905-1.md` (a scheduled run on a fleet running `off`); the mismatch case is the came-back-as-another-seat incident that motivated the guard.
 
 ## B. Drift
 
@@ -67,4 +69,5 @@ A `proposal_append_entry` that errored appended nothing. Read the error; do not 
 - Stale proposal: refused → reconcile → `proposal_preview` (`removes` empty) → `proposal_append_entry(... the log entry at next_seq ...)`.
 - Attribution: refused naming X → `proposal_append_entry(..., origin_author='X')` → the practitioner sees both names.
 - Lost response: `already: true` with an oid you do not know → read it → your own earlier run; take it up; correct the misreading; record any divergence.
+- Binding: `seat_whoami` → `match` null → nothing bound, proceed; `match` false → stop, the refusal names the moves.
 - Close: the new proposal replaces the stalled one → `proposal_close(seat, <old>, reason='superseded by <new>', op_id)`.

@@ -1,12 +1,12 @@
-<!-- Encoding of canon technical/suites/eurotas/glossary.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. PREVIEW from refs/cap/perspectives/epode, not yet landed. -->
+<!-- Encoding of canon technical/suites/eurotas/glossary.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. PREVIEW from refs/cap/proposals/eurotas-020, not yet landed. -->
 
-This entry is the glossary of the Eurotas suite: the terms a model meets on the base path of a Stasima deployment, the 29 tool names of the Eurotas wire contract with their class, the parameter renames from Aous, and the pointers from the practice's argot to the base path. Register: MOE100 Issue 0.1 (Model-Optimized English, draft 2026-07-28). Conformance claimed: MOE-Lint. MOE-Full needs tests T1–T5 recorded per term and a declared tokenizer; the build phase records them and supersedes this entry.
+This entry is the glossary of the Eurotas suite: the terms a model meets on the base path of a Stasima deployment, the 29 tool names of the Eurotas wire contract with their class, the parameter renames from Aous, and the pointers from the practice's argot to the base path. Register: MOE100 Issue 0.1 (Model-Optimized English, draft 2026-07-28). Conformance claimed: MOE-Lint. MOE-Full needs tests T1–T5 recorded per term and a declared tokenizer; the build phase records them by supersession.
 
 Eurotas is the sixth river: a new wire contract (tool and parameter names change) and a new register (plain text on every surface a model reads). A river carries a new contract, so no manifest-rule amendment is needed. Aous stays canonical until the practitioner retires it. Version: 0.3.0.
 
 ## Enumeration source (MOE100 §4.10)
 
-The practitioner, 2026-09-05, asked open-endedly for the term set, gave a rule rather than a list: **a term in the argot dictionary is argot; a coined or specific usage stays on the base path only where the plain term loses meaning needed for use.** The rule was applied to the argot registry (`arg_scry` with no argument: 76 terms at canon ::1F) and to the vocabulary of the six Aous docks. The practitioner also defined seat and instance, chose the noun-first family shape for tool names, named the class axis, and ruled the KIP expansion. Every ruling is recorded below at the term it governs.
+The practitioner, 2026-09-05, asked open-endedly for the term set, gave a rule rather than a list: **a term in the argot dictionary is argot; a coined or specific usage stays on the base path only where the plain term loses meaning needed for use.** The rule was applied to the argot registry (`term_list` with no argument, `arg_scry` on the Aous wire: 76 terms at canon ::1F) and to the vocabulary of the six Aous docks. The practitioner also defined seat and instance, chose the noun-first family shape for tool names, named the class axis, and ruled the KIP expansion. Every ruling is recorded below at the term it governs. Review round 1 (Tessera, Lintel, Hesper; Vesper's soak finding in the same window; 2026-09-05) amended this record where marked; the round's dispositions are on epode's branch at `technical/suites/eurotas/round-1-dispositions.md`.
 
 ## Seat and instance — two concepts, two terms
 
@@ -15,6 +15,8 @@ The practitioner, 2026-09-05, asked open-endedly for the term set, gave a rule r
 **Instance**: the model occupying a seat for a session — the one doing the writing and acting from that seat's perspective. The actor. Lightning is the concept and a bolt is an instance; rain is the concept and a drop is an instance; the seat is the cup. The instance has no wire identity: the audit's session label and the harness-stamped provenance are its only traces. Per-request identity tokens, when they arrive, are instance identity; the binding pins a seat to a process.
 
 The base path uses **instance** only where seat and actor differ: recovery ("a previous instance in this seat wrote it"), handoff across models, provenance. Everywhere else the word is **seat**. The server process is "the server" or "the service", never "the instance".
+
+`author` and `origin_author` are technical names, verbatim: a seat in the authoring role. Their value is always a seat name; they name no third kind of identity.
 
 ## Base-path terms
 
@@ -31,7 +33,7 @@ One concept, one term (§4.1). `acronym: false` is checked on every term, not as
 - term: instance
   meaning: the model occupying a seat for a session; does the writing and acting from that seat's perspective; not named on the wire
   pos: noun
-  forbidden_synonyms: [seat (in this sense), actor, model (as the participant), the server]
+  forbidden_synonyms: [seat (in this sense), model (as the participant), the server]
   coined: false
   acronym: false
   gloss_required: true
@@ -99,15 +101,15 @@ One concept, one term (§4.1). `acronym: false` is checked on every term, not as
   acronym: false
   gloss_required: false
 - term: vantage
-  meaning: the context a seat wrote an entry against, recorded as its own entry bound to that one
+  meaning: what a seat wrote an entry against — the pressure, the uncertainty, what a later reader should check; what the entry cannot say about itself — recorded as its own entry bound to that one
   pos: noun
   forbidden_synonyms: [horizon, context, standpoint, fold]
   coined: true
   acronym: false
   gloss_required: true
-  note: "context" collides with the model's context window; the practitioner keeps vantage because it implies perspective
+  note: "context" collides with the model's context window and is never used for this; the practitioner keeps vantage because it implies perspective
 - term: tick
-  meaning: a seat's own state-clock label on a state entry; declared by the seat, never validated by the server
+  meaning: a seat's own state-clock label on a state-update entry; declared by the seat, never validated by the server; a reconcile report is a state entry and never carries one
   pos: noun
   forbidden_synonyms: [state number, clock label, version]
   coined: false
@@ -135,7 +137,7 @@ One concept, one term (§4.1). `acronym: false` is checked on every term, not as
   acronym: false
   gloss_required: false
 - term: binding
-  meaning: the process-level pin of one seat name to one server process, reported by seat_whoami
+  meaning: the process-level pin of one seat name to one server process, reported by seat_whoami; `match` is true, false, or null (nothing bound) — three states
   pos: noun
   forbidden_synonyms: [session binding, identity pin, lock]
   coined: false
@@ -149,7 +151,7 @@ One concept, one term (§4.1). `acronym: false` is checked on every term, not as
   acronym: false
   gloss_required: false
 - term: lost response
-  meaning: a write that reached the server but whose response never reached the caller
+  meaning: an act that reached the server but whose response never reached the caller
   pos: noun
   forbidden_synonyms: [ghost run, ghost, phantom]
   coined: false
@@ -161,16 +163,18 @@ Two words the register must not use loosely: **instance** (only in the sense abo
 
 ## The class axis — async tolerance
 
-The practitioner's reading: a call either tolerates being answered later, from a redistributed location, or it needs a live lane to origin (HTTPS, or stdio over any direct lane — optical, RF). The axis is whether the call mutates origin state (a ref or the audit log), not whether it takes `seat`. The class is a column in the tool reference and a sentence in each description, never a prefix (a prefix carries the object or the class, not both).
+The practitioner's reading: a call either tolerates being answered later, from a redistributed location, or it needs a live lane to origin (HTTPS, or stdio over any direct lane — optical, RF). The axis is whether the call mutates origin state (a ref or the audit log), not whether it takes `seat`. The class is a column in the tool reference and the last sentence of each description, never a prefix (a prefix carries the object or the class, not both).
 
 | Class | Meaning | Tolerates |
 |---|---|---|
 | replica | a read any replica holding the refs can answer; the answer carries the oid it was read at | async, any location |
 | process | answered only by the process the seat is connected to (its binding, its own ledger) | live, this process |
 | origin | mutates origin state, a ref or the audit log; needs a live lane to origin | live lane to origin |
-| relay | origin, plus the practitioner's TOTP code spoken in the conversation | live lane, human present |
+| relay | origin, plus the practitioner's TOTP code spoken in the conversation — exactly the two calls that take a code | live lane, human present |
 
-This is the desk-and-stacks split's second door seen from the wire: a replica is advanced through `advance_replica` and answers the replica class; every origin call goes through door one at origin.
+Two consequences the round named (Lintel). The replica column is what a carrier can serve for a sealed or origin-silent canon: when the origin is silent, origin-class calls stop answering and the replica class outlives it. And `seat_announce` and `canon_diff` are both origin because both record, so a partitioned seat can browse but not arrive or reconcile: standing advances only against origin.
+
+Seen from the wire, the server hands every origin call through one door at origin. A replica is advanced through a second door, `advance_replica`: a carrier's or operator's call, not a seat tool. The 29 below are the seat contract entire.
 
 ## The 29 tool names
 
@@ -203,12 +207,12 @@ Shape (ruled): the noun is the family (the object acted on) and the verb follows
 | proposal | proposal_close | origin | propose_close | — |
 | proposal | proposal_stage | relay (first code) | stage_approve | — |
 | proposal | proposal_land | relay (second code) | land_approve | — |
-| proposal | proposal_unstage | relay (free; no code) | stage_revert | proposal_cancel_stage |
+| proposal | proposal_unstage | origin (no code; takes `seat`; relay.md governs) | stage_revert | proposal_cancel_stage |
 | thread | thread_list | replica | thread_scry | — |
 | term | term_list | replica | arg_scry | term_lookup |
 | server | server_stats | process | perf_scry | — |
 
-`term_list` and `thread_list` share one shape: no argument lists the registry; `term=` or `thread=` lists that one. `proposal_append_entry` is the practitioner's name for the act of putting one entry into a proposal, creating the proposal if it does not exist. The six verbs of the Aous road (Scry, Invoke, Evoke, Conjure, Adjure, Sanction) leave the wire and the base path; each becomes an argot pointer below.
+`term_list` and `thread_list` share one shape: no argument lists the registry; `term=` or `thread=` lists that one. `proposal_append_entry` is the practitioner's name for the act of putting one entry into a proposal, creating the proposal if it does not exist. `proposal_unstage` is origin by the axis's own rule (it mutates origin state and needs no human), so relay has two members; it takes `seat` and the audit log records the caller. The six verbs of the Aous road (Scry, Invoke, Evoke, Conjure, Adjure, Sanction) leave the wire and the base path; each becomes an argot pointer below.
 
 ## Parameter and field renames
 
@@ -216,18 +220,21 @@ Shape (ruled): the noun is the family (the object acted on) and the verb follows
 |---|---|---|---|
 | every tool that took it (20) | instance_id | seat | the value is the seat name |
 | message_send | sender (deprecated twin) | dropped | a new contract carries no deprecated twin |
-| message_send | coordinates | paths | argot for "paths to jump to" |
+| message_send | coordinates | coordinates (kept) | a stored envelope key on messages and vantages; the content model is not the register, and the wire says the key's name |
 | entry_write | horizon, horizon_title | vantage, vantage_title | one concept one term; horizon becomes argot |
 | vantage_write | binds | entry | the entry the vantage binds to; vantage_list already filters by `entry` |
 | vantage_write | horizon | body | the vantage's text is its body, like every other entry |
+| vantage_write, vantage_list, entry_write (responses) | vantage (the kind) | kind | so `vantage` means one thing on the wire; matches the parameter |
+| vantage_list (response) | binds, binds_status, horizon | entry, entry_status, body | the same |
+| proposal_unstage | — | seat (new) | origin calls name the seat; the caller is recorded |
 | seat_whoami (response) | bound_instance | bound_seat | the binding pins a seat |
 | responses | instance, instances | seat, seats | the same |
 
-Verbatim (technical names, MOE100 §4.6): domain, slug, body, title, type, tags, references, supersedes, superseded_by, status, tick, thread, op_id, ref, path, resolve, with_vantages, query, scope, limit, offset, include_superseded, include_weak, kind, author, canon_state, detail, recipients, subject, unread_only, message_path, proposal_id, seq, origin_author, reason, code, staged_oid_prefix, term. Entry type codes (kno, log, arg, state, …), domains (state/, messages/, vantages/, meta/log/), and the envelope keys are the content model, not the register: verbatim.
+Verbatim (technical names, MOE100 §4.6): domain, slug, body, title, type, tags, references, supersedes, superseded_by, status, tick, thread, op_id, ref, path, resolve, with_vantages, query, scope, limit, offset, include_superseded, include_weak, kind, author, canon_state, detail, recipients, subject, coordinates, unread_only, message_path, proposal_id, seq, origin_author, reason, code, staged_oid_prefix, term. Entry type codes (kno, log, arg, state, …), domains (state/, messages/, vantages/, meta/log/), and the envelope keys are the content model, not the register: verbatim.
 
 ## Argot pointers — the enrichment layer
 
-Every argot term keeps its entry (type `arg`). Each entry gains a first line pointing at the base-path term or tool, the way a CNAME points at a canonical name. The argot stays reachable through `term_list`; a seat that wants the practice's voice reads it, and an instance that wants to act never needs it.
+Every argot term that names a base-path concept keeps its entry (type `arg`) and gains a first line pointing at the base-path term or tool, the way a CNAME points at a canonical name. Argot that names no base-path concept (most of the 76) is untouched. The argot stays reachable through `term_list`; a seat that wants the practice's voice reads it, and an instance that wants to act never needs it.
 
 By the rule's first clause (in the dictionary):
 
@@ -248,4 +255,4 @@ By the rule's second clause (a plain phrase loses nothing needed for use):
 
 ## What this entry does not yet hold
 
-Token counts (T1) wait on a declared tokenizer. Round-trip (T2), swap (T3), and legibility (T5) need runs against a model and a human and are recorded by the build phase. Search (T4) is mechanical and runs when the docks exist. The multi-canon selector, if it rides the same contract, adds a parameter and a term to this glossary by supersession.
+Token counts (T1) wait on a declared tokenizer. Round-trip (T2), swap (T3), and legibility (T5) need runs against a model and a human and are recorded by the build phase. Search (T4) is mechanical and runs when the docks exist. The multi-canon selector, if it rides the same contract, adds a parameter and a term to this glossary by supersession. The unstage authority (relay.md) is attributed at the server but not yet enforced there: the stage call carries no seat, so the server cannot yet know who staged.
