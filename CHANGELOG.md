@@ -5,7 +5,11 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
-### Eurotas — the plain-language contract (0.3.0)
+(nothing yet)
+
+## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
+
+### What Eurotas is
 
 The sixth river. Every surface a model reads is rewritten into the plain register (MOE100), and
 the argot becomes an enrichment layer that points at it. The ruling record is the Eurotas

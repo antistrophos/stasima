@@ -17,7 +17,7 @@
 
 # Stasima
 
-*Current: **0.2.1** — the 0.2 line is the MCP v2 port: SDK 2.1, protocol 2026-07-28 with every earlier revision still served, the desk-and-stacks split, stateless http; see [CHANGELOG.md](CHANGELOG.md). Upgrading a live deployment? [docs/upgrading.md](docs/upgrading.md) is the checklist.*
+*Current: **0.3.0** — Eurotas, the plain-language contract: every tool renamed into `<family>_<verb>` (`entry_write`, `canon_diff`, `proposal_append_entry`…), `instance_id` → `seat`, a class on every tool (replica / process / origin / relay), and the sixth suite generated from canon; the 0.2 line beneath it is the MCP v2 port (SDK 2.1, protocol 2026-07-28, every earlier revision served, stateless http); see [CHANGELOG.md](CHANGELOG.md). Upgrading a live deployment? [docs/upgrading.md](docs/upgrading.md) is the checklist.*
 
 A small server that lets several AI instances (Claude, or anything that speaks MCP) share **one durable, version-controlled body of knowledge**, with you — the practitioner — as the one who decides what becomes shared truth.
 
@@ -31,7 +31,7 @@ The server greets each instance with its own orientation on arrival. These docs 
 
 Five concepts; everything follows from them.
 
-1. **Two layers.** *Perspectives* — one append-only branch per instance, theirs, never overwritten. *Canon* — the single shared truth. Instances never write canon directly; they **propose**, and only you land it.
+1. **Two layers.** *Perspectives* — one append-only branch per seat, theirs, never overwritten. *Canon* — the single shared truth. Instances never write canon directly; they **propose**, and only you land it.
 2. **You are the gate.** The only path into canon is your approval (`admin land`). Enforced structurally, not by politeness.
 3. **Two truths, one cache.** `stasima.git` (content truth) and `audit.sqlite` (operation truth) — **back both up.** `map_index.sqlite` is a throwaway cache; it rebuilds from git.
 4. **Supersede, don't edit.** An entry's body never changes once written, so references stay valid. To revise, an instance authors a *new* entry that supersedes the old. (The server enforces this.)
@@ -50,7 +50,7 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 **Using it**
 - **[docs/tools.md](docs/tools.md)** — the tool reference: all 29 tools, parameters, and behavior, **generated from the live registry** (`docs/gen_tools.py`) so it cannot drift from the code.
 - **[CONTENT-MODEL.md](CONTENT-MODEL.md)** — authoring: paths as identity, the domains, the envelope, supersede, log entries and the state sequence.
-- **The participant skills** — hand one to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Four suites ship: **[Aous](skills/aous/)** (current — the 0.1.5 contract, unchanged on the wire through 0.2.x; ONE folder, generated from landed canon), **[Aliakmon](skills/aliakmon/)** (its predecessor, the 0.1.4 contract, same one-folder shape), **[Atrax](skills/atrax/)** (the 0.1.3-contract edition, seven separate skills), and **[Strophos](skills/strophos/SKILL.md)** (the original single-file suite) — suites succeed rather than supersede: supersession corrects, succession grows. Practice-agnostic; the deployment's own voice arrives separately via `announce`. Per-dock maps: **[docs/docks/](docs/docks/)**.
+- **The participant skills** — hand one to any MCP client so an instance arrives, authors, proposes, and recovers correctly. Five suites ship: **[Eurotas](skills/eurotas/)** (current — the 0.3.0 contract in the plain register; one folder of seven files, generated from landed canon by `skills/gen_suite.py`; its glossary carries the name map from Aous), **[Aous](skills/aous/)** (its predecessor — the 0.1.5 contract, unchanged on the wire through 0.2.x), **[Aliakmon](skills/aliakmon/)** (the 0.1.4 contract, same one-folder shape), **[Atrax](skills/atrax/)** (the 0.1.3-contract edition, seven separate skills), and **[Strophos](skills/strophos/SKILL.md)** (the original single-file suite) — suites succeed rather than supersede: supersession corrects, succession grows. Practice-agnostic; the deployment's own voice arrives separately via `seat_announce`. Per-dock maps for Aous: **[docs/docks/](docs/docks/)**.
 
 **Running it**
 - **[OPERATIONS.md](OPERATIONS.md)** — review and land proposals, the admin CLI, backups, maintenance, troubleshooting. This is the one to keep open.

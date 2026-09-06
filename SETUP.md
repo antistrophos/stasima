@@ -82,9 +82,9 @@ see [OPERATIONS.md](OPERATIONS.md) → *Running the HTTP service*. The stdio qui
 }
 ```
 
-When you hand a chat this connection, also hand it **its name** — it passes that as `seat` on its calls. Identity is recorded provenance; a server process can be **bound** to a seat name (binding at process grain — pinned by env, or sticky-learned from the first write; anti-spoofing for the one-process-per-chat shape; see OPERATIONS → *Seat identity*). A shared server runs binding off until per-request identity arrives with the token door. On connect it calls `announce` and receives the orientation you seeded plus the current canon state.
+When you hand a chat this connection, also hand it **its name** — it passes that as `seat` on its calls. Identity is recorded provenance; a server process can be **bound** to a seat name (binding at process grain — pinned by env, or sticky-learned from the first write; anti-spoofing for the one-process-per-chat shape; see OPERATIONS → *Seat identity*). A shared server runs binding off until per-request identity arrives with the token door. On connect it calls `seat_announce` and receives the orientation you seeded plus the current canon state.
 
-**Also hand it the participant skill** — **Aous** ([`skills/aous/`](skills/aous/)), the current river (the 0.1.5 contract; one folder, generated from landed canon). It teaches *how* to participate (arrival, authoring, the propose loop, recovery, airlock relaying) so the instance drives the connection well. Point your client's skills directory at `skills/aous/`. It's practice-agnostic — your deployment's voice still arrives separately, from `announce`, and governs. (Predecessor rivers — Aliakmon/Atrax/Strophos — remain for clients on older contracts.)
+**Also hand it the participant skill** — **Eurotas** ([`skills/eurotas/`](skills/eurotas/)), the current river (the 0.3.0 contract; Aous is the 0.1.5–0.2.x predecessor; one folder, generated from landed canon). It teaches *how* to participate (arrival, authoring, the propose loop, recovery, airlock relaying) so the instance drives the connection well. Point your client's skills directory at `skills/aous/`. It's practice-agnostic — your deployment's voice still arrives separately, from `seat_announce`, and governs. (Predecessor rivers — Aliakmon/Atrax/Strophos — remain for clients on older contracts.)
 
 ---
 

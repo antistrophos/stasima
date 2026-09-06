@@ -22,7 +22,7 @@ stasima-admin --config stasima.toml <command>
 
 ## Your job: review and land proposals
 
-This is the part only you can do. An instance creates a proposal (`propose`); it sits as a branch until you decide. The loop:
+This is the part only you can do. A seat creates a proposal (`proposal_append_entry`); it sits as a branch until you decide. The loop:
 
 ```bash
 stasima-admin --config stasima.toml status        # what's open
@@ -131,7 +131,7 @@ Then `reindex` once to re-embed the corpus. Swapping models is always a clean re
 ## Troubleshooting
 
 - **An instance says it can't propose ("reconcile with current canon first").** Working as intended — canon advanced since it last reconciled. It must call `canon_diff` then `canon_reconcile`, then it can propose. You don't need to do anything.
-- **`land` refuses: missing log entry, or wrong seq.** Also working as intended. Missing → the instance authors one (`propose` with `domain='meta/log'`, the expected seq from `preview`). Wrong seq → another proposal landed first; the instance re-reconciles, retracts the stale log entry (`proposal_retract_path`), and re-authors it at the new seq.
+- **`land` refuses: missing log entry, or wrong seq.** Also working as intended. Missing → the instance authors one (`proposal_append_entry` with `domain='meta/log'`, the expected seq from `preview`). Wrong seq → another proposal landed first; the instance re-reconciles, retracts the stale log entry (`proposal_retract_path`), and re-authors it at the new seq.
 - **Search returns nothing / stale results.** `reindex`. (Also do this after changing the embedding model.)
 - **Lost or corrupted `map_index.sqlite`.** Delete it and `reindex` — it's a cache.
 - **`verify` reports a bad seq, or audit-vs-anchor is false.** The `audit.sqlite` was altered or corrupted out of band. Restore it from backup; the git-anchored head tells you the last known-good checkpoint.
@@ -163,7 +163,7 @@ with three postures per server process (binding lives at **process grain**: the 
   meaningless unique string, not an identity decision.
 - **Off** (`STASIMA_BINDING=off`, explicit): the rip-cord — no learning, no enforcement, the
   HTTPS→HTTP downgrade. Deliberately server-owned: it exists only in env/console, never as
-  anything a caller could request. `whoami` shows the downgrade plainly, like http:// in the
+  anything a caller could request. `seat_whoami` shows the downgrade plainly, like http:// in the
   address bar.
 
 **The trunk caveat (field-found, 2026-07-18).** Some clients share ONE server process across many
@@ -252,7 +252,7 @@ Migration is per-seat and reversible — stdio definitions keep working unchange
 locking, the same multi-process reality the stdio fleet always had). Rollback = stop the
 service; seats reopen on stdio.
 
-**Verify**: `whoami` in any conversation shows the `binding` block (`grain: process`, `mode: off`
+**Verify**: `seat_whoami` in any conversation shows the `binding` block (`grain: process`, `mode: off`
 on a shared service); audit rows from the http transport carry a `session` label; `server_stats`
 becomes the whole fleet's one ledger.
 
@@ -294,7 +294,7 @@ v2 SDK); the service gets its own venv, and the bridge's interpreter stays exact
 5. **Bounce the desktop client once** — this is the LAST time the bridge rule applies: the bridges
    were born against the old, session-holding service. From here on a stateless service restarts
    under open bridges.
-6. **Verify** in one conversation: `whoami` shows `"grain": "process"`, `"mode": "off"`;
+6. **Verify** in one conversation: `seat_whoami` shows `"grain": "process"`, `"mode": "off"`;
    `canon_state` answers; a deliberate refusal (e.g. a `entry_write` re-using a slug) comes back as
    its own sentence, not "Error executing tool".
 

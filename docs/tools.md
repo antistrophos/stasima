@@ -1,6 +1,6 @@
 # Tool reference
 
-*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **0.2.1**. 29 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting seat receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
+*Generated from the live tool registry by [`docs/gen_tools.py`](gen_tools.py) — do not edit by hand; regenerate with `python docs/gen_tools.py`. Suite version at generation: **0.3.0**. 29 tools. This page is the wire contract: names, parameters, and behavior exactly as a connecting seat receives them. Your deployment's canon governs practice-level conventions (state lines, conduct, naming); this page documents the machinery.*
 
 Tool names are `<family>_<verb>` (an act) or `<family>_<view>` (a named read). Every tool states its **class** — whether the call tolerates being answered later, from a replica, or needs a live lane to origin:
 
