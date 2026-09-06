@@ -17,6 +17,7 @@ deliberateness, not cryptography. The instance does not run this; the practition
 import argparse
 import os
 import sys
+import time
 
 from .admin import run, build_parser
 from .config import Config
@@ -405,14 +406,22 @@ def _http_service(config):
         _env = dict(os.environ, STASIMA_CONFIG=http_cfg)
         if _sp_py:
             _env.pop("PYTHONPATH", None)
+        # the service's own output goes to a log beside its config (`<http toml>.log`, appended): a
+        # request that hangs or a handler that raises leaves its trace there. Before 0.3.1 both
+        # streams went to DEVNULL and a four-minute silence on a write left nothing to read.
+        logpath = http_cfg + ".log"
+        log = open(logpath, "a", encoding="utf-8")
+        log.write(f"\n--- service start {time.strftime('%Y-%m-%dT%H:%M:%S%z')} via {_sp_py or sys.executable}\n")
+        log.flush()
         p = _sp.Popen([_sp_py or sys.executable, "-m", "stasima.cap_server"],
                       env=_env,
                       creationflags=(_sp.DETACHED_PROCESS | _sp.CREATE_NEW_PROCESS_GROUP)
                       if os.name == "nt" else 0,
-                      stdout=_sp.DEVNULL, stderr=_sp.DEVNULL, stdin=_sp.DEVNULL)
+                      stdout=log, stderr=log, stdin=_sp.DEVNULL)
+        log.close()   # the child holds its own handle; the cockpit keeps none
         with open(pidfile, "w", encoding="utf-8") as f:
             f.write(str(p.pid))
-        print(GREEN(f"✓ started (pid {p.pid})") + DIM(f" with {_sp_py or sys.executable} — probe again from this screen in a moment"))
+        print(GREEN(f"✓ started (pid {p.pid})") + DIM(f" with {_sp_py or sys.executable}; log: {logpath} — probe again from this screen in a moment"))
     elif act == "x":
         if pid is None:
             print(RED("no pidfile — if it was started elsewhere, stop it where it was started.")); return
