@@ -69,6 +69,11 @@ http_port  = 8787
 # states the split (logs_in_full / logs_as_pointers). 0 = all pointers.
 # pull_logs_in_full = 8
 
+# The join gate. A seat's first write to its perspective must be its ::1 state update; every other
+# write is refused with the join call in the refusal until then (reads and the reconcile stay open).
+# Seats with entries from before the gate are never gated. Set false only for a scratch server.
+# join_gate = true
+
 # Per-git-op timeout (s). A local git op is sub-second; a hang means contention, and this bounds it
 # so it fails LOUD instead of hanging forever. 0 = auto: 2s stdio / 20s http. Raise for a huge corpus.
 # The FIRST git op of each server process gets a one-time grace window (cold start: Windows scanning

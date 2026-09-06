@@ -85,7 +85,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
                  bound_instance: str = None, binding_mode: str = None,
                  port_token: str = None,
                  oauth_provider=None, public_url: str = None,
-                 pull_logs_in_full: int = 8) -> MCPServer:
+                 pull_logs_in_full: int = 8, join_gate: bool = True) -> MCPServer:
     _auth_kwargs = {}
     if oauth_provider is not None and public_url:
         # the OAuth door: the SDK mounts discovery + DCR + /authorize + /token + the bearer
@@ -290,7 +290,7 @@ def build_server(store: LocalCapStore, index=None, embedder=None, audit=None, au
     S = build_stacks(store, index, embedder, audit, authz, airlock,
                      orientation_text=orientation_text, orientation_base=orientation_base,
                      seq_origin=seq_origin, deployment_name=deployment_name,
-                     pull_logs_in_full=pull_logs_in_full)
+                     pull_logs_in_full=pull_logs_in_full, join_gate=join_gate)
 
     ARRIVAL = {"seat_announce"}   # writes that take a principal but run before any binding exists
 
@@ -460,6 +460,7 @@ def server_from_config(cfg) -> MCPServer:
                         orientation_base=cfg.orientation_base, seq_origin=cfg.seq_origin,
                         deployment_name=cfg.deployment_name,
                         pull_logs_in_full=int(getattr(cfg, "pull_logs_in_full", 8)),
+                        join_gate=bool(getattr(cfg, "join_gate", True)),
                         # binding rides ENV, not the shared config file: the config is one file for
                         # every seat's definition; the env is what distinguishes definitions
                         bound_instance=_bound,

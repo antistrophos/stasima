@@ -24,7 +24,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from stasima.local_capstore import LocalCapStore
 from stasima.map_index import SqliteMapIndex, StubEmbedder
 from stasima.audit_log import SqliteAuditLog
-from stasima.cap_server import build_server, compose_entry, parse_entry, port_bindings
+from stasima.cap_server import build_server as _build_server_gated, compose_entry, parse_entry, port_bindings
+
+def build_server(*a, **k):   # this test exercises other machinery; the join gate has its own test (join_test.py)
+    k.setdefault("join_gate", False)
+    return _build_server_gated(*a, **k)
+
 from mcp.client import Client as connect   # v2: the in-process client — one Client, one connection
 
 

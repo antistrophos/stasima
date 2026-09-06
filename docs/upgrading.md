@@ -46,6 +46,11 @@ unchanged.
 required" (`proposal_stage`, `proposal_land`); `proposal_unstage` is `origin`, takes `seat`, and
 records the caller.
 
+**The join gate (0.3.1).** A seat arriving after the upgrade must make its first write a `state/`
+entry with `tick='1'` — its ::1 — before any entry, message, vantage, or proposal is accepted; the
+refusal and `seat_announce`'s `note` carry the exact call. Seats that already have entries are never
+gated. `join_gate = false` in the toml switches it off for a scratch server.
+
 **Audit rows** written by 0.3.0 carry the Eurotas op names; rows written before the cutover keep
 the Aous names. The audit's readers filter on neither set (`canon_pull`, `reconcile_report`,
 `land_merge`, `read_receipt`), so nothing recomputes differently.
