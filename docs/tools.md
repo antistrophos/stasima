@@ -57,8 +57,9 @@ held as one exact string; a casing drift forks a second seat. Class: origin.
 Reports how this server process sees the seat: its perspective ref, the tools it may
 write with, and the process's binding (`mode`, `grain`, `bound_seat`, `source`, `match`).
 `match` is true when `seat` is the bound one, false when another seat is, and null when
-nothing is bound (`mode='off'`, or nothing learned yet): three states, not two. Use before
-writing when identity is in doubt. Class: process.
+nothing is bound (`mode='off'`, or nothing learned yet): three states, not two. `tools` is
+the count and names this server offers; compare it against what the client loaded before
+calling a tool missing. Use before writing when identity is in doubt. Class: process.
 
 **Parameters**
 - `seat` (string, required)

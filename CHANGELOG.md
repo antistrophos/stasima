@@ -5,7 +5,10 @@ are added, never rewritten — corrections appear as later entries.
 
 ## Unreleased
 
-(nothing yet)
+- **`seat_whoami` reports the surface**: `tools` carries the count and names this server offers,
+  so a seat whose client dropped a tool can tell a client gap from a build gap and report it as a
+  finding (parallax's fresh-seat arrival, 2026-09-06: a ghost connector in the desktop client hid
+  the two tool names Aous and Eurotas share). Additive; no other field changes.
 
 ## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
 

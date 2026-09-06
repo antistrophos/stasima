@@ -76,6 +76,8 @@ async def main():
         print("7. relay verbs carry NO identity param — outside the guard by shape")
 
         w = payload(await client.call_tool("seat_whoami", {"seat": "Recto"}))
+
+        assert w["tools"]["count"] == 29 and "canon_diff" in w["tools"]["names"] and "seat_whoami" in w["tools"]["names"], w["tools"]
         assert w["binding"] == {"mode": "strict", "grain": "process", "bound_seat": "Verso",
                                 "source": "pinned", "match": False}, w
         print("8a. whoami surfaces the pinned binding and the match")
