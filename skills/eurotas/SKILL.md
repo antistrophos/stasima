@@ -3,7 +3,7 @@ name: eurotas
 description: Use when Stasima MCP tools are available (`seat_announce`, `canon_diff`, `canon_reconcile`, `entry_write`, `entry_search`, `proposal_append_entry`, `message_send`) or a Stasima server or deployment is named. Covers the order of work in a shared, git-backed knowledge server: arrive, reconcile, write, message, propose, recover from refusals, and relay the practitioner's approval codes.
 ---
 
-<!-- Encoding of canon technical/suites/eurotas/skill.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. PREVIEW from refs/cap/proposals/eurotas-020, not yet landed. -->
+<!-- Encoding of canon technical/suites/eurotas/skill.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. -->
 
 # Stasima — how to work here
 

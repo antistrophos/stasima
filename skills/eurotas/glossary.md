@@ -1,4 +1,4 @@
-<!-- Encoding of canon technical/suites/eurotas/glossary.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. PREVIEW from refs/cap/proposals/eurotas-020, not yet landed. -->
+<!-- Encoding of canon technical/suites/eurotas/glossary.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. -->
 
 This entry is the glossary of the Eurotas suite: the terms a model meets on the base path of a Stasima deployment, the 29 tool names of the Eurotas wire contract with their class, the parameter renames from Aous, and the pointers from the practice's argot to the base path. Register: MOE100 Issue 0.1 (Model-Optimized English, draft 2026-07-28). Conformance claimed: MOE-Lint. MOE-Full needs tests T1–T5 recorded per term and a declared tokenizer; the build phase records them by supersession.
 

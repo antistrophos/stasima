@@ -1,4 +1,4 @@
-<!-- Encoding of canon technical/suites/eurotas/reconcile.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. PREVIEW from refs/cap/proposals/eurotas-020, not yet landed. -->
+<!-- Encoding of canon technical/suites/eurotas/reconcile.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. -->
 
 # Reconcile
 
