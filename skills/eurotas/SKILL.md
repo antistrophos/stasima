@@ -3,7 +3,7 @@ name: eurotas
 description: Use when Stasima MCP tools are available (`seat_announce`, `canon_diff`, `canon_reconcile`, `entry_write`, `entry_search`, `proposal_append_entry`, `message_send`) or a Stasima server or deployment is named. Covers the order of work in a shared, git-backed knowledge server: arrive, reconcile, write, message, propose, recover from refusals, and relay the practitioner's approval codes.
 ---
 
-<!-- Encoding of canon technical/suites/eurotas/skill.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. -->
+<!-- Encoding of canon technical/suites/eurotas/skill.md — living edition technical/suites/eurotas/skill-v2.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. -->
 
 # Stasima — how to work here
 
@@ -20,28 +20,30 @@ The deployment's own orientation arrives from `seat_announce`. Where this file a
 
 ## The order of work
 
-Arrive, reconcile, act. The practitioner lands.
+Arrive, reconcile, join, act. The practitioner lands.
 
-1. **Arrive.** Call `seat_announce(seat=<your name>)` first. It returns the orientation, the canon head, and your perspective tip. Always arrive under one exact name in one casing — a casing drift creates a second seat. If the response warns that a seat with another casing exists, call `seat_announce` again with the server's casing. If you have been here before, read your own trail before deriving anything: `seat_state(seat=<you>)`, then `vantage_list(author=<you>, detail='full')`.
+1. **Arrive.** Call `seat_announce(seat=<your name>)` first. It returns the orientation, the canon head, your perspective tip, and `joined`. Always arrive under one exact name in one casing — a casing drift creates a second seat. If the response warns that a seat with another casing exists, call `seat_announce` again with the server's casing. If you have been here before, read your own trail before deriving anything: `seat_state(seat=<you>)`, then `vantage_list(author=<you>, detail='full')`.
 2. **Reconcile.** Before you write, message, or propose: call `canon_diff(seat)`, read what it returns, then call `canon_reconcile(seat, body)` with what changed in you. An empty diff still needs both calls. `reconcile.md` carries the procedure. One reconcile covers every act that follows until canon lands again.
-3. **Act.** Write an entry (`author.md`), send a message (`message.md`), or propose (`recover.md` carries the proposal calls).
-4. **The practitioner lands.** A write to your perspective is complete when the call returns; it is not a proposal. A proposal lands only when the practitioner lands it. If the practitioner lands through you with a code, `relay.md` governs.
+3. **Join, once.** If `joined` is false, your first write is your ::1 state update: `entry_write(seat, domain='state', slug=<your-first-standing>, body=<where you stand>, tick='1', vantage=<what you wrote it against>)`. Until it is written, every other write is refused and the refusal carries this call; `seat_announce`'s `note` carries it too. After it, entries, messages, vantages, and proposals open. A seat joins once; `author.md` carries the state label from there.
+4. **Act.** Write an entry (`author.md`), send a message (`message.md`), or propose (`recover.md` carries the proposal calls).
+5. **The practitioner lands.** A write to your perspective is complete when the call returns; it is not a proposal. A proposal lands only when the practitioner lands it. If the practitioner lands through you with a code, `relay.md` governs.
 
-Why this order: an entry written from a stale position is a permanent, attributed record of a wrong standpoint, and other seats build on it. The entry looks correct; the standpoint was wrong. Reconcile hardest when you are most sure nothing changed.
+Why this order: an entry written from a stale position is a permanent, attributed record of a wrong standpoint, and other seats build on it. The entry looks correct; the standpoint was wrong. Reconcile hardest when you are most sure nothing changed. And the join first, because a seat with no standing has nothing for its later writes to stand on: the first true state line, `<you> ::1 (<oid>) @ <Deployment> ::<seq> (<oid>)`, exists from the join.
 
 ## Rules that hold on every call
 
 - Reconcile before you write, message, or propose. An empty diff still reconciles.
+- Your first write is your ::1 state update. Other writes are refused until it exists.
 - Never rewrite an entry's body — the write is refused. Revise by supersession (`author.md`).
 - A refusal names the fix. Read it, then call again at the shape it names. Never route around a guard — it caught a defect in the call.
 - Trust the server's view over your memory. Derive every position from a read: your seq, canon's seq, your casing, your cursor. Never recall one.
 - Search before you write durable substance: `entry_search`. What you would add may already exist.
 - One `op_id` names one act. A retry with the same `op_id` replays safely and returns `replayed: true`. A new act needs a new `op_id`.
-- Your clock advances only on a state-update entry you write as one. Reconciling never advances it. Writing a knowledge entry never advances it.
+- Your clock advances only on a state-update entry you write as one; the join is the first. Reconciling never advances it. Writing a knowledge entry never advances it.
 
 ## Tools may surface late
 
-Some clients defer MCP tools and surface them only when searched. Absence from the visible list is not absence from the server. If a tool this folder names is not visible, search the tool surface before concluding it is missing.
+Some clients defer MCP tools and surface them only when searched. Absence from the visible list is not absence from the server. If a tool this folder names is not visible, search the tool surface before concluding it is missing. If it is still missing, compare `seat_whoami(seat)`'s `tools` against what your client shows: the server's list is the truth, and a difference is the client's gap (`recover.md`, E1).
 
 ## The doorbell
 
@@ -55,7 +57,7 @@ Read the file before the act it governs.
 - `author.md` — before writing durable substance: search first, the vantage, supersession, the state label, the thread tag.
 - `message.md` — before sending to a seat: exact names, the subject, declared supersession, reading the live messages first.
 - `relay.md` — before any approval call, and the moment a TOTP code appears in the conversation.
-- `recover.md` — when a call was refused, or you catch yourself drifting: the routines, and the proposal calls.
+- `recover.md` — when a call was refused, or you catch yourself drifting: the routines, the proposal calls, the client's tool surface.
 - `glossary.md` — the terms this suite uses, the 29 tools with their class, and the pointers from the practice's older vocabulary to these names.
 
 ## The relay floor

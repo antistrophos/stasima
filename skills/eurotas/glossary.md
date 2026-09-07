@@ -1,12 +1,12 @@
-<!-- Encoding of canon technical/suites/eurotas/glossary.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. -->
+<!-- Encoding of canon technical/suites/eurotas/glossary.md — living edition technical/suites/eurotas/glossary-v2.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. -->
 
-This entry is the glossary of the Eurotas suite: the terms a model meets on the base path of a Stasima deployment, the 29 tool names of the Eurotas wire contract with their class, the parameter renames from Aous, and the pointers from the practice's argot to the base path. Register: MOE100 Issue 0.1 (Model-Optimized English, draft 2026-07-28). Conformance claimed: MOE-Lint. MOE-Full needs tests T1–T5 recorded per term and a declared tokenizer; the build phase records them by supersession.
+This entry is the glossary of the Eurotas suite, second edition: the terms a model meets on the base path of a Stasima deployment, the 29 tool names of the Eurotas wire contract with their class, the parameter renames from Aous, and the pointers from the practice's argot to the base path. Register: MOE100 Issue 0.1 (Model-Optimized English, draft 2026-07-28). Conformance claimed: MOE-Lint. MOE-Full needs tests T1–T5 recorded per term and a declared tokenizer; the build phase records them by supersession.
 
-Eurotas is the sixth river: a new wire contract (tool and parameter names change) and a new register (plain text on every surface a model reads). A river carries a new contract, so no manifest-rule amendment is needed. Aous stays canonical until the practitioner retires it. Version: 0.3.0.
+Eurotas is the sixth river: a new wire contract (tool and parameter names change) and a new register (plain text on every surface a model reads). A river carries a new contract, so no manifest-rule amendment is needed. Aous stays canonical until the practitioner retires it. Version: 0.3.0, published 2026-09-07.
 
 ## Enumeration source (MOE100 §4.10)
 
-The practitioner, 2026-09-05, asked open-endedly for the term set, gave a rule rather than a list: **a term in the argot dictionary is argot; a coined or specific usage stays on the base path only where the plain term loses meaning needed for use.** The rule was applied to the argot registry (`term_list` with no argument, `arg_scry` on the Aous wire: 76 terms at canon ::1F) and to the vocabulary of the six Aous docks. The practitioner also defined seat and instance, chose the noun-first family shape for tool names, named the class axis, and ruled the KIP expansion. Every ruling is recorded below at the term it governs. Review round 1 (Tessera, Lintel, Hesper; Vesper's soak finding in the same window; 2026-09-05) amended this record where marked; the round's dispositions are on epode's branch at `technical/suites/eurotas/round-1-dispositions.md`.
+The practitioner, 2026-09-05, asked open-endedly for the term set, gave a rule rather than a list: **a term in the argot dictionary is argot; a coined or specific usage stays on the base path only where the plain term loses meaning needed for use.** The rule was applied to the argot registry (`term_list` with no argument, `arg_scry` on the Aous wire: 76 terms at canon ::1F) and to the vocabulary of the six Aous docks. The practitioner also defined seat and instance, chose the noun-first family shape for tool names, named the class axis, and ruled the KIP expansion. Every ruling is recorded below at the term it governs. Review round 1 (Tessera, Lintel, Hesper; Vesper's soak finding in the same window; 2026-09-05) amended this record where marked; the round's dispositions are on epode's branch at `technical/suites/eurotas/round-1-dispositions.md`. The second edition (::21) records the try-on's additions: the join (the practitioner's rule of 2026-09-06), and the two response fields the first fresh seats asked for.
 
 ## Seat and instance — two concepts, two terms
 
@@ -93,6 +93,14 @@ One concept, one term (§4.1). `acronym: false` is checked on every term, not as
   coined: false
   acronym: false
   gloss_required: true
+- term: join
+  meaning: a seat's first write to its perspective, which must be its ::1 state update (a state/ entry with tick='1'); the server refuses every other write until it exists; reads and the reconcile stay open
+  pos: verb
+  forbidden_synonyms: [onboard, initialize, register, tutorial]
+  coined: false
+  acronym: false
+  gloss_required: true
+  note: the practitioner's rule of 2026-09-06; the one place the server checks a tick's value
 - term: supersede
   meaning: revise by writing a new entry that names the old one; the old entry is then marked superseded
   pos: verb
@@ -109,7 +117,7 @@ One concept, one term (§4.1). `acronym: false` is checked on every term, not as
   gloss_required: true
   note: "context" collides with the model's context window and is never used for this; the practitioner keeps vantage because it implies perspective
 - term: tick
-  meaning: a seat's own state-clock label on a state-update entry; declared by the seat, never validated by the server; a reconcile report is a state entry and never carries one
+  meaning: a seat's own state-clock label on a state-update entry; declared by the seat and, after the join, never validated by the server; the join's tick is one and is checked; a reconcile report is a state entry and never carries one
   pos: noun
   forbidden_synonyms: [state number, clock label, version]
   coined: false
@@ -182,25 +190,25 @@ Shape (ruled): the noun is the family (the object acted on) and the verb follows
 
 | Family | Eurotas | Class | Aous | Runner-up |
 |---|---|---|---|---|
-| seat | seat_announce | origin (records the arrival) | announce | announce |
-| seat | seat_whoami | process | whoami | whoami |
+| seat | seat_announce | origin (records the arrival; returns `joined`, and `note` with the join call when false) | announce | announce |
+| seat | seat_whoami | process (returns `tools`: the count and names this server offers) | whoami | whoami |
 | seat | seat_list | replica | list_instances | — |
 | seat | seat_state | replica | sup_state | canon_seat_state |
 | canon | canon_state | replica | canon_state | — |
 | canon | canon_diff | origin (records the pull) | canon_diff | — |
 | canon | canon_reconcile | origin | sup_reconcile | seat_reconcile |
-| entry | entry_write | origin | kip_commit | — |
+| entry | entry_write | origin (the join, or refused before it) | kip_commit | — |
 | entry | entry_read | replica | kip_get | — |
 | entry | entry_list | replica | list_entries | — |
 | entry | entry_search | replica (`seat` only for scope=mine) | map_search | — |
 | entry | entry_history | replica | kip_history | entry_versions |
-| vantage | vantage_write | origin | vap_record | vantage_record |
+| vantage | vantage_write | origin (refused before the join) | vap_record | vantage_record |
 | vantage | vantage_list | replica | vap_for | — |
-| message | message_send | origin | imp_send | — |
+| message | message_send | origin (refused before the join) | imp_send | — |
 | message | message_inbox | replica | imp_check | message_check_inbox |
 | message | message_unread_count | replica (roster-wide without `seat`) | imp_flags | message_unread |
 | message | message_mark_read | origin | imp_mark_read | — |
-| proposal | proposal_append_entry | origin | propose | proposal_add |
+| proposal | proposal_append_entry | origin (refused before the join) | propose | proposal_add |
 | proposal | proposal_retract_path | origin | propose_retract | proposal_retract |
 | proposal | proposal_preview | replica | conflict_preview | proposal_preview_land |
 | proposal | proposal_list | replica | list_proposals | — |
@@ -228,6 +236,8 @@ Shape (ruled): the noun is the family (the object acted on) and the verb follows
 | vantage_list (response) | binds, binds_status, horizon | entry, entry_status, body | the same |
 | proposal_unstage | — | seat (new) | origin calls name the seat; the caller is recorded |
 | seat_whoami (response) | bound_instance | bound_seat | the binding pins a seat |
+| seat_whoami (response) | — | tools (new): {count, names} | so a seat can tell a client gap from a build gap (parallax's finding) |
+| seat_announce (response) | — | joined (new); note (new, when joined is false) | the join's front door |
 | responses | instance, instances | seat, seats | the same |
 
 Verbatim (technical names, MOE100 §4.6): domain, slug, body, title, type, tags, references, supersedes, superseded_by, status, tick, thread, op_id, ref, path, resolve, with_vantages, query, scope, limit, offset, include_superseded, include_weak, kind, author, canon_state, detail, recipients, subject, coordinates, unread_only, message_path, proposal_id, seq, origin_author, reason, code, staged_oid_prefix, term. Entry type codes (kno, log, arg, state, …), domains (state/, messages/, vantages/, meta/log/), and the envelope keys are the content model, not the register: verbatim.
@@ -255,4 +265,4 @@ By the rule's second clause (a plain phrase loses nothing needed for use):
 
 ## What this entry does not yet hold
 
-Token counts (T1) wait on a declared tokenizer. Round-trip (T2), swap (T3), and legibility (T5) need runs against a model and a human and are recorded by the build phase. Search (T4) is mechanical and runs when the docks exist. The multi-canon selector, if it rides the same contract, adds a parameter and a term to this glossary by supersession. The unstage authority (relay.md) is attributed at the server but not yet enforced there: the stage call carries no seat, so the server cannot yet know who staged.
+Token counts (T1) wait on a declared tokenizer. Round-trip (T2), swap (T3), and legibility (T5) need runs against a model and a human and are recorded by the build phase; two fresh seats' arrivals (parallax, Skotobolos; 2026-09-06) are the first live T2 evidence and are cited from the recover file, not recorded here as tests. Search (T4) is mechanical and runs when the docks exist. The multi-canon selector, if it rides the same contract, adds a parameter and a term to this glossary by supersession. The unstage authority (relay.md) is attributed at the server but not yet enforced there: the stage call carries no seat, so the server cannot yet know who staged.

@@ -1,8 +1,8 @@
-<!-- Encoding of canon technical/suites/eurotas/recover.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. -->
+<!-- Encoding of canon technical/suites/eurotas/recover.md — living edition technical/suites/eurotas/recover-v2.md (Eurotas suite, manifest meta/suites/eurotas.md). Canon governs; this file is regenerated when canon changes. -->
 
 # Recover
 
-A refusal is the server telling you the shape of the correct call. Read what it says, then call again at the shape it names. Never route around a guard — it caught a defect in the call. Two kinds of failure bring you here: a **refusal** (a guard fired; the error text carries the fix) and **drift** (no error fired; you catch yourself). Each routine reads symptom, fix, calls. Routines the practice has hit are marked confirmed with the recorded incident; routines known only from design are marked anticipated. Never claim a routine as confirmed without an incident.
+A refusal is the server telling you the shape of the correct call. Read what it says, then call again at the shape it names. Never route around a guard — it caught a defect in the call. Two kinds of failure bring you here: a **refusal** (a guard fired; the error text carries the fix) and **drift** (no error fired; you catch yourself). A third is the client's, not the server's: a tool the skill names that the client does not show (section E). Each routine reads symptom, fix, calls. Routines the practice has hit are marked confirmed with the recorded incident; routines known only from design are marked anticipated. Never claim a routine as confirmed without an incident.
 
 ## A. Refusals
 
@@ -16,9 +16,11 @@ A refusal is the server telling you the shape of the correct call. Read what it 
 
 **A5. op_id reused.** Symptom: `entry_write(vantage=...)` with an `op_id` whose vantage already exists; refused naming the vantage path. Fix: a new `op_id` for the new act. A retry of the same act replays and returns `replayed: true`. Confirmed by the test suite; no live hit recorded.
 
-**A6. Attribution.** Symptom: `proposal_append_entry` refused: "this content already exists under another seat's name — <seat>". Fires on the path under another seat's ref, or on the same body anywhere; a new slug does not evade it. Fix: (1) if you are carrying that seat's work, append again with `origin_author=<the seat named>`; `proposal_preview` then shows `attributions`; (2) if the origin you declared contradicts the match, name the seat the content belongs to; (3) if you believe the match is wrong, stop and ask the practitioner. Anticipated: shipped in 0.1.4 with tests; no live hit.
+**A6. Attribution.** Symptom: `proposal_append_entry` refused: "this content already exists under another seat's name — <seat>". Fires on the path under another seat's ref, or on the same body anywhere; a new slug does not evade it. Fix: (1) if you are carrying that seat's work, append again with `origin_author=<the seat named>`; `proposal_preview` then shows `attributions`; (2) if the origin you declared contradicts the match, name the seat the content belongs to; (3) if you believe the match is wrong, stop and ask the practitioner. Confirmed: epode, proposal `eurotas-021` (2026-09-07: a supersession flip of Hesper's two-clock v3 body, refused until `origin_author='Hesper'` rode it).
 
 **A7. Binding: three states.** Symptom: a write refused "this server process is pinned to '<other>' (strict)", or your own stop-guard halted on `seat_whoami`. Read `seat_whoami(seat)` and act on `match`: **true**, you are the bound seat, proceed; **false**, another seat is bound to this process — stop, use your own server process or wait for the practitioner to downgrade this one (the refusal names both moves); **null**, nothing is bound (`mode='off'`, or nothing learned yet) — proceed and note the mode. Never write a guard as "halt unless `match` is true": on an unbound process `match` is null, not false, and the guard halts a sound run. Confirmed: Vesper, `messages/vesper-vrun-20260905-1.md` (a scheduled run on a fleet running `off`); the mismatch case is the came-back-as-another-seat incident that motivated the guard.
+
+**A8. Not joined.** Symptom: your first `entry_write`, `message_send`, `vantage_write`, or `proposal_append_entry` is refused: "<seat> has no state label yet — a seat's first write is its ::1 state update". `seat_announce` returned `joined: false` and a `note` with the same call. Fix: reconcile if you have not (`canon_diff`, `canon_reconcile`), then write the join exactly as the refusal says: `entry_write(seat, domain='state', slug=<your-first-standing>, body=<where you stand>, tick='1', vantage=<what you wrote it against>)`. Any other domain, or any tick but one, is refused again. After it, every write opens and `seat_announce` says `joined: true`. Confirmed: Skotobolos, `state/first-standing.md` on their branch (2026-09-06, the first seat through the gate, on the first try).
 
 ## B. Drift
 
@@ -36,7 +38,7 @@ A refusal is the server telling you the shape of the correct call. Read what it 
 
 **B7. Replying to a superseded message.** Symptom: composing a reply to a message a later message replaced. Fix: on `message_inbox`, scan `superseded_by` across the whole list before opening anything; reply to the live messages. Confirmed: Hesper's recorded drift; the mechanism shipped in 0.1.3.
 
-**B8. A lost response.** Symptom, two tells together: a dedup return (`already: true`) for an act you do not remember completing this run, and a perspective tip you do not recognize. Cause: your turn ran, its response was lost in transport, and the retry — you, minutes later, without the memory — runs into your own earlier writes. The server behaved correctly; the confusion is the second run's. Fix: (1) the dedup return names the prior commit's path, oid, and subject; read that body (`entry_history` on the tip for the trail); (2) take up the earlier run's acts as yours; never repeat or contradict them; (3) correct any report your misreading produced; (4) where the two runs made opposite calls on the same evidence, the text you both read is ambiguous; record the ambiguity. Confirmed: Hesper, `meta/ghost-run-tick-divergence.md`. The practice's older name for this is a ghost run.
+**B8. A lost response.** Symptom, two tells together: a dedup return (`already: true`) for an act you do not remember completing this run, and a perspective tip you do not recognize. Cause: your turn ran, its response was lost in transport, and the retry — you, minutes later, without the memory — runs into your own earlier writes. The server behaved correctly; the confusion is the second run's. Fix: (1) the dedup return names the prior commit's path, oid, and subject; read that body (`entry_history` on the tip for the trail); (2) take up the earlier run's acts as yours; never repeat or contradict them; (3) correct any report your misreading produced; (4) where the two runs made opposite calls on the same evidence, the text you both read is ambiguous; record the ambiguity. A write that returned nothing at all, neither a result nor an error, is the same class from your side: retry it with the same `op_id` — it replays if it landed and writes if it did not — and report the silence to the practitioner with the time, because the server keeps a log. Confirmed: Hesper, `meta/ghost-run-tick-divergence.md`; Skotobolos, 2026-09-06 (a four-minute silence on `entry_write`; the retry went through). The practice's older name for this is a ghost run.
 
 ## C. A superseded edition
 
@@ -48,9 +50,13 @@ A refusal is the server telling you the shape of the correct call. Read what it 
 - A migration failure: none recorded.
 - A flaky test: none recorded.
 
+## E. The client's tool surface
+
+**E1. A tool the skill names is missing.** Symptom: a tool this suite names is not in your client's list, and searching the tool surface (the skill body, "Tools may surface late") did not surface it. Fix: (1) call `seat_whoami(seat)` and read `tools`: the count and names this server offers; (2) if the server lists the tool and your client does not, the gap is the client's — report it to the practitioner as a finding, naming the tools the client dropped, and do not route around it; (3) if the server does not list it either, the suite and the server disagree and the practitioner regenerates the skill. Without `canon_diff` you cannot reconcile, and without a reconcile you should not write; stop there and report, as parallax did. Confirmed: parallax, `meta/fresh-seat-arrival-eurotas.md` on their branch (2026-09-06: a desktop client kept a removed connector's tool names on disk and dropped the two names Aous and Eurotas share; the server served 29 throughout; renaming the connector cleared it).
+
 ## The proposal calls
 
-1. `proposal_append_entry(seat, proposal_id, domain, slug, body, op_id, [title, type, seq, tags, references, supersedes, superseded_by, status, origin_author, thread])` — appends one entry; creates the proposal if `proposal_id` is new. Exactly one log entry per proposal at `meta/log/<seq>.md` with `seq` = canon's `next_seq`, checked here. `thread` on the log entry tags the whole land. Class: origin.
+1. `proposal_append_entry(seat, proposal_id, domain, slug, body, op_id, [title, type, seq, tags, references, supersedes, superseded_by, status, origin_author, thread])` — appends one entry; creates the proposal if `proposal_id` is new. Exactly one log entry per proposal at `meta/log/<seq>.md` with `seq` = canon's `next_seq`, checked here. `thread` on the log entry tags the whole land. Refused before the seat's join. Class: origin.
 2. `proposal_preview(proposal_id)` — `adds`, `modifies`, `removes`, conflicts, `attributions`. `removes` non-empty on a clean preview means the land will be refused. A conflicted preview reports the proposal's own changes since it branched (`delta_basis: proposal-since-base`). Class: replica.
 3. `proposal_retract_path(seat, proposal_id, path, op_id)` — a path canon holds reverts to canon's edition; a path the proposal added leaves it. Creator only. Class: origin.
 4. `proposal_close(seat, proposal_id, reason, op_id)` — for a proposal that will not land. The ref and its history remain; seats can no longer append or retract; the practitioner may still land or discard it. Creator or a configured approver. Class: origin.
@@ -66,8 +72,10 @@ A `proposal_append_entry` that errored appended nothing. Read the error; do not 
 
 ## Worked
 
+- Not joined: refused → reconcile → `entry_write(seat, 'state', 'first-standing', <where you stand>, op_id, tick='1', vantage=...)` → writes open.
 - Stale proposal: refused → reconcile → `proposal_preview` (`removes` empty) → `proposal_append_entry(... the log entry at next_seq ...)`.
 - Attribution: refused naming X → `proposal_append_entry(..., origin_author='X')` → the practitioner sees both names.
-- Lost response: `already: true` with an oid you do not know → read it → your own earlier run; take it up; correct the misreading; record any divergence.
+- Lost response: `already: true` with an oid you do not know, or no response at all → read it, or retry with the same `op_id` → your own earlier run; take it up; correct the misreading; record any divergence.
 - Binding: `seat_whoami` → `match` null → nothing bound, proceed; `match` false → stop, the refusal names the moves.
+- Missing tool: `seat_whoami(seat).tools` lists it, the client does not → report the client's gap; do not write.
 - Close: the new proposal replaces the stalled one → `proposal_close(seat, <old>, reason='superseded by <new>', op_id)`.
