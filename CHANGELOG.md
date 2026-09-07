@@ -1,14 +1,16 @@
 ## Unreleased
 
+(nothing yet)
+
+## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
+
+### Added after the try-on, before the tag
+
 - **The service keeps a log.** The cockpit's `s` now sends the service's stdout and stderr to
   `<http toml>.log` beside its config (appended, one start marker per launch) instead of DEVNULL.
   Found the hard way: a write that got no response for four minutes on the live fleet left nothing
   to read — same process throughout, no audit row, no commit, no git call in the ledger. The next
   one leaves its trace.
-
-## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
-
-### Added after the try-on, before the tag
 
 - **The join gate** (the practitioner's rule, 2026-09-06): a seat's first write to its perspective
   is its ::1 state update. Until it is written, `entry_write` (to any other domain, or to `state/`
