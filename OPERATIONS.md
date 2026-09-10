@@ -298,6 +298,11 @@ v2 SDK); the service gets its own venv, and the bridge's interpreter stays exact
    `canon_state` answers; a deliberate refusal (e.g. a `entry_write` re-using a slug) comes back as
    its own sentence, not "Error executing tool".
 
+**The cockpit does not reload.** A cockpit window runs the code it loaded when it opened. After any
+upgrade of the checkout the service imports, close the cockpit (`q`) and open it again before `x`/`s`,
+or the restart runs the old launcher — found the hard way: the service log below stayed unarmed for
+three days because the cockpit that launched the service predated the change.
+
 **The service log.** Since 0.3.1 the cockpit's `s` writes the service's own output to `<http toml>.log`
 beside its config, appended across restarts with a start marker per launch. Read it first when a
 call hangs or a seat reports a silence: a handler's traceback and the SDK's request log are there
