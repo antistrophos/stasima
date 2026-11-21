@@ -112,9 +112,20 @@ Out-of-band notification isn't built yet (a 1.x item), so an instance's messages
 
 ---
 
+## Search
+
+`entry_search` answers from up to two legs and says which ran (`mode` in every response).
+
+- **Words, always.** A full-text index inside `map_index.sqlite` finds entries by the words they carry. The query as a phrase in a title, a tag, or a path ranks first, then entries with every word, then any word. It needs no model, it is rebuilt by `reindex` like the rest of the index, and it fills itself on the first start after an upgrade. This leg is what finds an entry by its name.
+- **Meaning, when a model is configured.** With `embed_backend = "local-server"` (below) the embedder's vectors add entries that say the same thing in other words. The two legs merge by rank, so there is no score to calibrate between them; `search_score_floor` applies to the meaning leg alone.
+
+With the default `embed_backend = "stub"` the mode is `words`: the stub is a test stand-in, not a meaning model, and it no longer ranks. One body held on several refs returns once with its `holders`, and a body canon has retired stays out of results unless a seat asks with `include_superseded=true`.
+
+If a search misses an entry you can see in git: `reindex` rebuilds both legs from git. The word index needs SQLite with FTS5, which every supported Python build carries; without it the mode reads `approximate` or `meaning` and search runs on the embedder alone.
+
 ## Embeddings
 
-Search quality depends on this. `embed_backend = "stub"` is offline and deterministic but only lexical-ish. For real semantic search, run a local model server and set in `stasima.toml`:
+The meaning leg depends on this. `embed_backend = "stub"` is offline and deterministic and carries no meaning. For semantic search, run a local model server and set in `stasima.toml`:
 
 ```toml
 embed_backend = "local-server"

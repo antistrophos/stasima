@@ -1,6 +1,31 @@
 ## Unreleased
 
-(nothing yet)
+- **Search finds an entry by its name.** `entry_search` gains a word leg: a full-text index (SQLite
+  FTS5, `stasima/lexical.py`) kept inside the map index. The query found as a phrase in a title, a
+  tag, or a path ranks first (`match: "name"`), then entries holding every word, then any word, each
+  ranked with a word in a name-bearing field above the same word in a body. From Repose's fresh-seat
+  finding (2026-11, Rehearsal ::21): under the stub embedder, none of seven name queries returned the
+  named entry. On a copy of that index the same queries now return it at ranks 1 to 4, in about
+  30 ms. The stub embedder no longer ranks when the word index exists; it was a 64-bucket word match
+  with no notion of a rare word.
+- **The meaning leg merges by rank.** With a real model configured (`embed_backend =
+  "local-server"`), hits from both legs are fused by reciprocal rank (`stasima/search.py`), so no
+  score floor has to separate them; a name match still leads. The floor (`search_score_floor`,
+  `below_floor`, `include_weak`) is now the meaning leg's alone. The response says which legs ran:
+  `mode` is `words`, `words+meaning`, `meaning`, or `approximate` (no FTS5 and no model).
+- **One body is one result.** A body held on several refs returns once, canon's row first, with
+  `holders`. A body canon has retired no longer returns through an unflipped copy on a perspective
+  unless `include_superseded=true`.
+- **Additive on the wire.** `entry_search` takes `tags` (entries carrying every tag; with no
+  `query`, a listing) and `query` becomes optional; an empty question and an unknown `scope` are
+  refused with the fix. Each result gains `match`, the matching passage as `preview`, `holders`
+  when more than one, and `similarity` when the meaning leg scored it. `score` is now the fused
+  rank value: it orders one result list and means nothing across lists.
+- **The index keeps itself.** Three triggers on `map_entries` mirror every write into the word
+  index, so a process running older code still feeds it; every start levels the two tables. An
+  index from before this change fills on first open (0.6 s for 2,177 rows) with no `reindex`.
+  `map_entries` gains `body_hash`.
+- Test: `search_test.py` (Repose's table as the fixture; the merge; upkeep; the wire).
 
 ## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
 

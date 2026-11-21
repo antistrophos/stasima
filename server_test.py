@@ -291,19 +291,14 @@ async def main():
         bad = await client.call_tool("entry_write", {"seat": "research-2", "domain": "practice",
             "slug": "durability-notes", "body": "secretly rewritten", "op_id": "sup-3"})
         assert bad.is_error, "body change must still be refused"
-        # relevance floor: below-floor hits are withheld WITH a count (an empty result says "N weak
-        # matches withheld", never just silence); include_weak returns them; the stub's own default
-        # floor is 0 = off (live calibration showed its scores cannot separate true hits from junk)
-        assert type(emb).score_floor == 0.0, "stub ships with the floor OFF"
-        emb.score_floor = 0.99   # force: every stub score sits below this
-        floored = payload(await client.call_tool("entry_search",
+        # the stub is not a meaning model: search ranks by the word index and says so. The relevance
+        # floor belongs to the meaning leg alone and is exercised in search_test.py.
+        assert type(emb).score_floor == 0.0 and type(emb).semantic is False
+        lex = payload(await client.call_tool("entry_search",
             {"seat": "research-2", "query": "durability", "scope": "mine"}))
-        assert floored["results"] == [] and floored["below_floor"] > 0, floored
-        weak = payload(await client.call_tool("entry_search",
-            {"seat": "research-2", "query": "durability", "scope": "mine", "include_weak": True}))
-        assert weak["results"] and weak["below_floor"] == 0, weak
-        emb.score_floor = 0.0    # restore — later searches in this test must see hits again
-        print("relevance floor: withheld-with-count + include_weak opt-in OK")
+        assert lex["mode"] == "words" and lex["below_floor"] == 0 and lex["results"], lex
+        assert all(h["match"] in ("name", "all-words", "some-words") for h in lex["results"]), lex
+        print("search mode: words (the stub is not a meaning model); every hit says how it matched OK")
         print("supersede: forward link + metadata-flip authorable, body still immutable OK")
 
         # message multiple recipients, flag, inbox, read
@@ -385,7 +380,8 @@ async def main():
         paths = [h["path"] for h in allhits]
         assert "practice/durability-notes.md" in paths and "practice/no-silent-loss.md" in paths
         assert "messages/m-1.md" not in paths
-        assert paths.index("practice/durability-notes.md") < paths.index("practice/scaling-notes.md")
+        # an entry that shares no word with the query is not a hit (the stub used to score every row)
+        assert "practice/scaling-notes.md" not in paths
         assert [h["path"] for h in canon_only] == ["practice/no-silent-loss.md"]
         assert all(h["author"] == "research-7" for h in mine7)
         assert [e["path"] for e in mp["entries"]] == ["practice/durability-notes.md"]

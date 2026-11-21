@@ -71,7 +71,9 @@ Identity is a name (recorded as provenance, not proven); v1 assumes a single pra
 | `stasima/local_capstore.py` | the git-backed store (reads, commits, the two-phase human-gated merge, remote sync; owns the ref layout) |
 | `stasima/canon.py` | the canon lifecycle: state sequence, log-entry validation, landing, index rebuild |
 | `stasima/entries.py` | entry serialization (YAML front-matter + body) |
-| `stasima/map_index.py` | the search index (SQLite + an embedder interface) — a rebuildable cache |
+| `stasima/map_index.py` | the map index (SQLite + an embedder interface) — a rebuildable cache |
+| `stasima/lexical.py` | the word index: full-text search inside the map index, kept by triggers — how an entry is found by its name |
+| `stasima/search.py` | entry search: the word leg and the meaning leg merged by rank; one body, one result |
 | `stasima/audit_log.py` | the hash-chained operation log — a source of truth |
 | `stasima/authz.py` | the authorization policy seam (`DefaultPolicy`) |
 | `stasima/orientation.py` | the arrival-orientation framework (machinery + your slots) |

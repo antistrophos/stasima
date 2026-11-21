@@ -4,6 +4,14 @@ The cutover checklist for a **live deployment** moving between suite versions. W
 practitioner running the upgrade; the suite's own discipline applies — trust the process table over
 status badges, back up before you touch anything, and prefer boring sequences to clever ones.
 
+## 0.3.0 → 0.3.1 (search by words)
+
+No data migration and nothing to run: on its first start the new service adds a full-text table and one column to `map_index.sqlite` and fills both from the rows already there (measured: 0.6 s for 2,177 rows). `reindex` is not needed. Restart the service from a **relaunched** cockpit (a cockpit runs the launcher code it loaded when it opened).
+
+What a seat sees: `entry_search` finds an entry by its name; results carry `match` and, when a body is held on several refs, `holders`; `mode` says whether the deployment matches by meaning as well as words; `tags` filters. Two behaviors changed and are worth knowing: `score` is no longer a cosine (it orders one result list; `similarity` carries the cosine when the meaning leg scored the hit), and `preview` is the passage that matched, not the first 160 characters. The Eurotas skill stays valid as written; nothing it names was renamed or removed.
+
+Rollback: check out `v0.3.0` in the checkout the service imports and restart. The older code ignores the new table and column; the triggers keep feeding the word index meanwhile, so coming forward again needs nothing either.
+
 ## 0.2.x → 0.3.0 (Eurotas — the plain-language contract)
 
 No data migration: git, the audit log, the map index, and `auth.sqlite` are untouched. What
