@@ -7,20 +7,31 @@ entry's NAME must find it. Under the stub embedder alone, none of seven name que
 named entry. Proven here:
 
   1. a name in a title, a tag, or a path ranks first (match='name'); every-word and any-word follow;
-  2. scope, type, and tags filter; tags alone list; messages and vantages never surface;
-  3. one body held on several refs is one result, canon's row first, with its holders;
-  4. a body canon has retired does not return through an unflipped copy, unless asked for;
+     a word in a title outranks the same word repeated in a body; the preview is the passage that
+     matched; a query is read the way the tokenizer reads the entry, in any script or composition;
+  2. scope, type, and tags filter; tags alone list; a tag of any script or punctuation filters and
+     is a name; messages and vantages never surface; `limit` is the size of the answer;
+  3. one entry held on several refs is one result, canon's row first, with its holders; two entries
+     that share a body stay two, each under its own name;
+  4. an entry canon has retired does not return through an unflipped copy, unless asked for; an
+     entry moved by supersession is found at its live path; an empty answer says what was withheld;
   5. the meaning leg merges by rank, a name still leads, and the relevance floor is the meaning
      leg's alone (withheld with a count; include_weak returns them);
-  6. the index keeps itself: an index from before this change fills on open, a replaced entry leaves
-     no old words, a writer running older code still feeds it, and clear() empties it;
-  7. without FTS5 the search still answers, from the embedder alone, and says so;
-  8. the wire: `tags` in the schema, `query` optional, refusals that name the fix.
+  6. an answer is full when the corpus can fill it: copies and retired editions that crowd the
+     candidate pool do not shorten it;
+  7. the index keeps itself: an index from before this change fills on open, a replaced entry leaves
+     no old words, a writer running older code still feeds it and its rows obey rules 3 and 4
+     before the next start, and clear() empties it;
+  8. two searches at the same moment each get their own answer;
+  9. without FTS5 the search still answers, from the embedder alone, and says so;
+ 10. the wire: `tags` in the schema, `query` optional, refusals that name the fix.
 """
 import os
 import sqlite3
 import sys
 import tempfile
+import threading
+import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import anyio
@@ -58,11 +69,11 @@ def corpus(idx, emb):
     # the unsearchable types, each carrying a name another entry is found by
     put(idx, emb, P + "Recto", "messages/m1.md", "legenda", "legenda legenda the banns", type="msg")
     put(idx, emb, P + "Recto", "vantages/v1.md", "vantage on the banns", "the banns, mutually assured construction", type="vap")
-    # one body on two refs
+    # one entry on two refs
     same = "The retro map lands whole: both editions, so old citations resolve."
     put(idx, emb, CANON, "meta/log/1b.md", "::1B — the retro map", same, author="epode", type="log")
     put(idx, emb, P + "epode", "meta/log/1b.md", "::1B — the retro map", same, type="log")
-    # a body canon retired, with an unflipped copy on its author's branch
+    # an entry canon retired, with an unflipped copy on its author's branch
     old = "The two-clock conventions, third edition: the mirror field is optional forever."
     put(idx, emb, CANON, "meta/conventions/two-clock-ticks-v3.md", "The two-clock conventions, v3", old, author="Hesper", status="superseded")
     put(idx, emb, P + "Hesper", "meta/conventions/two-clock-ticks-v3.md", "The two-clock conventions, v3", old)
@@ -82,6 +93,7 @@ idx, stub = SqliteMapIndex(":memory:"), StubEmbedder(64)
 assert idx.fts, "this SQLite build has no FTS5 — the suite's platforms all do; the word leg is untested without it"
 corpus(idx, stub)
 find = lambda q="", **kw: find_entries(idx, stub, q, seat=kw.pop("seat", "Repose"), **kw)
+ask = lambda i, q="", **kw: find_entries(i, stub, q, seat=kw.pop("seat", "Repose"), **kw)
 
 # ---- 1. names (Repose's table)
 a = find("Mutually Assured Construction")
@@ -101,7 +113,26 @@ assert rank(a, "manual/14.md") == 1 and a["results"][0]["match"] == "all-words",
 assert "Productive tension" in a["results"][0]["preview"], a["results"][0]["preview"]     # the passage that matched
 a = find("durability of tides and other things nobody wrote")
 assert rank(a, "practice/tides.md") == 1 and a["results"][0]["match"] == "some-words", a
-print("1. names: a title, a tag, a path, and a slug each rank their entry first; every-word and any-word follow")
+
+w = SqliteMapIndex(":memory:")
+put(w, stub, CANON, "notes/a.md", "The window for an objection", "Plain text about nothing in particular, kept short.", author="epode")
+put(w, stub, CANON, "notes/b.md", "Minutes of the day", "objection window, objection window, objection window: the minutes say it thrice.", author="epode")
+filler = "Nothing in this opening stretch concerns the question. " * 8
+put(w, stub, CANON, "notes/long.md", "A long note", filler + "Far below, the zephyrine clause finally appears. " + filler, author="epode")
+a = ask(w, "objection window")                                   # in neither name as a phrase: the columns decide
+assert paths(a)[:2] == ["notes/a.md", "notes/b.md"] and a["results"][0]["match"] == "all-words", a
+a = ask(w, "zephyrine")
+assert "zephyrine" in a["results"][0]["preview"] and "zephyrine" not in (filler + "Far below")[:160], a
+
+u = SqliteMapIndex(":memory:")
+put(u, stub, CANON, "notes/city.md", "İstanbul notes", "A travel log.", author="epode")
+put(u, stub, CANON, "notes/cv.md", "Résumé conventions", "How the page is laid out.", author="epode")
+for q in ("İstanbul", "istanbul", "ISTANBUL"):
+    assert paths(ask(u, q)) == ["notes/city.md"], q.encode("unicode_escape")
+for q in ("résumé", unicodedata.normalize("NFD", "résumé"), "resume", "RÉSUMÉ"):
+    assert paths(ask(u, q)) == ["notes/cv.md"], q.encode("unicode_escape")
+print("1. names: a title, a tag, a path, and a slug each rank their entry first; every-word and any-word follow; "
+      "a title outranks a body; the preview is the passage; any script or composition reads the same")
 
 # ---- 2. filters, and what never surfaces
 for q in ("legenda", "the banns", "mutually assured construction"):
@@ -115,24 +146,89 @@ assert paths(find(tags=["mac", "mutually-assured-construction"])) == ["manual/14
 assert paths(find(tags=["m"])) == [] and "tags" in find(tags=["m"])["note"]          # a tag is whole, never a prefix
 empty = find("zzzqqq")
 assert empty["results"] == [] and "words, not meaning" in empty["note"], empty
-print("2. scope, type, tags filter; tags alone list; messages and vantages never surface; an empty answer says why")
+assert len(find("canon")["results"]) >= 3 and len(find("canon", limit=2)["results"]) == 2    # limit is the answer's size
 
-# ---- 3. one body, one result
+t = SqliteMapIndex(":memory:")
+put(t, stub, P + "Compass", "notes/beans.md", "Roast log", "Espresso notes.", tags=["café", "plain"])
+put(t, stub, P + "Compass", "notes/chorus.md", "Ode", "The second movement.", tags=["στάσιμον"])
+put(t, stub, P + "Compass", "notes/quote.md", "Quoted", "A third thing.", tags=['say "hi"', "back\\slash", "100%_done!"])
+assert paths(ask(t, tags=["café"])) == ["notes/beans.md"] and paths(ask(t, tags=["CAFÉ"])) == ["notes/beans.md"]
+assert paths(ask(t, "espresso", tags=["café"])) == ["notes/beans.md"]
+assert paths(ask(t, tags=["στάσιμον"])) == ["notes/chorus.md"]
+for tag in ('say "hi"', "back\\slash", "100%_done!"):
+    assert paths(ask(t, tags=[tag])) == ["notes/quote.md"], tag
+assert paths(ask(t, tags=["caf"])) == [] and paths(ask(t, tags=["100"])) == []      # still whole tags
+a = ask(t, "στάσιμον")                                                               # a tag is a name in any script
+assert paths(a) == ["notes/chorus.md"] and a["results"][0]["match"] == "name", a
+assert paths(ask(t, "café")) == ["notes/beans.md"]
+print("2. scope, type, tags filter; tags alone list; a tag of any script filters and is a name; messages and "
+      "vantages never surface; limit holds; an empty answer says why")
+
+# ---- 3. one entry, one result
 a = find("retro map")
 hits = [r for r in a["results"] if r["path"] == "meta/log/1b.md"]
 assert len(hits) == 1 and hits[0]["is_canon"] and hits[0]["holders"] == ["canon", "epode"], a
 mine = find("retro map", scope="mine", seat="epode")["results"][0]
 assert mine["path"] == "meta/log/1b.md" and "holders" in mine, mine                  # both rows are epode's
 assert "holders" not in find("legenda")["results"][0]                                 # held once: no list
-print("3. one body on two refs returns once, canon's row first, holders listed")
 
-# ---- 4. canon decides whether a body it holds is live
+e = SqliteMapIndex(":memory:")
+shared = "Notes every seat carries the same."
+put(e, stub, P + "Recto", "practice/notes.md", "Shared notes", shared)                # a carried copy
+put(e, stub, P + "epode", "practice/notes.md", "Shared notes", shared)
+put(e, stub, CANON, "practice/notes.md", "Shared notes", shared, author="epode")
+put(e, stub, P + "Vesper", "practice/notes.md", "Shared notes", shared, type="msg")   # never a holder
+r = ask(e, "shared notes")["results"]
+assert len(r) == 1 and r[0]["is_canon"] and r[0]["holders"] == ["canon", "Recto", "epode"], r
+put(e, stub, CANON, "practice/beta-checkpoint.md", "Beta checkpoint", "Nothing to report.", author="epode", type="log")
+put(e, stub, P + "Recto", "practice/gamma-checkpoint.md", "Gamma checkpoint", "Nothing to report.")
+g = ask(e, "gamma checkpoint")["results"][0]                                          # same body, another entry
+assert (g["path"], g["title"], g["is_canon"], g["type"]) == ("practice/gamma-checkpoint.md", "Gamma checkpoint", False, "kno"), g
+assert "holders" not in g, g
+assert sorted(paths(ask(e, "nothing to report"))) == ["practice/beta-checkpoint.md", "practice/gamma-checkpoint.md"]
+assert paths(ask(e, "nothing to report", type="kno")) == ["practice/gamma-checkpoint.md"]
+twice = "One body under two envelopes."
+put(e, stub, CANON, "practice/typed.md", "Typed note", twice, author="epode", type="log")
+put(e, stub, P + "epode", "practice/typed.md", "Typed note", twice, tags=["draft"])
+k = ask(e, "typed note")["results"][0]                                                # canon's row, in canon's fields
+assert (k["is_canon"], k["type"], k["holders"]) == (True, "log", ["canon", "epode"]), k
+for kw in ({"type": "kno"}, {"tags": ["draft"]}):                                     # canon's row does not fit the ask
+    k = ask(e, "typed note", **kw)["results"][0]
+    assert (k["ref"], k["is_canon"], k["type"]) == (P + "epode", False, "kno"), (kw, k)
+print("3. one entry on several refs returns once, canon's row first, holders listed; two entries that share a body stay two")
+
+# ---- 4. canon decides whether an entry it holds is live
 a = find("two-clock conventions")
 assert "meta/conventions/two-clock-ticks-v3.md" not in paths(a) and rank(a, "meta/conventions/two-clock-ticks-v4.md") == 1, a
 a = find("two-clock conventions", include_superseded=True)
 v3 = [r for r in a["results"] if r["path"] == "meta/conventions/two-clock-ticks-v3.md"]
 assert len(v3) == 1 and v3[0]["status"] == "superseded" and v3[0]["is_canon"], a
-print("4. a body canon retired stays out, unflipped copy and all; include_superseded shows it, marked")
+
+c4 = SqliteMapIndex(":memory:")
+moved = "A write is durable once the store has synced it to the disk."
+put(c4, stub, CANON, "practice/durability-rule.md", "The durability rule", moved, author="epode", status="superseded")
+put(c4, stub, CANON, "technical/durability-rule.md", "The durability rule", moved, author="epode")
+put(c4, stub, P + "epode", "practice/durability-rule.md", "The durability rule", moved)      # the unflipped copy
+put(c4, stub, P + "epode", "technical/durability-rule.md", "The durability rule", moved)
+for kw in ({}, {"scope": "canon"}, {"scope": "mine", "seat": "epode"}):                      # a move by supersession
+    a = ask(c4, "durability rule", **kw)
+    assert paths(a) == ["technical/durability-rule.md"], (kw, a)
+    assert a["results"][0]["is_canon"] and a["results"][0]["status"] == "active", (kw, a)
+assert paths(ask(c4, "synced to the disk")) == ["technical/durability-rule.md"]
+a = ask(c4, "durability rule", include_superseded=True)
+assert sorted((r["path"], r["status"]) for r in a["results"]) == [
+    ("practice/durability-rule.md", "superseded"), ("technical/durability-rule.md", "active")], a
+put(c4, stub, CANON, "practice/alpha-v1.md", "Alpha plan, v1", "TBD", author="epode", status="superseded")
+put(c4, stub, P + "Recto", "practice/zeta-plan.md", "Zeta plan", "TBD")                      # shares a retired body only
+assert paths(ask(c4, "zeta plan")) == ["practice/zeta-plan.md"]
+assert paths(ask(c4, "zeta plan", scope="mine", seat="Recto")) == ["practice/zeta-plan.md"]
+quorum = "Quorum is three seats."
+put(c4, stub, CANON, "meta/quorum-v1.md", "The quorum rule, v1", quorum, author="Hesper", status="superseded")
+put(c4, stub, P + "Hesper", "meta/quorum-v1.md", "The quorum rule, v1", quorum)
+a = ask(c4, "quorum")
+assert a["results"] == [] and "include_superseded" in a["note"] and "no entry contains" not in a["note"], a
+print("4. an entry canon retired stays out, unflipped copy and all; include_superseded shows it, marked; a moved "
+      "entry is found at its live path; an empty answer names what was withheld")
 
 
 # ---- 5. the meaning leg
@@ -166,9 +262,59 @@ assert sfind("zzzqqq")["note"].startswith(str(sfind("zzzqqq")["below_floor"])), 
 a = sfind("what survives when something saved must keep", include_weak=True)
 assert a["below_floor"] == 0 and a["results"][0]["path"] == "practice/tides.md", a
 sem.score_floor = 0.0
-print("5. meaning merges by rank: found without a shared word; a name still leads; the floor is the meaning leg's alone")
 
-# ---- 6. the index keeps itself
+
+class Marked(Embedder):
+    """Two directions: an entry that says 'deep' lies along the query; every other entry is across it."""
+    semantic, model_id, dim, score_floor = True, "marked-2", 2, 0.5
+
+    def embed(self, texts):
+        return [[1.0, 0.0] if "deep" in lexical.words(t) else [0.0, 1.0] for t in texts]
+
+    def embed_query(self, texts):
+        return [[1.0, 0.0] for _ in texts]
+
+
+m_idx, marked = SqliteMapIndex(":memory:"), Marked()
+put(m_idx, marked, CANON, "notes/harbor.md", "Harbor", "A plain note.", author="epode")
+put(m_idx, marked, CANON, "notes/tide-table.md", "Tide table", "The harbor is deep at the north wall.", author="epode")
+a = find_entries(m_idx, marked, "harbor", seat="Repose")           # the name is found by words alone; the other by both legs
+assert [(r["path"], r["match"]) for r in a["results"]] == [("notes/harbor.md", "name"), ("notes/tide-table.md", "all-words")], a
+assert a["results"][1]["score"] > a["results"][0]["score"] and a["below_floor"] == 1, a   # the order is the ranking, not `score`
+for i in range(60):
+    put(m_idx, marked, CANON, f"notes/filler-{i:02d}.md", f"Filler {i}", "An unrelated line.", author="epode")
+asked, vector_leg = [], m_idx.search
+m_idx.search = lambda *args, **kw: (asked.append(kw["limit"]), vector_leg(*args, **kw))[1]
+a = find_entries(m_idx, marked, "harbor", seat="Repose")           # the leg is cut, but past a weak hit all are weak
+assert len(a["results"]) == 2 and a["below_floor"] == 49 and asked == [50], (a["below_floor"], asked)
+print("5. meaning merges by rank: found without a shared word; a name still leads, whatever its score; "
+      "the floor is the meaning leg's alone")
+
+# ---- 6. a full answer
+full = SqliteMapIndex(":memory:")
+seats = [f"s{i:02d}" for i in range(17)]
+for term in ("harbor", "harbor wall", "harbor light"):             # three definitions, each echoed by canon and 17 seats
+    for holder in ["canon"] + seats:
+        put(full, stub, CANON if holder == "canon" else P + holder, f"argot/{term.replace(' ', '-')}.md", term,
+            f"{term}: the harbor term every seat carries.", author="Hesper" if holder == "canon" else holder, type="arg")
+for i in range(12):
+    put(full, stub, CANON, f"technical/port-{i:02d}.md", f"Port study {i}, with a harbor survey",
+        f"Study {i} measures the approach.", author="epode")
+assert len(ask(full, "harbor", limit=10)["results"]) == 10
+assert len(ask(full, "harbor", limit=5)["results"]) == 5
+assert len(ask(full, "harbor", limit=50)["results"]) == 15
+for i in range(45):                                                 # 45 retired editions, each with an unflipped copy
+    body = f"Edition {i} of the ticks rule: ticks, counted in ticks."
+    put(full, stub, CANON, f"meta/ticks-v{i:02d}.md", f"The ticks rule, edition {i}", body, author="Hesper", status="superseded")
+    put(full, stub, P + "Hesper", f"meta/ticks-v{i:02d}.md", f"The ticks rule, edition {i}", body)
+for i in range(5):
+    put(full, stub, CANON, f"technical/clock-{i}.md", f"Clock note {i}, on ticks", f"Note {i} about the clock.", author="epode")
+a = ask(full, "ticks", limit=3)
+assert len(a["results"]) == 3 and all(p.startswith("technical/clock-") for p in paths(a)), a
+assert len(ask(full, "ticks", limit=10)["results"]) == 5
+print("6. a full answer: echoed copies and retired editions that crowd the candidates do not shorten it")
+
+# ---- 7. the index keeps itself
 work = tempfile.mkdtemp(prefix="stasima-search-")
 db = os.path.join(work, "map.sqlite")
 old = sqlite3.connect(db)                                          # an index from before this change
@@ -198,24 +344,68 @@ legacy.commit(); legacy.close()
 assert paths(find_entries(up, stub, "written by old code", seat="x")) == ["practice/new.md"]     # the triggers fed it
 assert paths(find_entries(up, stub, "renamed", seat="x")) == []                                  # the stale row cannot surface
 assert paths(find_entries(up, stub, "third title", seat="x")) == ["argot/legenda.md"]
+# rows an older-code process writes carry no digest; the next search gives them one, so rules 3 and 4 hold now
+put(up, stub, CANON, "meta/quorum-v3.md", "The quorum rule, v3", quorum, author="Hesper")
+put(up, stub, P + "Hesper", "meta/quorum-v3.md", "The quorum rule, v3", quorum)
+put(up, stub, P + "epode", "meta/log/2a.md", "::2A lands", "The land narrative.", type="log")
+legacy = sqlite3.connect(db)
+legacy.execute(ins, (CANON, "meta/quorum-v3.md", 1, "Hesper", "kno", "The quorum rule, v3", "superseded", "[]", quorum, "[]"))
+legacy.execute(ins, (CANON, "meta/log/2a.md", 1, "epode", "log", "::2A lands", "active", "[]", "The land narrative.", "[]"))
+legacy.execute(ins, (P + "Recto", "practice/beans.md", 0, "Recto", "kno", "Roast log", "active", '["caf\\u00e9"]', "Espresso notes.", "[]"))
+legacy.commit(); legacy.close()
+assert paths(find_entries(up, stub, "quorum", seat="x")) == []                              # canon's flip holds at once
+r = find_entries(up, stub, "land narrative", seat="x")["results"]
+assert len(r) == 1 and r[0]["is_canon"] and r[0]["holders"] == ["canon", "epode"], r
+assert paths(find_entries(up, stub, "", seat="x", tags=["café"])) == ["practice/beans.md"]       # the filter reads older code's spelling
 up.conn.close()
 again = SqliteMapIndex(db)                                         # the next start levels the table
-assert count(again) == (2, 2), count(again)
+assert count(again) == (7, 7), count(again)
 assert again.conn.execute("SELECT COUNT(*) FROM map_entries WHERE body_hash IS NULL OR body_hash=''").fetchone()[0] == 0
+assert paths(find_entries(again, stub, "café", seat="x")) == ["practice/beans.md"]               # and its tag is a name again
 again.clear()
 assert count(again) == (0, 0)
 again.conn.close()
-print("6. upkeep: an older index fills on open; a replace leaves no old words; older code still feeds it; clear() empties it")
+assert body_digest("text ") == body_digest("　text\n") == body_digest("text")           # the guards' own strip
+print("7. upkeep: an older index fills on open; a replace leaves no old words; older code still feeds it and its rows "
+      "obey both rules at once; clear() empties it")
 
-# ---- 7. without FTS5
+# ---- 8. two searches at the same moment
+for label, target in (("memory", ":memory:"), ("file", os.path.join(work, "race.sqlite"))):
+    race = SqliteMapIndex(target)
+    for i in range(300):
+        put(race, stub, CANON if i % 2 else P + "s00", f"k/word{i}.md", f"word{i} title", f"The body of word{i}. " * 12,
+            author="epode" if i % 2 else "s00")
+    alone = {i: find_entries(race, stub, f"word{i} title", seat="x") for i in range(300)}
+    bad, gate = [], threading.Barrier(2)
+
+    def searcher(offset):
+        for n in range(150):
+            i = offset + n
+            gate.wait()
+            try:
+                got = find_entries(race, stub, f"word{i} title", seat="x")
+            except Exception as err:                                  # noqa: BLE001 — every failure is the finding
+                bad.append((i, repr(err)))
+                continue
+            if got != alone[i]:
+                bad.append((i, "another answer"))
+
+    pair = [threading.Thread(target=searcher, args=(o,)) for o in (0, 150)]
+    [th.start() for th in pair]
+    [th.join() for th in pair]
+    assert not bad, (label, len(bad), bad[:3])
+    race.conn.close()
+print("8. two searches at the same moment, 300 times over: each gets the answer it gets alone")
+
+# ---- 9. without FTS5
 idx.fts = False
 a = find("legenda")
 assert a["mode"] == "approximate" and a["results"] and all(r["match"] == "approximate" for r in a["results"]), a
 idx.fts = True
-print("7. no FTS5: the embedder alone answers, and the mode says so")
+print("9. no FTS5: the embedder alone answers, and the mode says so")
 
 
-# ---- 8. the wire
+# ---- 10. the wire
 async def wire():
     w, gd = fresh_repo("stasima-search-wire-")
     store = LocalCapStore(gd, approvers={"practitioner"})
@@ -227,18 +417,21 @@ async def wire():
         assert "tags" in props and "query" not in required and "seat" in required, tool.input_schema
         assert tool.description.rstrip().endswith("Class: replica."), tool.description
         await c.call_tool("entry_write", {"seat": "Compass", "domain": "manual", "slug": "14", "op_id": "w1",
-                                          "title": "Mutually Assured Construction", "tags": ["mac"],
+                                          "title": "Mutually Assured Construction", "tags": ["mac", "στάσιμον"],
                                           "body": "Productive tension between perspectives."})
         got = payload(await c.call_tool("entry_search", {"seat": "Repose", "query": "mutually assured construction"}))
         assert got["mode"] == "words" and got["results"][0]["path"] == "manual/14.md" and got["results"][0]["match"] == "name", got
         got = payload(await c.call_tool("entry_search", {"seat": "Repose", "tags": ["mac"]}))
         assert paths(got) == ["manual/14.md"], got
+        got = payload(await c.call_tool("entry_search", {"seat": "Repose", "tags": ["στάσιμον"]}))
+        assert paths(got) == ["manual/14.md"], got
         r = await c.call_tool("entry_search", {"seat": "Repose", "query": "  ?! "})
         assert is_err(r) and "`query`" in err_text(r) and "`tags`" in err_text(r), err_text(r)
         r = await c.call_tool("entry_search", {"seat": "Repose", "query": "x", "scope": "everything"})
         assert is_err(r) and "'all', 'canon', or 'mine'" in err_text(r), err_text(r)
-    print("8. the wire: tags in the schema, query optional, an empty question and an unknown scope refused with the fix")
+    print("10. the wire: tags in the schema, query optional, an empty question and an unknown scope refused with the fix")
 
 
 anyio.run(wire)
-print("\nOK -- entry search: names found, one body one result, canon decides liveness, legs merge by rank, the index keeps itself.")
+print("\nOK -- entry search: names found, one entry one result, canon decides liveness, legs merge by rank, "
+      "answers come back full and whole, the index keeps itself.")

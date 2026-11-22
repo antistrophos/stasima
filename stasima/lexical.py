@@ -18,8 +18,8 @@ Design commitments:
 """
 from __future__ import annotations
 
-import re
 import sqlite3
+import unicodedata
 
 TABLE = "map_fts"
 # column order is the table's; a weight ranks a word in that column against the same word in a body
@@ -86,9 +86,21 @@ def clear(conn: sqlite3.Connection) -> None:
 
 def words(query: str) -> list[str]:
     """The query as the tokenizer will see it: runs of letters and digits, lowercased, in order.
+    A combining mark stays with the letter it follows, as the tokenizer keeps it: a query typed
+    decomposed, or a capital whose lowercase is a letter plus a mark, is still one word (the
+    tokenizer folds the mark away on both sides, so composed and decomposed spellings meet).
     Everything else is a separator, which is also what makes the words safe to place in a MATCH
-    expression: nothing the caller typed survives except letters and digits."""
-    return re.findall(r"[^\W_]+", (query or "").lower())
+    expression: nothing the caller typed survives except letters, digits, and their marks."""
+    out, word = [], []
+    for ch in (query or "").lower():
+        if ch.isalnum() or (word and unicodedata.category(ch).startswith("M")):
+            word.append(ch)
+        elif word:
+            out.append("".join(word))
+            word = []
+    if word:
+        out.append("".join(word))
+    return out
 
 
 def _passes(raw: list[str]) -> list[tuple[str, str]]:
@@ -104,24 +116,29 @@ def _passes(raw: list[str]) -> list[tuple[str, str]]:
     return out
 
 
-def search(conn: sqlite3.Connection, raw: list[str], where: str, params: list, limit: int) -> list:
-    """Ranked rows for the query words: [(row, match kind, passage)], best first. `where` filters
-    `map_entries` (aliased `e`) and must itself exclude the unsearchable types. Within a pass the
-    order is BM25 with the column weights; a row keeps the kind of the first pass that found it."""
+def search(conn: sqlite3.Connection, raw: list[str], where: str, params: list, limit: int) -> tuple:
+    """Ranked rows for the query words, and whether the limit cut them: ([(row, match kind,
+    passage)], cut), best first. `where` filters `map_entries` (aliased `e`) and must itself
+    exclude the unsearchable types. Within a pass the order is BM25 with the column weights; a row
+    keeps the kind of the first pass that found it. `cut` is True when a larger limit may return
+    more: a pass filled the limit, or a pass did not run because earlier ones had."""
     if not raw:
-        return []
+        return [], False
     weights = ", ".join(str(w) for w in WEIGHTS)
     sql = (f"SELECT e.rowid AS _rowid, e.*, "
            f"snippet({TABLE}, {BODY_COLUMN}, '', '', ' … ', 28) AS _passage "
            f"FROM {TABLE} JOIN map_entries e ON e.rowid = {TABLE}.rowid "
            f"WHERE {TABLE} MATCH ? AND {where} "
            f"ORDER BY bm25({TABLE}, {weights}), e.is_canon DESC, e.ref, e.path LIMIT ?")
-    out, seen = [], set()
+    out, seen, cut = [], set(), False
     for kind, expression in _passes(raw):
         if len(out) >= limit:
+            cut = True
             break
-        for r in conn.execute(sql, [expression, *params, limit]).fetchall():
+        rows = conn.execute(sql, [expression, *params, limit]).fetchall()
+        cut = cut or len(rows) >= limit
+        for r in rows:
             if r["_rowid"] not in seen:
                 seen.add(r["_rowid"])
                 out.append((r, kind, " ".join((r["_passage"] or "").split())))
-    return out[:limit]
+    return out[:limit], cut or len(out) > limit

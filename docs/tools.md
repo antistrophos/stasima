@@ -161,10 +161,11 @@ as pointers: path, title, status, type. Use before reading bodies. Class: replic
 
 Finds entries by their words: the query as a name in a title, tag, or path ranks first
 (`match='name'`), then entries with every word, then any word. `mode` says whether this
-deployment also matches by meaning. Returns attributed pointers with the matching passage
-as `preview`; one body on several refs returns once with `holders`. `scope`: `canon`,
-`mine`, or `all`. `tags` keeps entries carrying every tag, with or without a query.
-Superseded entries are excluded unless `include_superseded=true`. Class: replica.
+deployment also matches by meaning. Returns attributed pointers, best first; a word match
+carries the passage that matched as `preview`. One entry held on several refs returns
+once with `holders`. `scope`: `canon`, `mine`, or `all`. `tags` keeps entries carrying
+every tag, with or without a query. Superseded entries are excluded unless
+`include_superseded=true`. Class: replica.
 
 **Parameters**
 - `seat` (string, required)

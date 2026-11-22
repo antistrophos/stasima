@@ -13,19 +13,41 @@
   score floor has to separate them; a name match still leads. The floor (`search_score_floor`,
   `below_floor`, `include_weak`) is now the meaning leg's alone. The response says which legs ran:
   `mode` is `words`, `words+meaning`, `meaning`, or `approximate` (no FTS5 and no model).
-- **One body is one result.** A body held on several refs returns once, canon's row first, with
-  `holders`. A body canon has retired no longer returns through an unflipped copy on a perspective
-  unless `include_superseded=true`.
+- **One entry is one result.** An entry is a body at a path. Held on several refs, it returns
+  once, canon's row standing for it, with `holders`. The same body at another path is another
+  entry and keeps its own name. An entry canon has retired no longer returns through an unflipped
+  copy on a perspective unless `include_superseded=true`; an entry moved by supersession is found
+  at its live path; and when every match was withheld this way, the answer's note says so.
+- **A full answer.** Copies and retired editions leave the answer after the legs return, so the
+  legs are asked again, for more, until the answer holds `limit` results or neither leg has more.
 - **Additive on the wire.** `entry_search` takes `tags` (entries carrying every tag; with no
   `query`, a listing) and `query` becomes optional; an empty question and an unknown `scope` are
-  refused with the fix. Each result gains `match`, the matching passage as `preview`, `holders`
-  when more than one, and `similarity` when the meaning leg scored it. `score` is now the fused
-  rank value: it orders one result list and means nothing across lists.
+  refused with the fix. Each result gains `match`, `holders` when more than one ref holds the
+  entry, and `similarity` when the meaning leg scored it. For a word match `preview` is the
+  passage that matched; for a meaning, tag, or approximate match it is the entry's opening.
+  `score` is now the fused rank value. The order of the list is the ranking (a name first);
+  `score` compares results of the same `match` in one list and means nothing across lists.
 - **The index keeps itself.** Three triggers on `map_entries` mirror every write into the word
   index, so a process running older code still feeds it; every start levels the two tables. An
   index from before this change fills on first open (0.6 s for 2,177 rows) with no `reindex`.
-  `map_entries` gains `body_hash`.
-- Test: `search_test.py` (Repose's table as the fixture; the merge; upkeep; the wire).
+  `map_entries` gains `body_hash`; a row written by older code lacks it, and the next search fills
+  it, so both entry rules hold without a restart.
+- **A tag in any script.** Tags are stored in their own letters, so a tag is a name whatever its
+  script, and the `tags` filter matches a tag that JSON would escape (a non-ASCII letter, a quote,
+  a backslash). Rows older code wrote with `\uXXXX` escapes filter at once and are rewritten at the
+  next start. A query is read as the tokenizer reads an entry: decomposed accents and a capital
+  such as `İ` no longer split a word.
+- **Fixed: two reads at the same moment could exchange rows.** The map index and the audit log
+  each share one SQLite connection across handler threads, and Python's statement cache gave two
+  threads asking the same question one prepared statement. Overlapping calls could fail
+  (`InterfaceError`) or return another caller's rows: from the audit log, another seat's canon
+  cursor or read receipts. Present in 0.3.0, where it needed two reads inside the same
+  fraction of a millisecond; a search runs several statements, which made it near-certain for two
+  overlapping searches. Both connections now open with `cached_statements=0`.
+- **Fixed: `message_inbox` for a seat whose name JSON escapes** (a non-ASCII letter, a quote). The
+  SQL prefilter looked for the raw name in the escaped column and never matched.
+- Test: `search_test.py` (Repose's table as the fixture; the merge; a full answer; upkeep; two
+  searches at once; the wire). `audit_test.py` and `map_index_test.py` each run two readers at once.
 
 ## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
 

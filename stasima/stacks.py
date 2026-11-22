@@ -809,10 +809,11 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                        tags: list[str] | None = None) -> dict:
             """Finds entries by their words: the query as a name in a title, tag, or path ranks first
             (`match='name'`), then entries with every word, then any word. `mode` says whether this
-            deployment also matches by meaning. Returns attributed pointers with the matching passage
-            as `preview`; one body on several refs returns once with `holders`. `scope`: `canon`,
-            `mine`, or `all`. `tags` keeps entries carrying every tag, with or without a query.
-            Superseded entries are excluded unless `include_superseded=true`. Class: replica."""
+            deployment also matches by meaning. Returns attributed pointers, best first; a word match
+            carries the passage that matched as `preview`. One entry held on several refs returns
+            once with `holders`. `scope`: `canon`, `mine`, or `all`. `tags` keeps entries carrying
+            every tag, with or without a query. Superseded entries are excluded unless
+            `include_superseded=true`. Class: replica."""
             if scope not in ("all", "canon", "mine"):
                 raise Denied(f"scope must be 'all', 'canon', or 'mine', got {scope!r}")
             if not lexical.words(query) and not [t for t in (tags or []) if t and t.strip()]:

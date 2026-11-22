@@ -8,6 +8,7 @@ import os
 import subprocess as sp
 import sys
 import tempfile
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from stasima.local_capstore import LocalCapStore, Identity
@@ -74,4 +75,38 @@ audit.conn.commit()
 print("  verify_against_anchor (tampered):", verify_against_anchor(store, audit))
 assert verify_against_anchor(store, audit) is False
 
-print("\nOK -- chain, read-state, reconcile, and git-anchored tamper-evidence all verified.")
+# ============================================================ 4. two readers at the same moment
+print("\n== two seats read the log at once ==")
+shared = SqliteAuditLog(":memory:")
+seats = [f"seat{n:03d}" for n in range(200)]
+for s in seats:
+    for k in range(3):
+        shared.append(s, "canon_reconcile", result_oid=f"{s}-oid-{k}")     # the seat's canon cursor
+        shared.append_read(s, f"messages/for-{s}-{k}.md")
+alone = {s: shared.latest(op="canon_reconcile", actor=s) for s in seats}
+wrong, gate = [], threading.Barrier(2)
+
+
+def reader(offset):
+    for n in range(100):
+        s = seats[offset + n]
+        for _ in range(10):
+            gate.wait()
+            try:
+                cursor = shared.latest(op="canon_reconcile", actor=s)
+                seen = shared.is_read(s, f"messages/for-{s}-1.md")
+                mine = shared.events(op="read_receipt", actor=s)
+            except Exception as err:                                      # noqa: BLE001 — any failure is the finding
+                wrong.append((s, repr(err)))
+                continue
+            if cursor != alone[s] or not seen or len(mine) != 3 or any(e["actor"] != s for e in mine):
+                wrong.append((s, "another seat's answer"))
+
+
+pair = [threading.Thread(target=reader, args=(o,)) for o in (0, 100)]
+[th.start() for th in pair]
+[th.join() for th in pair]
+print("  2000 paired reads, wrong or failed:", len(wrong))
+assert not wrong, (len(wrong), wrong[:3])
+
+print("\nOK -- chain, read-state, reconcile, git-anchored tamper-evidence, and readers at once all verified.")
