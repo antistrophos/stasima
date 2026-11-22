@@ -226,9 +226,13 @@ class SqliteMapIndex(MapIndex):
         # fleet-safety (the HTTP era): the connection crosses handler threads. The index is a
         # rebuildable CACHE, so a raced write costs a reindex, not truth — but cross-thread use
         # without the flag raises immediately, and the write lock keeps rows whole. Readers ride
-        # unlocked (sqlite serializes statement-level access on one connection).
+        # unlocked: SQLite serializes calls on one connection, and each statement is its own.
+        # `cached_statements=0` is what makes the second half true. The module's statement cache is
+        # keyed by SQL text, so with it two threads asking the same question share ONE prepared
+        # statement, and one rebinds it while the other steps it: errors, or the other caller's
+        # rows (measured, before this argument).
         import threading
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False, cached_statements=0)
         self.write_lock = threading.Lock()
         self.conn.row_factory = sqlite3.Row
         from .audit_log import _wal

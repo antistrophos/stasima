@@ -78,9 +78,12 @@ class SqliteAuditLog(AuditLog):
         # fleet-safety (the HTTP era serves every seat from ONE process): the connection is shared
         # across handler threads, and append is a read-modify-write chain (seq, prev_hash, INSERT)
         # — the lock keeps the hash chain linear; a race here would FORK the chain, which verify()
-        # would catch but never forgive
+        # would catch but never forgive. Readers ride unlocked, and `cached_statements=0` is what
+        # makes that safe: the module's statement cache is keyed by SQL text, so with it two
+        # threads asking the same question (`latest`, `is_read`) share ONE prepared statement and
+        # one can be handed the other's row — another seat's canon cursor (measured, before this).
         import threading
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False, cached_statements=0)
         self._lock = threading.Lock()
         self.conn.row_factory = sqlite3.Row
         _wal(self.conn, db_path)   # cross-process safety: the fleet service, cockpit, and CLI all

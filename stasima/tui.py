@@ -212,6 +212,9 @@ def _proposals(config):
         print(RED("✗ not landed — " + err)); return
     print(GREEN(f"\n✓ landed → {res['display']}   ({res['landed'][:8]})   "
                 f"anchored {str(res.get('anchor', ''))[:8]}"))
+    for w in res.get("warnings") or []:        # canon moved; a later step did not finish
+        where = f" for {w['path']}" if w.get("path") else ""
+        print(YELLOW(f"  ! the land stands, but step '{w['step']}' failed{where}: {w['error']}"))
 
 
 def _inbox(config):

@@ -439,9 +439,11 @@ class LocalCapStore:
         return self._commit_result(new, ref)
 
     def changed_paths(self, a: Oid, b: Oid) -> list[str]:
-        """Paths that differ between two commits — the canon diff an instance reconciles with."""
-        rc, out, _ = self._run("diff", "--name-only", a, b)
-        return out.decode().split() if rc == 0 else []
+        """Paths that differ between two commits — the canon diff an instance reconciles with.
+        Read with -z: one path per NUL, as git holds it. Split on whitespace and a path with a space
+        becomes two paths that do not exist; without -z git also quotes a path outside ASCII."""
+        rc, out, _ = self._run("diff", "-z", "--name-only", a, b)
+        return [p for p in out.decode("utf-8", "replace").split("\0") if p] if rc == 0 else []
 
     def _diff_status(self, a: Oid, b: Oid):
         """(added, removed, modified) going a -> b. 'removed' is the load-bearing one: a path that

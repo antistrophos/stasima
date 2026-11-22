@@ -219,7 +219,11 @@ def run(args) -> dict:
                 "note": "content refs + audit snapshot pushed; TOTP secret NOT sent (re-provision on restore)"}
 
     if args.cmd == "reindex":
-        return {"reindexed": reindex_from_git(store, index, embedder)}
+        failed = []
+        out = {"reindexed": reindex_from_git(store, index, embedder, failed=failed)}
+        if failed:                                   # set aside and named; the rest is indexed
+            out["failed"] = failed
+        return out
 
     if args.cmd == "proposals":
         return {"proposals": proposal_statuses(store)}

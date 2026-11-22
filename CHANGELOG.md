@@ -1,6 +1,34 @@
 ## Unreleased
 
-(nothing yet)
+### Fixed
+
+Four defects in 0.3.0, and one hardening that follows from them. None was triggered on the live
+deployment; each is reproduced by a test.
+
+- **A land that has moved canon is never reported as failed.** The land routine had no handler
+  after the merge. When a later step raised (the index step, in both cases below), canon had
+  moved and the state tag was set, but no audit anchor was written and the caller was told
+  "not landed". Now everything before the merge may refuse a land and nothing after it may:
+  each later step (audit row, state tag, index, anchor) runs on its own, and a step that fails is
+  named in `warnings` on the land's result, in the cockpit, and on stderr. `OPERATIONS.md` says
+  what to do for each. `land_resilience_test.py`.
+- **A title or a subject that begins `[` and ends `]`.** The envelope parser read every bracketed
+  value back as a list, for any field. `[draft] A rule [v2]` was accepted at the write, made the
+  land's index step raise, and stopped every later `reindex` at that entry with the index already
+  cleared. Only the list fields (`entries.LIST_KEYS`) read back as lists now.
+- **A path that holds a space.** The store read a land's changed paths by splitting git's output
+  on whitespace, so `technical/two words.md` became two paths that do not exist. It now reads
+  them NUL-separated (`diff -z`), which also takes a path outside ASCII as git holds it.
+- **`reindex` sets one entry aside instead of stopping** (the hardening). An entry the index cannot take is named
+  in `failed` and on stderr, and every other entry is indexed. Before, the rebuild cleared the
+  index and stopped at the first such entry.
+- **Two reads at the same moment could exchange rows.** The map index and the audit log each share
+  one SQLite connection across handler threads. Python's statement cache is keyed by SQL text, so
+  two threads asking the same question shared one prepared statement: one could be handed the
+  other's rows (in the audit log, another seat's canon cursor) or an error. Both connections now
+  open with `cached_statements=0`. Measured before the fix, with two threads released together:
+  189 of 2,000 paired reads wrong or failed on the audit log, 2,815 of 4,000 on the inbox.
+  `audit_test.py`, `map_index_test.py`.
 
 ## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
 

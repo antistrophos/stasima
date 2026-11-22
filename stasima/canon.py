@@ -7,6 +7,8 @@ its story attached), the practitioner's landing routine, and the index rebuild. 
 (cap_server), the cockpit (admin), and the airlock — none of which should have to reach through the
 protocol surface to get at lifecycle machinery.
 """
+import sys
+
 from .entries import parse_entry
 from .local_capstore import LocalCapStore, PERSP_PREFIX, PROP_PREFIX, Identity, RefNotFound
 from .map_index import index_entry
@@ -22,6 +24,16 @@ CHAT_ERA_FREEZE = 0x3B
 
 def _instance_from_ref(ref: str):
     return ref[len(PERSP_PREFIX):] if ref.startswith(PERSP_PREFIX) else None
+
+
+def _set_aside(failed, where: dict, err: Exception) -> None:
+    """One entry the index cannot take is set aside and named; it never costs the entries after it.
+    The index is a cache of git, so the entry itself is whole — only its row is missing. Named on
+    stderr (the service log) always, and in `failed` when the caller gave a list to report from."""
+    row = {**where, "error": f"{type(err).__name__}: {err}"}
+    print(f"stasima: not indexed: {row}", file=sys.stderr)
+    if failed is not None:
+        failed.append(row)
 
 
 def _canon_positions(store: LocalCapStore, canon_tip) -> dict:
@@ -43,10 +55,13 @@ def _canon_positions(store: LocalCapStore, canon_tip) -> dict:
     return positions
 
 
-def reindex_from_git(store: LocalCapStore, index, embedder, *, clear: bool = True) -> int:
+def reindex_from_git(store: LocalCapStore, index, embedder, *, clear: bool = True,
+                     failed: list | None = None) -> int:
     """Rebuild the MAP index from git — the derived-projection invariant, in code. Walks canon +
     every perspective, reads each entry, re-embeds, upserts. Also the canon-indexing-after-landing
-    path and the model-swap / recovery path. Proposals are staging and are not indexed."""
+    path and the model-swap / recovery path. Proposals are staging and are not indexed.
+    An entry the index cannot take is set aside (`failed` receives it) and the walk goes on: the
+    rebuild clears first, so stopping at one entry would leave every later one out of the index."""
     if clear:
         index.clear()
     canon = store.canon_ref
@@ -58,20 +73,24 @@ def reindex_from_git(store: LocalCapStore, index, embedder, *, clear: bool = Tru
         for path in store.list_paths(ref):
             if not path.endswith(".md"):
                 continue
-            envelope, body = parse_entry(store.read_blob(ref, path).decode("utf-8", "replace"))
-            author = _instance_from_ref(ref)
-            if author is None:                       # canon: the envelope's declared origin, else the
-                # path's introducer. The introducer heuristic answers "who PROPOSED" wearing the label
-                # "who authored" — a cross-proposed entry (carried toward canon by another seat, with
-                # origin_author stamped by the propose guard) keeps its true author here.
-                hist = store.history(ref, path)
-                author = envelope.get("origin_author") or (hist[-1]["author"] if hist else "")
-                # canon rows carry canon's own coordinates — the envelope keeps the authoring ones
-                envelope = dict(envelope)
-                envelope["instance_depth"] = canon_pos.get(path, 0)
-            index_entry(index, embedder, ref=ref, path=path, is_canon=(ref == canon),
-                        authoring_instance=author, content_oid=store.blob_oid(ref, path),
-                        envelope=envelope, body=body)
+            try:
+                envelope, body = parse_entry(store.read_blob(ref, path).decode("utf-8", "replace"))
+                author = _instance_from_ref(ref)
+                if author is None:                   # canon: the envelope's declared origin, else the
+                    # path's introducer. The introducer heuristic answers "who PROPOSED" wearing the
+                    # label "who authored" — a cross-proposed entry (carried toward canon by another
+                    # seat, with origin_author stamped by the propose guard) keeps its true author here.
+                    hist = store.history(ref, path)
+                    author = envelope.get("origin_author") or (hist[-1]["author"] if hist else "")
+                    # canon rows carry canon's own coordinates — the envelope keeps the authoring ones
+                    envelope = dict(envelope)
+                    envelope["instance_depth"] = canon_pos.get(path, 0)
+                index_entry(index, embedder, ref=ref, path=path, is_canon=(ref == canon),
+                            authoring_instance=author, content_oid=store.blob_oid(ref, path),
+                            envelope=envelope, body=body)
+            except Exception as err:                 # noqa: BLE001 — any one entry, for any reason
+                _set_aside(failed, {"ref": ref, "path": path}, err)
+                continue
             n += 1
     return n
 
@@ -172,29 +191,34 @@ def validate_log_entry(store, prepared, origin: int = CHAT_ERA_FREEZE) -> str:
     return seq
 
 
-def index_land(store, index, embedder, landed_oid: str) -> int:
+def index_land(store, index, embedder, landed_oid: str, failed: list | None = None) -> int:
     """Index ONLY what a land changed — the gate's hot path. A full reindex is O(corpus) and the
     practitioner waits on it at every stamp; a land knows its own changed paths, so the steady
     state is O(change). Position semantics match `_canon_positions` exactly: the land's paths take
     the new spine position (newest touch wins), and every older row's position is already stable
     (oldest = 1 anchoring means adding a commit shifts nothing). `reindex_from_git` remains the
-    recovery / migration / model-swap path."""
+    recovery / migration / model-swap path. An entry the index cannot take is set aside (`failed`
+    receives it) and the rest of the land is indexed."""
     changed = store.changed_paths(f"{landed_oid}^1", landed_oid)
     spine_pos = len(store.rev_list(landed_oid))          # first-parent spine length = this land's position
     n = 0
     for path in changed:
         if not path.endswith(".md"):
             continue
-        envelope, body = parse_entry(store.read_blob_at(landed_oid, path).decode("utf-8", "replace"))
-        author = envelope.get("origin_author")
-        if not author:                                    # the introducer, as reindex derives it
-            hist = store.history(store.canon_ref, path)
-            author = hist[-1]["author"] if hist else ""
-        env2 = dict(envelope)
-        env2["instance_depth"] = spine_pos
-        index_entry(index, embedder, ref=store.canon_ref, path=path, is_canon=True,
-                    authoring_instance=author, content_oid=store.blob_oid(store.canon_ref, path),
-                    envelope=env2, body=body)
+        try:
+            envelope, body = parse_entry(store.read_blob_at(landed_oid, path).decode("utf-8", "replace"))
+            author = envelope.get("origin_author")
+            if not author:                                # the introducer, as reindex derives it
+                hist = store.history(store.canon_ref, path)
+                author = hist[-1]["author"] if hist else ""
+            env2 = dict(envelope)
+            env2["instance_depth"] = spine_pos
+            index_entry(index, embedder, ref=store.canon_ref, path=path, is_canon=True,
+                        authoring_instance=author, content_oid=store.blob_oid(store.canon_ref, path),
+                        envelope=env2, body=body)
+        except Exception as err:                          # noqa: BLE001 — any one entry, for any reason
+            _set_aside(failed, {"ref": store.canon_ref, "path": path}, err)
+            continue
         n += 1
     return n
 
@@ -203,13 +227,34 @@ def land_and_record(store, index, embedder, audit, prepared, approval, *,
                     origin: int = CHAT_ERA_FREEZE) -> dict:
     """The practitioner's promotion routine — NOT a model-facing tool (landing is the human gate).
     Validates the proposal's log entry + seq monotonicity, lands the approved merge, audit-logs it,
-    tags the merge commit state/<seq>, reindexes, and anchors the audit head into git."""
+    tags the merge commit state/<seq>, reindexes, and anchors the audit head into git.
+
+    Everything before `land_merge` may refuse the land. Nothing after it may: canon has moved, and
+    an error raised from here would tell the practitioner "not landed" about a land that happened.
+    So each later step runs on its own. A step that fails is named in `warnings` and on stderr,
+    and the steps after it still run (the audit anchor is written even when the index is not)."""
     seq = validate_log_entry(store, prepared, origin)
     r = store.land_merge(prepared, approval)
-    audit.append(approval.approved_by, "land_merge", target_ref=prepared.into,
-                 op_id=f"land-{r.oid[:12]}", result_oid=r.oid,
-                 detail={"proposal": prepared.proposal_ref, "seq": seq})
-    store.tag(f"state/{seq}", r.oid)
-    index_land(store, index, embedder, r.oid)   # O(change), not O(corpus) — the gate stops waiting
-    anchor = anchor_audit_head(store, audit)
-    return {"landed": r.oid, "seq": seq, "display": seq_display(int(seq, 16)), "anchor": anchor}
+    warnings = []
+
+    def step(name, fn):
+        try:
+            return fn()
+        except Exception as err:                          # noqa: BLE001 — see the docstring
+            warnings.append({"step": name, "error": f"{type(err).__name__}: {err}"})
+            print(f"stasima: land {r.oid[:12]} has moved canon; step '{name}' failed: "
+                  f"{type(err).__name__}: {err}", file=sys.stderr)
+            return None
+
+    step("audit", lambda: audit.append(approval.approved_by, "land_merge", target_ref=prepared.into,
+                                       op_id=f"land-{r.oid[:12]}", result_oid=r.oid,
+                                       detail={"proposal": prepared.proposal_ref, "seq": seq}))
+    step("tag", lambda: store.tag(f"state/{seq}", r.oid))
+    unindexed = []
+    step("index", lambda: index_land(store, index, embedder, r.oid, failed=unindexed))  # O(change)
+    warnings.extend({"step": "index", "path": f["path"], "error": f["error"]} for f in unindexed)
+    anchor = step("anchor", lambda: anchor_audit_head(store, audit))
+    out = {"landed": r.oid, "seq": seq, "display": seq_display(int(seq, 16)), "anchor": anchor}
+    if warnings:
+        out["warnings"] = warnings
+    return out

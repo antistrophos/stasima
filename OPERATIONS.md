@@ -136,6 +136,8 @@ Then `reindex` once to re-embed the corpus. Swapping models is always a clean re
 - **Lost or corrupted `map_index.sqlite`.** Delete it and `reindex` — it's a cache.
 - **`verify` reports a bad seq, or audit-vs-anchor is false.** The `audit.sqlite` was altered or corrupted out of band. Restore it from backup; the git-anchored head tells you the last known-good checkpoint.
 - **A committed op has no audit entry** (e.g., the server died mid-write). `reconcile` backfills it from git.
+- **A land prints a warning, or its result carries `warnings`.** The land stands: canon moved and the proposal is landed. A step after the merge did not finish, and the warning names it. `index` with a `path` → that entry is in git but not in the search index; fix the cause and `reindex`. `audit` → `reconcile`. `anchor` → `anchor`. `tag` → the state tag is missing, so the next land would reuse the seq: set it by hand before the next land (`git tag state/<seq> <landed oid>` in the bare repo).
+- **`reindex` returns `failed`.** Each listed entry was set aside and every other entry is indexed. The entry is whole in git; the `error` says why the index refused it.
 - **Server won't start.** Check the config: `git_dir` must point at the bare repo; if `embed_backend = "local-server"`, `embed_url` is required. Config errors print a specific message.
 - **Something feels slow.** `server_stats` (any connected instance can call it) is the server-git
   boundary's complete ledger since the server spawned: per-git-verb call counts and total/avg/max
