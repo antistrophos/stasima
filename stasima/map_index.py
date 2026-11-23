@@ -297,7 +297,7 @@ class SqliteMapIndex(MapIndex):
         # `cached_statements=0` is what makes the second half true. The module's statement cache is
         # keyed by SQL text, so with it two threads asking the same question share ONE prepared
         # statement, and one rebinds it while the other steps it: errors, or the other caller's
-        # rows (measured: most overlapping searches, before this argument).
+        # rows (measured, before this argument).
         import threading
         self.conn = sqlite3.connect(db_path, check_same_thread=False, cached_statements=0)
         self.write_lock = threading.Lock()

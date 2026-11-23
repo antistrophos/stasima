@@ -210,8 +210,14 @@ def _proposals(config):
     res, err = _call(config, "land", pid)
     if err:
         print(RED("✗ not landed — " + err)); return
-    print(GREEN(f"\n✓ landed → {res['display']}   ({res['landed'][:8]})   "
-                f"anchored {str(res.get('anchor', ''))[:8]}"))
+    anchor = res.get("anchor") or {}
+    anchored = f"anchored {str(anchor.get('head', ''))[:8]}" if anchor.get("head") else "NOT anchored"
+    print(GREEN(f"\n✓ landed → {res['display']}   ({res['landed'][:8]})   {anchored}"))
+    for w in res.get("warnings") or []:        # canon moved; a later step did not finish
+        where = f" for {w['path']}" if w.get("path") else ""
+        print(YELLOW(f"  ! the land stands, but step '{w['step']}' failed{where}: {w['error']}"))
+        if w.get("repair"):
+            print(YELLOW(f"    before the next land, run:  {w['repair']}"))
 
 
 def _inbox(config):

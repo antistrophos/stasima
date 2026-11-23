@@ -147,6 +147,12 @@ Then `reindex` once to re-embed the corpus. Swapping models is always a clean re
 - **Lost or corrupted `map_index.sqlite`.** Delete it and `reindex` — it's a cache.
 - **`verify` reports a bad seq, or audit-vs-anchor is false.** The `audit.sqlite` was altered or corrupted out of band. Restore it from backup; the git-anchored head tells you the last known-good checkpoint.
 - **A committed op has no audit entry** (e.g., the server died mid-write). `reconcile` backfills it from git.
+- **A land prints a warning, or its result carries `warnings`.** The land stands: canon moved and the proposal is landed. A step after the merge did not finish, and the warning names it.
+  - `index` with a `path`: that entry is in git but not in the search index. Fix the cause and `reindex`. `index` with no path: nothing of the land was indexed; `reindex`.
+  - `anchor`: run `anchor`.
+  - `tag`: the state tag is missing, so canon's seq did not advance. Run the command the warning gives (`git --git-dir <repo> tag state/<seq> <landed oid>`). Until you do, the next land is refused: it would reuse the seq and rewrite this land's log entry.
+  - `audit`: the row that records who approved the land was not written, after three tries. Nothing rebuilds it; `reconcile` does not. `proposals` still shows the proposal as landed, because that is read from git. The airlock reads it as staged until its ceiling passes, and `canon_state` leaves the land out of its history. Keep the warning's text: it is the record of the approval.
+- **`reindex` exits with "not indexed and set aside".** Each entry it names was set aside, and every other entry is indexed. The entry is whole in git; the error says why the index refused it. If the embedder is down, `reindex` stops before it clears anything.
 - **Server won't start.** Check the config: `git_dir` must point at the bare repo; if `embed_backend = "local-server"`, `embed_url` is required. Config errors print a specific message.
 - **Something feels slow.** `server_stats` (any connected instance can call it) is the server-git
   boundary's complete ledger since the server spawned: per-git-verb call counts and total/avg/max
