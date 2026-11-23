@@ -98,7 +98,7 @@ A deployment can copy entries from another Stasima repository on the same machin
 
 2. **A seat copies** by giving `copy_from` in place of a body, on `entry_write` (to its own perspective) or `proposal_append_entry` (toward canon): `copy_from="Rehearsal:technical/skill-v2.md"` for a canon entry, `copy_from="Rehearsal/Hesper:technical/draft.md"` for an entry on a seat's perspective, with `body=""`. The seat chooses the new path. It may give a new title and tags, or leave them empty to take the source's; the type is the source's unless the call gives one other than the default `kno`.
 
-3. **You see the source at the gate.** `preview` (and the cockpit's proposal screen) lists each copied entry under `copies`: the source's name, the commit it was read at, the path, and the author on the source's record. The landed entry carries the same in its `provenance` field, with the earlier editions the text had at the source (CONTENT-MODEL, "Provenance").
+3. **You see the source at the gate.** `preview` (and the cockpit's proposal screen) lists each copied entry under `copies`: the source's name, the commit it was read at, the path, and the author on the source's record. The landed entry carries that address in its `provenance` field, in front of any path the source's entry already carried (CONTENT-MODEL, "Provenance").
 
 Only a living entry is copied. A retired one is refused and the refusal names its living edition. The copy's body is the source's exactly, and its author is the one the source records: no call can set either. Nothing in a source changes, and nothing links the two deployments afterward: a copy holds a pinned address, not a subscription.
 

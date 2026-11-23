@@ -19,23 +19,25 @@
   read strips it, and an indented first line is a code block). A source file that is not valid
   UTF-8 is refused, not altered. A byte-order mark does not hide the envelope, and a file with no
   envelope is refused.
-- **`provenance`: a new envelope field that the server writes.** No call can supply it. Each item
-  is one ancestor of the entry, as `<depth> <relation> <address>`. The address is
-  `<Source>@<commit>:<path>` (or `<Source>/<Seat>@<commit>:<path>`), with the full commit id of the
-  source ref when the copy was made: a pin, never a range. The relation is `copy of` (the same
-  body, held there) or `supersedes` (the earlier edition it replaced there). The depth nests the
-  list: depth 1 is the entry's own source, and an item at depth n+1 describes the nearest item
-  above it at depth n. A copy of a copy keeps the whole list one level deeper, so the sourcing
-  holds through any number of copies. The envelope keeps one value per line.
+- **`provenance`: a new envelope field that the server writes.** No call can supply it. It is a
+  path, read like an AS path: every place this same text has been held, the nearest first and the
+  origin last. Each item is one address, `<Source>@<commit>:<path>` (or
+  `<Source>/<Seat>@<commit>:<path>` for an entry on a seat's perspective), with the full commit id
+  of the source ref when the copy was made: a pin, never a range. A copy puts the address it read
+  at the front of the path its source carried and changes nothing else. So every address in the
+  path holds the entry's body exactly, and the sourcing holds through any number of copies.
 
   ```
-  provenance: [1 copy of Rehearsal@9b9c767c…:technical/orientation/syntax-v4.md, 2 supersedes Rehearsal@9b9c767c…:technical/orientation/syntax-v3.md, 3 supersedes Rehearsal@9b9c767c…:technical/orientation/syntax-v2.md, 4 supersedes Rehearsal@9b9c767c…:technical/orientation/syntax.md]
+  provenance: [Rehearsal@9b9c767c…:technical/orientation/syntax-v4.md]
   ```
 
-  So a successor canon can hold only the finished text, at the path the first edition had, and
-  still show the editions that came before it. The earlier editions are found from either side
-  of a retirement pair: one pair in Rehearsal names its successor and is not named back. A chain
-  is listed to 64 editions deep; the last address listed leads to the rest.
+  A name change shows in the path: that entry is `technical/orientation/syntax.md` where it lands
+  and was `syntax-v4.md` where it came from. The path is written at every hop, changed or not, so
+  each address resolves alone. What the entry replaced at its source is not listed: a retirement
+  is an act in a canon and its record stays there, one read from the first address. (A first form
+  listed those editions too, with a depth and a relation on each item. A reader given no rule
+  took every item as a statement about the entry itself. The list now holds only items of which
+  that is true.)
 - **The true author travels with the text.** The server writes `origin_author` from the source's
   record: the seat for a perspective; for canon, the seat on the commit that first wrote that body
   at that path (git's author field; an entry seeded at the bootstrap is the practitioner's); and

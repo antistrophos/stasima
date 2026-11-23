@@ -7,30 +7,26 @@ that gives `copy_from` in place of a body has the server read the body from the 
 never passes through the seat and cannot change on the way. The server reads; it never writes to a
 source.
 
-The copy carries `provenance`: a list the server writes and no seat can supply. Each item is one
-ancestor of the entry, as
+The copy carries `provenance`: a list the server writes and no seat can supply. It is a path, read
+like an AS path: every place this same text has been held, the nearest first, the origin last.
 
-    <depth> <relation> <address>
+    provenance: [Debut@4f1d…:technical/orientation/syntax.md, Rehearsal@9b9c…:technical/orientation/syntax-v4.md]
 
-`address` is `<Source>@<commit>:<path>` for a canon entry and `<Source>/<Seat>@<commit>:<path>` for
-an entry on a seat's perspective. The commit is the full object id of the source ref's tip when the
-copy was made: a pin, never a range. `relation` is `copy of` (the same body, held there) or
-`supersedes` (the earlier edition it replaced there). `depth` nests the list: depth 1 is this
-entry's own source, and an item at depth n+1 describes the nearest item above it at depth n. So
+Each item is one address: `<Source>@<commit>:<path>` for a canon entry, `<Source>/<Seat>@<commit>:<path>`
+for an entry on a seat's perspective. The commit is the full object id of the source ref's tip when
+the copy was made: a pin, never a range. A copy puts the address it read at the front of the list
+its source carried, and changes nothing else. So every address in the list holds this entry's body
+exactly, and there is nothing to read between the items: no depth, no relation, no rule.
 
-    provenance: [1 copy of Rehearsal@9b9c…:technical/skill-v2.md, 2 supersedes Rehearsal@9b9c…:technical/skill.md]
+A name change shows in the path: the entry above is `syntax.md` now and was `syntax-v4.md` where it
+came from. The path is written at every hop, changed or not, so that each address resolves alone.
 
-reads: this entry is a copy of skill-v2 in Rehearsal, which superseded skill there. A copy of a
-copy keeps the whole list one level deeper, so the sourcing survives any number of copies. The
-envelope stays one value per line; the nesting is in the numbers.
-
-Only the living edition is copied. Its earlier editions stay at the source and are named here, each
-at the same pinned commit, where the source still holds them.
+Only the living edition is copied, and what it replaced is not listed here: a retirement is an act
+in a canon, and its record stays in that canon. The first address leads to it.
 """
 from __future__ import annotations
 
 import re
-import threading
 
 from .authz import Denied
 from .entries import parse_entry
@@ -39,7 +35,7 @@ from .local_capstore import CapStoreError, LocalCapStore, PathNotFound, PERSP_PR
 # The kinds of entry the server writes as the record of an act. They stay where the act happened.
 SERVER_KINDS = {"msg": "a message", "vap": "a vantage", "reconciliation": "a reconcile report"}
 
-_ITEM = re.compile(r"(\d+) (.+)\Z", re.S)
+_ADDRESS = re.compile(r"(?P<source>[^/@]+)(?:/(?P<seat>[^@]+))?@(?P<commit>[0-9a-f]{40}):(?P<path>.+)\Z", re.S)
 _HOPS = 64   # a retirement chain longer than this is followed no further (and a cycle ends there)
 
 
@@ -57,6 +53,10 @@ def _quote(name: str) -> str:
     return name.replace("%", "%25").replace(",", "%2C").replace("]", "%5D")
 
 
+def _unquote(name: str) -> str:
+    return name.replace("%2C", ",").replace("%5D", "]").replace("%25", "%")
+
+
 def address(source: str, seat, commit: str, path: str) -> str:
     return f"{source}{'/' + _quote(seat) if seat else ''}@{commit}:{_quote(path)}"
 
@@ -65,7 +65,7 @@ def _decode(raw: bytes, *, strict: bool) -> str:
     """A source file as text. A byte-order mark is not part of the entry: with it the first line is
     not `---`, the envelope reads as empty, and every rule that rests on the envelope is skipped."""
     text = raw.decode("utf-8") if strict else raw.decode("utf-8", "replace")
-    return text[1:] if text.startswith("\ufeff") else text
+    return text[1:] if text.startswith("﻿") else text
 
 
 def exact_body(text: str) -> str:
@@ -108,67 +108,38 @@ class Copied:
 
 
 class CopySources:
-    """The sources this deployment may copy from. Read-only: ref resolution, tree listing, blob reads."""
+    """The sources this deployment may copy from. Read-only: ref resolution, a ref listing, blob
+    reads and one path's history."""
 
     def __init__(self, sources: dict | None = None, *, own_name: str = "", git_timeout: float = 20.0):
         self._dirs = dict(sources or {})
         self._own = own_name
         self._timeout = git_timeout
         self._stores: dict = {}
-        self._trees: dict = {}      # (source, commit) -> {path: brief envelope}
-        self._lock = threading.Lock()
 
     def names(self) -> list:
         return sorted(self._dirs)
 
     def _store(self, source: str) -> LocalCapStore:
-        with self._lock:
-            s = self._stores.get(source)
-            if s is None:
-                s = self._stores[source] = _SourceStore(self._dirs[source], approvers=set(),
-                                                        git_timeout=self._timeout)
-            return s
+        s = self._stores.get(source)
+        if s is None:
+            s = self._stores.setdefault(source, _SourceStore(self._dirs[source], approvers=set(),
+                                                             git_timeout=self._timeout))
+        return s
 
-    def _tree(self, source: str, store: LocalCapStore, commit: str) -> dict:
-        """Every entry in the source's tree at `commit`, reduced to the fields a chain needs, with each
-        entry's earlier editions resolved from both sides of the pair. Built once per pinned commit."""
-        key = (source, commit)
-        with self._lock:
-            hit = self._trees.get(key)
-        if hit is not None:
-            return hit
-        tree = {}
-        for path in store.list_paths(commit):
-            if not path.endswith(".md"):
-                continue
-            env, _ = parse_entry(_decode(store.read_blob_at(commit, path), strict=False))
-            tree[path] = {"status": env.get("status", ""),
-                          "supersedes": _paths(env.get("supersedes")),
-                          "superseded_by": _paths(env.get("superseded_by")),
-                          "provenance": env.get("provenance") if isinstance(env.get("provenance"), list) else [],
-                          "earlier": []}
-        for path, e in tree.items():           # the edge the new edition declares
-            for x in e["supersedes"]:
-                if x in tree and x != path and x not in e["earlier"]:
-                    e["earlier"].append(x)
-        for path in sorted(tree):               # the edge the retired edition declares (the one the server follows)
-            e = tree[path]
-            if e["status"] == "superseded" and e["superseded_by"]:
-                nxt = e["superseded_by"][0]
-                if nxt in tree and nxt != path and path not in tree[nxt]["earlier"]:
-                    tree[nxt]["earlier"].append(path)
-        with self._lock:
-            if len(self._trees) > 64:
-                self._trees.clear()
-            self._trees[key] = tree
-        return tree
+    @staticmethod
+    def _envelope(store: LocalCapStore, commit: str, path: str):
+        try:
+            return parse_entry(_decode(store.read_blob_at(commit, path), strict=False))[0]
+        except PathNotFound:
+            return None
 
     @staticmethod
     def _first_writer(store: LocalCapStore, commit: str, path: str, body: str) -> str:
         """The seat on the commit that first wrote THIS body at this path, in the history that leads
         to `commit`. Not the path's introducer: a proposal can replace a path's body before it lands,
         and the text is then the second seat's. A commit the server made in its own name (author and
-        committer the same: a bootstrap) names no seat."""
+        committer the same) names no seat."""
         author, want = "", body.strip()
         for row in store.history(commit, path):          # newest first
             try:
@@ -180,35 +151,20 @@ class CopySources:
             author = "" if row["author"] == row.get("committer") else row["author"]
         return author
 
-    @staticmethod
-    def _living(tree: dict, path: str) -> str:
-        """The end of the retirement chain from `path`. The caller checks that it is living: a chain
-        can end on a retired entry whose successor is not in the tree, or turn back on itself."""
+    def _living(self, store: LocalCapStore, commit: str, path: str):
+        """(the end of the retirement chain from `path`, whether that end is living). A chain can end
+        on a retired entry whose successor is not in the tree, or turn back on itself."""
         seen = {path}
         for _ in range(_HOPS):
-            e = tree.get(path)
-            if not e or e["status"] != "superseded" or not e["superseded_by"]:
-                break
-            nxt = e["superseded_by"][0]
-            if nxt in seen or nxt not in tree:
-                break
-            seen.add(nxt)
-            path = nxt
-        return path
-
-    def _ancestry(self, tree, source, seat, commit, path, depth, seen, out):
-        e = tree[path]
-        for item in e["provenance"]:            # it was itself a copy: its sources sit one level under it
-            m = _ITEM.match(str(item).strip())
-            out.append(f"{depth + int(m.group(1))} {m.group(2)}" if m else f"{depth + 1} {str(item).strip()}")
-        if depth >= _HOPS:
-            return
-        for earlier in e["earlier"]:
-            if earlier in seen:
-                continue
-            seen.add(earlier)
-            out.append(f"{depth + 1} supersedes {address(source, seat, commit, earlier)}")
-            self._ancestry(tree, source, seat, commit, earlier, depth + 1, seen, out)
+            env = self._envelope(store, commit, path)
+            if env is None or env.get("status") != "superseded":
+                return path, env is not None
+            nxt = _paths(env.get("superseded_by"))
+            if not nxt or nxt[0] in seen or self._envelope(store, commit, nxt[0]) is None:
+                return path, False
+            seen.add(nxt[0])
+            path = nxt[0]
+        return path, False
 
     def read(self, copy_from: str) -> Copied:
         source, seat, path = parse_copy_from(copy_from)
@@ -235,12 +191,13 @@ class CopySources:
                 raise Denied(f"the source {source} has no canon at {store.canon_ref}. A source's canon is read "
                              f"at that ref; check the path in the config's copy_sources, and that the "
                              f"source keeps its canon there.")
-            tree = self._tree(source, store, commit)
-            if path not in tree:
+            try:
+                raw = store.read_blob_at(commit, path)
+            except PathNotFound:
                 raise Denied(f"{where} holds no entry at {path} (at {commit[:12]}). Give the path exactly as "
                              f"the source lists it.")
             try:
-                text = _decode(store.read_blob_at(commit, path), strict=True)
+                text = _decode(raw, strict=True)
             except UnicodeDecodeError:
                 raise Denied(f"{where}:{path} is not valid UTF-8 at the source, so a copy would change its "
                              f"text. Nothing was written.")
@@ -254,22 +211,25 @@ class CopySources:
                 raise Denied(f"{where}:{path} is {kind}: the server's record of an act, which stays where "
                              f"the act happened. copy_from carries authored entries.")
             if env.get("status") == "superseded":
-                living = self._living(tree, path)
-                fix = (f"its living edition there is {where}:{living} — copy that one; its provenance "
-                       f"will name this one" if tree[living]["status"] != "superseded" else
-                       f"its chain ends at {where}:{living}, which is retired too and names no living "
-                       f"edition in the source's tree, so there is no finished text to copy" if living != path else
+                end, living = self._living(store, commit, path)
+                fix = (f"its living edition there is {where}:{end} — copy that one; this one stays "
+                       f"readable at the source" if living else
+                       f"its chain ends at {where}:{end}, which is retired too and names no living "
+                       f"edition in the source's tree, so there is no finished text to copy" if end != path else
                        "it names no living edition in the source's tree, so there is no finished text to copy")
                 raise Denied(f"{where}:{path} is retired at the source; {fix}.")
             if not body.strip():
                 raise Denied(f"{where}:{path} has an empty body; there is nothing to copy.")
+            # the path the source's entry carries: where the text was held before it was held there
+            carried = [str(x).strip() for x in env.get("provenance") or [] if str(x).strip()] \
+                if isinstance(env.get("provenance"), list) else []
             # The true author, from the source's own record. An entry that is itself a copy keeps the
             # author it recorded, and an unknown one stays unknown: the seat that made that copy did
             # not write the text. Otherwise a perspective's entry is its seat's, and a canon entry is
             # the seat on the commit that first wrote this body (git's author field, which a seat's
-            # arguments cannot set; a bootstrap commit names none).
+            # arguments cannot set).
             author = env.get("origin_author") or ""
-            if not author and not env.get("provenance"):
+            if not author and not carried:
                 if seat:
                     author = seat
                 else:
@@ -278,27 +238,24 @@ class CopySources:
                     except CapStoreError:
                         author = ""
             here = address(source, seat, commit, path)
-            items = [f"1 copy of {here}"]
-            self._ancestry(tree, source, seat, commit, path, 1, {path}, items)
         except PathNotFound as e:
             raise Denied(f"{where} could not be read at {path}: {e}")
         except (CapStoreError, OSError) as e:
             raise Denied(f"the source {source} cannot be read ({e.__class__.__name__}: {e}). Its repository "
                          f"is {self._dirs[source]!r} in the config's copy_sources; nothing was written.")
-        return Copied(body=body, envelope=env, provenance=items, origin_author=author, address=here,
+        return Copied(body=body, envelope=env, provenance=[here] + carried, origin_author=author, address=here,
                       source=where, commit=commit, path=path)
 
 
 def read_provenance(items) -> list:
-    """The outline as rows: [{depth, relation, address}], for a reader that wants the structure."""
+    """The path as rows, nearest first: [{source, seat, commit, path}]. An item that is not an address
+    is kept as {"raw": item}: nothing recorded is dropped by a reader."""
     rows = []
     for item in items or []:
-        m = _ITEM.match(str(item).strip())
+        m = _ADDRESS.match(str(item).strip())
         if not m:
+            rows.append({"raw": str(item)})
             continue
-        rest = m.group(2)
-        for rel in ("copy of", "supersedes"):
-            if rest.startswith(rel + " "):
-                rows.append({"depth": int(m.group(1)), "relation": rel, "address": rest[len(rel) + 1:]})
-                break
+        rows.append({"source": m.group("source"), "seat": _unquote(m.group("seat")) if m.group("seat") else None,
+                     "commit": m.group("commit"), "path": _unquote(m.group("path"))})
     return rows

@@ -212,9 +212,8 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         return None
 
     def _copy_of(prov):
-        # the address of an entry's own source, from its provenance
-        first = str(prov[0]) if isinstance(prov, list) and prov else ""
-        return first[len("1 copy of "):] if first.startswith("1 copy of ") else ""
+        # the address an entry was copied from: the first hop of its provenance path
+        return str(prov[0]) if isinstance(prov, list) and prov else ""
 
     def _keep_provenance(envelope, tip, path, body):
         """A re-write of a path builds its envelope again from the call (a retirement is one), and

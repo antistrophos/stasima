@@ -73,15 +73,15 @@ Every deferred analysis reduces to a query over it: "bad base idea vs. bad deriv
 An entry whose body was copied from another canon carries `provenance`. The server writes it; no call can supply it. It is the lineage that crosses a canon's edge, where `references` and `supersedes` cannot follow: they name paths, and a path belongs to one canon.
 
 ```yaml
-provenance: [1 copy of Rehearsal@<commit>:technical/skill-v2.md, 2 supersedes Rehearsal@<commit>:technical/skill.md]
+# an entry in a third canon, copied from Debut, which had copied it from Rehearsal
+provenance: [Debut@<commit>:technical/orientation/syntax.md, Rehearsal@<commit>:technical/orientation/syntax-v4.md]
 origin_author: epode
 ```
 
-- **Each item is one ancestor:** `<depth> <relation> <address>`.
-- **The address** is `<Source>@<commit>:<path>` for a canon entry and `<Source>/<Seat>@<commit>:<path>` for an entry on a seat's perspective. `<Source>` is the name the copying deployment's config gives that repository. `<commit>` is the full id of the source ref's tip when the copy was made. It is a pin: the address names one text forever, and it stays readable for as long as the source repository does. A comma, a closing bracket or a percent sign in a path is written `%2C`, `%5D`, `%25`.
-- **The relation** is `copy of` (the same body, held there) or `supersedes` (the earlier edition it replaced there).
-- **The depth nests the list.** Depth 1 is this entry's own source. An item at depth n+1 describes the nearest item above it at depth n. A copy of a copy keeps the source's whole list one level deeper, so an entry can be copied forward any number of times and still name everything it came from. An entry with a copy source and an earlier edition of its own has two items at one depth.
-- **Only the living edition is copied.** Its earlier editions stay in the source and are named here, each at the same pinned commit, where the source still holds them. A successor canon therefore starts with no retired entries. A chain is listed to 64 editions deep; the last address listed leads to the rest.
+- **It is a path, read like an AS path:** every place this same text has been held, the nearest first, the origin last. A copy puts the address it read at the front of the path its source carried. Nothing else is ever added, so every address in the path holds this entry's body exactly, and an entry can be copied forward any number of times and still name everywhere it has been.
+- **Each item is one address:** `<Source>@<commit>:<path>` for a canon entry, `<Source>/<Seat>@<commit>:<path>` for an entry on a seat's perspective. `<Source>` is the name the copying deployment's config gives that repository. `<commit>` is the full id of the source ref's tip when the copy was made. It is a pin: the address names one text forever, and it stays readable for as long as the source repository does. A comma, a closing bracket or a percent sign in a path or in a seat's name is written `%2C`, `%5D`, `%25`.
+- **A name change shows in the path.** The path is written at every hop, changed or not, so each address resolves alone. The entry in the example was `syntax-v4.md` in Rehearsal and is `syntax.md` since.
+- **Only the living edition is copied, and what it replaced is not listed.** A retirement is an act in a canon; its record stays in that canon, and the first address leads to it. A successor canon therefore starts with no retired entries.
 - **The body is exact.** The copy holds the source's body with only the frame around it rebuilt: the first line's indentation is kept, and a source file that is not valid UTF-8 is refused.
 - **`origin_author`** is the author on the source's record and travels with the text through every copy: the seat for a perspective's entry, and for a canon entry the seat on the commit that first wrote that body at that path. Where the source names none, none is written. No call can set it for a copy.
 - **Inside a deployment the lineage follows the text.** A body the deployment already holds as a copy keeps both fields when it is written again without `copy_from`: at the same path (a retirement), or at another (a seat proposing what it first copied to its own perspective).

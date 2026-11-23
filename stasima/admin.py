@@ -255,9 +255,10 @@ def run(args) -> dict:
             except Exception:
                 continue
             prov = env.get("provenance")
-            if isinstance(prov, list) and prov and str(prov[0]).startswith("1 copy of "):
-                copies[p] = {"copy_of": str(prov[0])[len("1 copy of "):], "authored": env.get("origin_author", ""),
-                             "earlier_editions": sum(1 for x in prov if str(x).startswith("2 supersedes "))}
+            if isinstance(prov, list) and prov:
+                # the first hop is where this copy was read; the rest is where the text was held before
+                copies[p] = {"copy_of": str(prov[0]), "authored": env.get("origin_author", ""),
+                             "before_that": [str(x) for x in prov[1:]]}
         return {"conflicts": s.conflicts, "authors": s.authoring_instances, "copies": copies,
                 "adds": s.added, "removes": s.removed, "modifies": s.modified,
                 "would_remove_canon": s.removed,          # non-empty -> `land` will REFUSE (append-only)

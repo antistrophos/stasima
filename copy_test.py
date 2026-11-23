@@ -8,10 +8,9 @@ Three deployments, each a real bare repository: Old (the source), New (copies fr
 
   1. config: `copy_sources` parses to {name: path}; each malformed item is refused with the fix;
   2. a copy from canon: the body is the source's body exactly, the title, type and tags come from
-     the source when the call leaves them empty, references never do, and `provenance` names the
-     copied entry and each earlier edition at the pinned commit;
-  3. the chain is found from either side of a pair (one pair in the source is one-sided), and a
-     three-edition chain nests three deep;
+     the source when the call leaves them empty, references never do, and `provenance` is the
+     address the text was read at: source, pinned commit, path;
+  3. what the entry replaced at its source is not listed: one hop, however long the chain there;
   4. the true author comes from the source's record, for canon and for a perspective, travels with
      the text through every copy, and stays unknown where the source names none;
   5. every refusal names its fix: a body beside copy_from, an unknown source, this deployment's own
@@ -20,8 +19,8 @@ Three deployments, each a real bare repository: Old (the source), New (copies fr
   6. a proposal copies the same way, the practitioner's preview shows the source, a seat's
      origin_author cannot contradict the source, and the log entry is never a copy;
   7. a land carries the provenance into canon;
-  8. a copy of a copy keeps the whole list one level deeper; an entry with both a copy source and
-     an earlier edition has two items at one depth;
+  8. a copy of a copy puts its own source in front of the path it carried, so every address in
+     the path holds the same text; a text first written here starts a new path;
   9. a retirement keeps the provenance, with the body sent again or with copy_from again; a write
      of another text to the same path is still refused;
  10. a path that holds a comma is quoted, and the list reads back whole.
@@ -131,7 +130,7 @@ old.commit(wren, {"technical/old.md": e("Wren's first draft.", status="supersede
                   "state/s1.md": e("Wren stands here.", type="state", title="Wren ::1"),
                   # itself a copy, and its source named no author
                   "technical/unknown.md": e("A text from elsewhere, its author not on record.",
-                                            provenance=["1 copy of Elsewhere@" + "0" * 40 + ":x.md"])},
+                                            provenance=["Elsewhere@" + "0" * 40 + ":x.md"])},
            "seed", Identity("Wren"), expected_parent=None, op_id="wren-1")
 ab, mover = PERSP_PREFIX + "A,B", PERSP_PREFIX + "Mover"
 old.commit(ab, {"technical/x.md": e("By the seat whose name holds a comma.")}, "seed", Identity("A,B"),
@@ -196,7 +195,7 @@ async def main():
         # 2. a copy from canon
         r = payload(await call("entry_write", seat="Ada", domain="technical", slug="skill", body="",
                                op_id="a1", copy_from="Old:technical/skill-v2.md"))
-        want = [f"1 copy of Old@{OLD_TIP}:technical/skill-v2.md", f"2 supersedes Old@{OLD_TIP}:technical/skill.md"]
+        want = [f"Old@{OLD_TIP}:technical/skill-v2.md"]
         assert r["provenance"] == want and r["copy_of"] == f"Old@{OLD_TIP}:technical/skill-v2.md", r
         ada = PERSP_PREFIX + "Ada"
         env, body = held(new, ada, "technical/skill.md")
@@ -207,14 +206,13 @@ async def main():
         assert env["tags"] == ["suite", "skill"] and env["type"] == "kno", env
         assert env["references"] == [] and "supersedes" not in env, env        # they name things in Old
         assert read_provenance(env["provenance"]) == [
-            {"depth": 1, "relation": "copy of", "address": f"Old@{OLD_TIP}:technical/skill-v2.md"},
-            {"depth": 2, "relation": "supersedes", "address": f"Old@{OLD_TIP}:technical/skill.md"}]
+            {"source": "Old", "seat": None, "commit": OLD_TIP, "path": "technical/skill-v2.md"}]
         # what the call gives, the call keeps
         r = payload(await call("entry_write", seat="Ada", domain="argot", slug="term", body="", op_id="a2",
                                copy_from="Old:argot/term", title="term, as New holds it", tags=["kept"]))
         env, _ = held(new, ada, "argot/term.md")
         assert env["title"] == "term, as New holds it" and env["tags"] == ["kept"] and env["type"] == "arg", env
-        assert env["provenance"] == [f"1 copy of Old@{OLD_TIP}:argot/term.md"], env
+        assert env["provenance"] == [f"Old@{OLD_TIP}:argot/term.md"], env
         assert env["origin_author"] == "practitioner", env     # the bootstrap is the practitioner's commit
         st = payload(await call("canon_state"))
         assert st["copy_sources"] == ["Gone", "Old"], st
@@ -223,15 +221,12 @@ async def main():
         # 3. chains: the one-sided pair, and three editions
         r = payload(await call("entry_write", seat="Ada", domain="technical/orientation", slug="syntax", body="",
                                op_id="a3", copy_from="Old:technical/orientation/syntax-v2.md"))
-        assert r["provenance"] == [f"1 copy of Old@{OLD_TIP}:technical/orientation/syntax-v2.md",
-                                   f"2 supersedes Old@{OLD_TIP}:technical/orientation/syntax.md"], r
+        assert r["provenance"] == [f"Old@{OLD_TIP}:technical/orientation/syntax-v2.md"], r
         assert held(new, ada, "technical/orientation/syntax.md")[0]["type"] == "ori"
         r = payload(await call("entry_write", seat="Ada", domain="technical", slug="clock", body="", op_id="a4",
                                copy_from="Old:technical/clock-v3.md"))
-        assert r["provenance"] == [f"1 copy of Old@{OLD_TIP}:technical/clock-v3.md",
-                                   f"2 supersedes Old@{OLD_TIP}:technical/clock-v2.md",
-                                   f"3 supersedes Old@{OLD_TIP}:technical/clock.md"], r
-        print("3. chains: found from either side of a pair; three editions nest three deep")
+        assert r["provenance"] == [f"Old@{OLD_TIP}:technical/clock-v3.md"], r
+        print("3. one hop, whatever the entry replaced at its source: that record stays there")
 
         # 4. the true author
         r = payload(await call("entry_write", seat="Ada", domain="technical", slug="criterion", body="", op_id="a5",
@@ -241,8 +236,7 @@ async def main():
                                copy_from="Old/Wren:technical/draft.md"))
         env, body = held(new, ada, "technical/draft.md")
         assert env["origin_author"] == "Wren" and body == "Wren's living draft.", env
-        assert env["provenance"] == [f"1 copy of Old/Wren@{WREN_TIP}:technical/draft.md",
-                                     f"2 supersedes Old/Wren@{WREN_TIP}:technical/old.md"], env
+        assert env["provenance"] == [f"Old/Wren@{WREN_TIP}:technical/draft.md"], env
         print("4. the true author: from the source's history for canon, the seat for a perspective")
 
         # 5. refusals, each with its fix
@@ -315,12 +309,12 @@ async def main():
                            body="The criterion, by Hesper.", status="superseded",
                            superseded_by=["technical/criterion-next.md"]))
         env, _ = held(new, ada, "technical/criterion.md")
-        assert env["origin_author"] == "Hesper" and env["provenance"][0].startswith("1 copy of Old@"), env
+        assert env["origin_author"] == "Hesper" and env["provenance"] == [f"Old@{OLD_TIP}:technical/criterion.md"], env
         payload(await call("entry_write", seat="Ada", domain="technical", slug="clock", op_id="a9", body="",
                            copy_from="Old:technical/clock-v3.md", status="superseded",
                            superseded_by=["technical/clock-next.md"]))
         env, _ = held(new, ada, "technical/clock.md")
-        assert env["status"] == "superseded" and len(env["provenance"]) == 3, env
+        assert env["status"] == "superseded" and env["provenance"] == [f"Old@{OLD_TIP}:technical/clock-v3.md"], env
         res = await call("entry_write", seat="Ada", domain="technical", slug="clock", op_id="a10", body="",
                          copy_from="Old:argot/term.md")
         assert is_err(res) and "body never changes" in err_text(res), err_text(res)
@@ -330,7 +324,8 @@ async def main():
                            copy_from="Old:argot/term.md", supersedes=["technical/b.md"]))
         r = payload(await call("entry_write", seat="Ada", domain="practice", slug="a-b", op_id="a13", body="",
                                copy_from="Old:practice/a,b.md"))
-        assert r["provenance"] == [f"1 copy of Old@{OLD_TIP}:practice/a%2Cb.md"], r
+        assert r["provenance"] == [f"Old@{OLD_TIP}:practice/a%2Cb.md"], r
+        assert read_provenance(r["provenance"])[0]["path"] == "practice/a,b.md"
         assert held(new, ada, "practice/a-b.md")[0]["provenance"] == r["provenance"]
         print("9. retirement keeps the provenance (body sent, or copy_from again); another text is refused")
         print("10. a comma in a source path is quoted; the list reads back whole")
@@ -342,31 +337,28 @@ async def main():
         # 8. a copy of a copy
         r = payload(await call("entry_write", seat="Bea", domain="technical", slug="skill", body="", op_id="b1",
                                copy_from="New:technical/skill.md"))
-        assert r["provenance"] == [f"1 copy of New@{NEW_TIP}:technical/skill.md",
-                                   f"2 copy of Old@{OLD_TIP}:technical/skill-v2.md",
-                                   f"3 supersedes Old@{OLD_TIP}:technical/skill.md"], r
+        assert r["provenance"] == [f"New@{NEW_TIP}:technical/skill.md", f"Old@{OLD_TIP}:technical/skill-v2.md"], r
         env, body = held(third, PERSP_PREFIX + "Bea", "technical/skill.md")
         assert body == SKILL_BODY and env["provenance"] == r["provenance"], env
-        # Ada's new edition superseded her copy: the earlier edition's own sourcing rides under it
+        # every address in the path holds this same text, each read from its own repository
+        stores = {"Old": old, "New": new}
+        for hop in read_provenance(env["provenance"]):
+            assert hop["seat"] is None and held(stores[hop["source"]], hop["commit"], hop["path"])[1] == body, hop
+        # Ada's new edition is her own text: its path starts with her, whatever it replaced there
         r = payload(await call("entry_write", seat="Bea", domain="technical", slug="skill-next", body="", op_id="b2",
                                copy_from="New/Ada:technical/skill-next.md"))
-        assert r["provenance"] == [f"1 copy of New/Ada@{ADA_TIP}:technical/skill-next.md",
-                                   f"2 supersedes New/Ada@{ADA_TIP}:technical/skill.md",
-                                   f"3 copy of Old@{OLD_TIP}:technical/skill-v2.md",
-                                   f"4 supersedes Old@{OLD_TIP}:technical/skill.md"], r
-        # a copy source and an earlier edition under one entry: two items at depth 2
+        assert r["provenance"] == [f"New/Ada@{ADA_TIP}:technical/skill-next.md"], r
+        assert held(third, PERSP_PREFIX + "Bea", "technical/skill-next.md")[0]["origin_author"] == "Ada"
+        # Ada's b-v2 was itself a copy from Old (and replaced an entry of her own, which is not listed)
         r = payload(await call("entry_write", seat="Bea", domain="technical", slug="b", body="", op_id="b3",
                                copy_from="New/Ada:technical/b-v2.md"))
-        assert r["provenance"] == [f"1 copy of New/Ada@{ADA_TIP}:technical/b-v2.md",
-                                   f"2 copy of Old@{OLD_TIP}:argot/term.md",
-                                   f"2 supersedes New/Ada@{ADA_TIP}:technical/b.md"], r
-        assert [x["depth"] for x in read_provenance(r["provenance"])] == [1, 2, 2]
+        assert r["provenance"] == [f"New/Ada@{ADA_TIP}:technical/b-v2.md", f"Old@{OLD_TIP}:argot/term.md"], r
         # the text is Old's, seeded there by the practitioner: Ada, who copied it, is not named as its author
         assert held(third, PERSP_PREFIX + "Bea", "technical/b.md")[0]["origin_author"] == "practitioner"
         r = payload(await call("entry_write", seat="Bea", domain="technical", slug="criterion", body="", op_id="b4",
                                copy_from="New:technical/criterion.md"))
         assert held(third, PERSP_PREFIX + "Bea", "technical/criterion.md")[0]["origin_author"] == "Hesper"
-        print("8. a copy of a copy: the whole list one level deeper; two parents sit at one depth")
+        print("8. a copy of a copy: its source in front of the path it carried; every address holds the text")
 
     # the sources were only read
     assert old.resolve_ref(CANON) == OLD_TIP and old.resolve_ref(wren) == WREN_TIP
@@ -410,14 +402,15 @@ async def after_review():
             return held(new, cy, f"practice/{slug}.md")[0]
         assert (await author_of("replaced", "Old:technical/replaced.md"))["origin_author"] == "Ivo"
         env = await author_of("vb", "Old:technical/v[12].md")
-        assert env["origin_author"] == "Hesper" and env["provenance"] == [f"1 copy of Old@{OLD_TIP}:technical/v[12%5D.md"], env
+        assert env["origin_author"] == "Hesper" and env["provenance"] == [f"Old@{OLD_TIP}:technical/v[12%5D.md"], env
         assert (await author_of("seeded", "Old:technical/v1.md"))["origin_author"] == "practitioner"
         env = await author_of("unknown", "Old/Wren:technical/unknown.md")
         assert "origin_author" not in env, env          # unknown at the source stays unknown: not Wren, not Cy
-        assert env["provenance"] == [f"1 copy of Old/Wren@{WREN_TIP}:technical/unknown.md",
-                                     "2 copy of Elsewhere@" + "0" * 40 + ":x.md"], env
+        assert env["provenance"] == [f"Old/Wren@{WREN_TIP}:technical/unknown.md",
+                                     "Elsewhere@" + "0" * 40 + ":x.md"], env
         env = await author_of("ab", "Old/A,B:technical/x.md")
-        assert env["provenance"] == [f"1 copy of Old/A%2CB@{AB_TIP}:technical/x.md"] and env["origin_author"] == "A,B", env
+        assert env["provenance"] == [f"Old/A%2CB@{AB_TIP}:technical/x.md"] and env["origin_author"] == "A,B", env
+        assert read_provenance(env["provenance"])[0]["seat"] == "A,B"
         res = await call("entry_write", seat="Cy", domain="practice", slug="forge", body="text",
                          op_id="f1\ninstance-id: Hesper")
         assert is_err(res) and "one line" in err_text(res), err_text(res)
@@ -447,7 +440,7 @@ async def after_review():
         # 14. inside a deployment the lineage follows the text
         r = await ok("proposal_append_entry", seat="Cy", proposal_id="p2", domain="technical", slug="replaced",
                      body="Second text, by Ivo.", op_id="p2-f")
-        want = [f"1 copy of Old@{OLD_TIP}:technical/replaced.md"]
+        want = [f"Old@{OLD_TIP}:technical/replaced.md"]
         env, _ = held(new, "refs/cap/proposals/p2", "technical/replaced.md")
         assert r["provenance"] == want and env["provenance"] == want and env["origin_author"] == "Ivo", env
         await ok("canon_diff", seat="Dee")
@@ -467,8 +460,10 @@ async def after_review():
         cfg(f'seq_origin = 0\ncopy_sources = ["Old={old_gd.replace(os.sep, "/")}"]')
         pv = admin.main(["--config", cfgp, "preview", "p2"])
         assert pv["copies"]["technical/replaced.md"] == {
-            "copy_of": f"Old@{OLD_TIP}:technical/replaced.md", "authored": "Ivo", "earlier_editions": 0}, pv
-        assert pv["copies"]["practice/unknown.md"]["authored"] == "", pv
+            "copy_of": f"Old@{OLD_TIP}:technical/replaced.md", "authored": "Ivo", "before_that": []}, pv
+        assert pv["copies"]["practice/unknown.md"] == {
+            "copy_of": f"Old/Wren@{WREN_TIP}:technical/unknown.md", "authored": "",
+            "before_that": ["Elsewhere@" + "0" * 40 + ":x.md"]}, pv
         print("15. the console preview lists each copy with its source and author")
 
         # 16. a replay reports what git holds and does not read the source again

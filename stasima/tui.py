@@ -138,7 +138,8 @@ def _print_preview(pid, pv):
         import re as _re
         src = _re.sub(r"@([0-9a-f]{12})[0-9a-f]{28}:", r"@\1:", c["copy_of"])
         who = f"  written by {c['authored']}" if c.get("authored") else ""
-        print(DIM(f"  copy: {p}  ←  {src}{who}"))
+        more = f"  (+{len(c['before_that'])} earlier in its path)" if c.get("before_that") else ""
+        print(DIM(f"  copy: {p}  ←  {src}{who}{more}"))
 
 
 def _proposals(config):
