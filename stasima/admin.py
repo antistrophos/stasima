@@ -220,10 +220,13 @@ def run(args) -> dict:
 
     if args.cmd == "reindex":
         failed = []
-        out = {"reindexed": reindex_from_git(store, index, embedder, failed=failed)}
-        if failed:                                   # set aside and named; the rest is indexed
-            out["failed"] = failed
-        return out
+        n = reindex_from_git(store, index, embedder, failed=failed)
+        if failed:                                   # set aside and named; the rest is indexed —
+            # and the command does not exit 0, so a script or a person does not read it as clean
+            shown = "; ".join(f"{f['ref']} {f['path']}: {f['error']}" for f in failed[:5])
+            more = f" (and {len(failed) - 5} more)" if len(failed) > 5 else ""
+            raise SystemExit(f"reindexed {n}; {len(failed)} not indexed and set aside: {shown}{more}")
+        return {"reindexed": n}
 
     if args.cmd == "proposals":
         return {"proposals": proposal_statuses(store)}

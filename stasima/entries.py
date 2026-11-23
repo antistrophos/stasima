@@ -34,14 +34,21 @@ def compose_entry(envelope: dict, body: str) -> str:
 
 
 def parse_entry(text: str):
-    """Inverse of compose_entry (our minimal front-matter). Returns (envelope_dict, body)."""
+    """Inverse of compose_entry (our minimal front-matter). Returns (envelope_dict, body).
+    The front matter opens on the first line and closes at the next LINE that is `---`. A value may
+    hold `---` (a title "Before --- after", a slug a---b used as the title): cut at the first `---`
+    anywhere and that value ends the envelope early — the fields after it are lost, the status
+    among them, and the body begins in the middle of the envelope."""
     if not text.startswith("---"):
         return {}, text
-    parts = text.split("---", 2)
-    if len(parts) < 3:
+    lines = text.split("\n")
+    if lines[0].strip() != "---":
+        return {}, text
+    end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+    if end is None:
         return {}, text
     env = {}
-    for line in parts[1].strip().splitlines():
+    for line in "\n".join(lines[1:end]).strip().splitlines():
         if ":" not in line:
             continue
         k, v = line.split(":", 1)
@@ -51,4 +58,4 @@ def parse_entry(text: str):
             env[k] = [x.strip() for x in inner.split(",")] if inner else []
         else:
             env[k] = v
-    return env, parts[2].strip()
+    return env, "\n".join(lines[end + 1:]).strip()

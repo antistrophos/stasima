@@ -8,9 +8,10 @@ its story attached), the practitioner's landing routine, and the index rebuild. 
 protocol surface to get at lifecycle machinery.
 """
 import sys
+import time
 
 from .entries import parse_entry
-from .local_capstore import LocalCapStore, PERSP_PREFIX, PROP_PREFIX, Identity, RefNotFound
+from .local_capstore import LocalCapStore, PERSP_PREFIX, PROP_PREFIX, Identity, RefNotFound, PathNotFound
 from .map_index import index_entry
 from .audit_log import anchor_audit_head
 
@@ -26,14 +27,23 @@ def _instance_from_ref(ref: str):
     return ref[len(PERSP_PREFIX):] if ref.startswith(PERSP_PREFIX) else None
 
 
+def _say(line: str) -> None:
+    """One line for the service log (stderr). Never raises: it is called after canon has moved, and
+    a closed or broken stderr must not turn a land that happened into an error."""
+    try:
+        print(line, file=sys.stderr)
+    except Exception:                                 # noqa: BLE001
+        pass
+
+
 def _set_aside(failed, where: dict, err: Exception) -> None:
     """One entry the index cannot take is set aside and named; it never costs the entries after it.
-    The index is a cache of git, so the entry itself is whole — only its row is missing. Named on
-    stderr (the service log) always, and in `failed` when the caller gave a list to report from."""
+    The index is a cache of git, so the entry itself is whole — only its row is missing. Named in
+    `failed` when the caller gave a list to report from, and on stderr (the service log) always."""
     row = {**where, "error": f"{type(err).__name__}: {err}"}
-    print(f"stasima: not indexed: {row}", file=sys.stderr)
     if failed is not None:
         failed.append(row)
+    _say(f"stasima: not indexed: {row}")
 
 
 def _canon_positions(store: LocalCapStore, canon_tip) -> dict:
@@ -61,7 +71,10 @@ def reindex_from_git(store: LocalCapStore, index, embedder, *, clear: bool = Tru
     every perspective, reads each entry, re-embeds, upserts. Also the canon-indexing-after-landing
     path and the model-swap / recovery path. Proposals are staging and are not indexed.
     An entry the index cannot take is set aside (`failed` receives it) and the walk goes on: the
-    rebuild clears first, so stopping at one entry would leave every later one out of the index."""
+    rebuild clears first, so stopping at one entry would leave every later one out of the index.
+    The embedder is asked one question BEFORE the clear: an embedder that is down raises here,
+    with the index as it was, and not once for every entry over an index already emptied."""
+    embedder.embed(["stasima: is the embedder there?"])
     if clear:
         index.clear()
     canon = store.canon_ref
@@ -188,6 +201,19 @@ def validate_log_entry(store, prepared, origin: int = CHAT_ERA_FREEZE) -> str:
         raise ValueError(
             f"log entry is {seq_display(n)} but canon is at {seq_display(current)} — expected {seq_display(expected)}. "
             f"Re-pull (canon_diff), reconcile, renumber the log entry, and retract the stale one (proposal_retract_path).")
+    # A land ADDS its log entry. The seq is the expected one, yet canon already holds this path:
+    # the land that wrote it has no state tag (its tag step failed), so canon's seq did not advance
+    # and the same number is expected twice. Landing now would rewrite that land's story.
+    try:
+        store.read_blob_at(base, path)
+        held = True
+    except (PathNotFound, RefNotFound):
+        held = False
+    if held:
+        raise ValueError(
+            f"canon already holds {path}, and a land never rewrites a log entry. The land that wrote it "
+            f"has no state tag, so canon's seq is one behind. The practitioner sets the tag "
+            f"(OPERATIONS.md, Troubleshooting: a land prints a warning); then renumber this log entry.")
     return seq
 
 
@@ -198,8 +224,9 @@ def index_land(store, index, embedder, landed_oid: str, failed: list | None = No
     the new spine position (newest touch wins), and every older row's position is already stable
     (oldest = 1 anchoring means adding a commit shifts nothing). `reindex_from_git` remains the
     recovery / migration / model-swap path. An entry the index cannot take is set aside (`failed`
-    receives it) and the rest of the land is indexed."""
-    changed = store.changed_paths(f"{landed_oid}^1", landed_oid)
+    receives it) and the rest of the land is indexed. The diff is asked for strictly: a diff git
+    could not make raises, and is never read as a land that changed nothing."""
+    changed = store.changed_paths(f"{landed_oid}^1", landed_oid, strict=True)
     spine_pos = len(store.rev_list(landed_oid))          # first-parent spine length = this land's position
     n = 0
     for path in changed:
@@ -237,19 +264,36 @@ def land_and_record(store, index, embedder, audit, prepared, approval, *,
     r = store.land_merge(prepared, approval)
     warnings = []
 
-    def step(name, fn):
+    def step(name, fn, repair=None):
         try:
             return fn()
         except Exception as err:                          # noqa: BLE001 — see the docstring
-            warnings.append({"step": name, "error": f"{type(err).__name__}: {err}"})
-            print(f"stasima: land {r.oid[:12]} has moved canon; step '{name}' failed: "
-                  f"{type(err).__name__}: {err}", file=sys.stderr)
+            w = {"step": name, "error": f"{type(err).__name__}: {err}"}
+            if repair:
+                w["repair"] = repair
+            warnings.append(w)
+            _say(f"stasima: land {r.oid[:12]} has moved canon; step '{name}' failed: "
+                 f"{type(err).__name__}: {err}")
             return None
 
-    step("audit", lambda: audit.append(approval.approved_by, "land_merge", target_ref=prepared.into,
-                                       op_id=f"land-{r.oid[:12]}", result_oid=r.oid,
-                                       detail={"proposal": prepared.proposal_ref, "seq": seq}))
-    step("tag", lambda: store.tag(f"state/{seq}", r.oid))
+    def audit_row():
+        # The one row that says who approved this land and on what evidence; the airlock reads a
+        # proposal as landed from it, and nothing rebuilds it from git. So it is tried three times.
+        for attempt in range(3):
+            try:
+                return audit.append(approval.approved_by, "land_merge", target_ref=prepared.into,
+                                    op_id=f"land-{r.oid[:12]}", result_oid=r.oid,
+                                    detail={"proposal": prepared.proposal_ref, "seq": seq})
+            except Exception:                             # noqa: BLE001
+                if attempt == 2:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+
+    step("audit", audit_row)
+    # Without the tag canon's seq does not advance. The validator refuses a second log entry at
+    # the same seq (see validate_log_entry), so the next land stops there until the tag is set.
+    step("tag", lambda: store.tag(f"state/{seq}", r.oid),
+         repair=f'git --git-dir "{store.git_dir}" tag state/{seq} {r.oid}')
     unindexed = []
     step("index", lambda: index_land(store, index, embedder, r.oid, failed=unindexed))  # O(change)
     warnings.extend({"step": "index", "path": f["path"], "error": f["error"]} for f in unindexed)

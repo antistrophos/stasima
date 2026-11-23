@@ -329,9 +329,18 @@ class LocalCapStore:
                 self._cat = None
 
     def read_blob_at(self, commit: Oid, path: str) -> bytes:
+        name = f"{commit}:{path}"
+        if "\n" in name:
+            # The sidecar's protocol is one request per LINE. A name that holds a newline is two
+            # requests for one answer, and every read after it gets the answer before it — another
+            # entry's body, for the life of the process. Such a name never rides the sidecar.
+            rc, out1, err = self._run("cat-file", "blob", name)
+            if rc != 0:
+                raise PathNotFound(f"{path!r} @ {commit}: {err.strip()}")
+            return out1
         child = self._cat   # the handle live before this read; retire only THIS one if it faults
         try:
-            out = self._batch_read(f"{commit}:{path}")
+            out = self._batch_read(name)
         except Exception:
             # any sidecar irregularity: retire THAT child and take the one-shot road — never worse
             self._retire_sidecar(child)
@@ -367,25 +376,35 @@ class LocalCapStore:
         out = self._git(*args).decode()
         return [RefInfo(*line.split("\t")) for line in out.splitlines() if line]
 
+    # Every listing of paths asks git for -z: one path per NUL, exactly as git holds it. Without it
+    # git QUOTES a path outside ASCII ("technical/caf\303\251.md", quotes included), which no later
+    # read can find, and a caller that splits on whitespace breaks a path that holds a space.
     def list_tree(self, ref: str, path: str = "") -> list[TreeEntry]:
         treeish = ref if path == "" else f"{ref}:{path}"
-        rc, out, err = self._run("ls-tree", "--format=%(objecttype)\t%(objectname)\t%(path)", treeish)
+        # the default record, not --format: git quotes %(path) in a --format line even under -z
+        rc, out, err = self._run("ls-tree", "-z", treeish)    # "<mode> <type> <oid>\t<path>\0"
         if rc != 0:
             raise PathNotFound(f"{treeish}: {err.strip()}")
-        return [TreeEntry(*line.split("\t")) for line in out.decode().splitlines() if line]
+        entries = []
+        for rec in out.decode("utf-8", "replace").split("\0"):
+            if rec:
+                meta, name = rec.split("\t", 1)
+                _mode, kind, oid = meta.split()
+                entries.append(TreeEntry(kind, oid, name))
+        return entries
 
     def list_paths(self, ref: str, path: str = "") -> list[str]:
         """Recursive list of FULL file paths under a tree, optionally filtered to a subtree.
         Full paths always — a filtered listing must compose with index lookups and follow-up
         reads (a subtree-relative name is unusable as a coordinate). An unknown path filter
         yields an empty list, not an error."""
-        args = ["ls-tree", "-r", "--name-only", ref]
+        args = ["ls-tree", "-r", "-z", "--name-only", ref]
         if path:
             args += ["--", path]
         rc, out, err = self._run(*args)
         if rc != 0:
             raise PathNotFound(f"{ref}: {err.strip()}")
-        return out.decode().splitlines()
+        return [p for p in out.decode("utf-8", "replace").split("\0") if p]
 
     def merge_base(self, a: str, b: str):
         """The branch point of two commits/refs, or None."""
@@ -438,23 +457,28 @@ class LocalCapStore:
         self._cas_update(ref, new, current or ZERO)
         return self._commit_result(new, ref)
 
-    def changed_paths(self, a: Oid, b: Oid) -> list[str]:
+    def changed_paths(self, a: Oid, b: Oid, strict: bool = False) -> list[str]:
         """Paths that differ between two commits — the canon diff an instance reconciles with.
         Read with -z: one path per NUL, as git holds it. Split on whitespace and a path with a space
-        becomes two paths that do not exist; without -z git also quotes a path outside ASCII."""
-        rc, out, _ = self._run("diff", "-z", "--name-only", a, b)
-        return [p for p in out.decode("utf-8", "replace").split("\0") if p] if rc == 0 else []
+        becomes two paths that do not exist; without -z git also quotes a path outside ASCII.
+        A diff git could not make reads as "nothing changed" unless `strict`: the land's index step
+        asks strictly, so a failed diff is a named failure there and never an empty land."""
+        rc, out, err = self._run("diff", "-z", "--name-only", a, b)
+        if rc != 0:
+            if strict:
+                raise BackendUnavailable(f"git diff {a} {b} failed: {err.strip()}")
+            return []
+        return [p for p in out.decode("utf-8", "replace").split("\0") if p]
 
     def _diff_status(self, a: Oid, b: Oid):
         """(added, removed, modified) going a -> b. 'removed' is the load-bearing one: a path that
-        leaves canon. Renames are decomposed by --no-renames so a move reads as remove+add."""
-        out = self._git("diff", "--name-status", "--no-renames", a, b).decode()
+        leaves canon. Renames are decomposed by --no-renames so a move reads as remove+add.
+        With -z the output is status NUL path NUL, the path as git holds it."""
+        out = self._git("diff", "-z", "--name-status", "--no-renames", a, b).decode("utf-8", "replace")
+        fields = [f for f in out.split("\0") if f]
         added, removed, modified = [], [], []
-        for line in out.splitlines():
-            if not line.strip():
-                continue
-            st, _, path = line.partition("\t")
-            (added if st.startswith("A") else removed if st.startswith("D") else modified).append(path.strip())
+        for st, path in zip(fields[0::2], fields[1::2]):
+            (added if st.startswith("A") else removed if st.startswith("D") else modified).append(path)
         return added, removed, modified
 
     def branch_creator(self, ref: str, base_ref: str):
@@ -677,7 +701,13 @@ class LocalCapStore:
         # CAS on the into tip recorded at prepare time (candidate's first parent).
         base = self._git("rev-parse", f"{prepared.candidate_oid}^1").decode().strip()
         self._cas_update(prepared.into, prepared.candidate_oid, base)  # StaleRef if canon moved since prepare
-        return self._commit_result(prepared.candidate_oid, prepared.into)
+        # Canon has moved. Describing the commit takes more git calls, and one that fails here must
+        # not report the land as failed: the caller needs only the oid, which is already known.
+        try:
+            return self._commit_result(prepared.candidate_oid, prepared.into)
+        except Exception:                                 # noqa: BLE001 — after the CAS, never raise
+            return CommitResult(oid=prepared.candidate_oid, ref=prepared.into, parents=[base],
+                                op_id="", author=Identity(approval.approved_by), replayed=False)
 
     # ---- remote sync (off-machine mirror; preserves the custom ref namespaces) ----
     # Default git refspecs only move refs/heads/* + tags, which would SILENTLY drop

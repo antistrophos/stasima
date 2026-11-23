@@ -109,4 +109,23 @@ pair = [threading.Thread(target=reader, args=(o,)) for o in (0, 100)]
 print("  2000 paired reads, wrong or failed:", len(wrong))
 assert not wrong, (len(wrong), wrong[:3])
 
-print("\nOK -- chain, read-state, reconcile, git-anchored tamper-evidence, and readers at once all verified.")
+# ============================================================ 5. three processes, one audit file
+# The service, the cockpit and the admin CLI each open the same file. The thread lock covers one
+# process; the tail read and the insert must be one transaction or two processes take the same seq.
+print("\n== three processes append to one audit file ==")
+here = os.path.dirname(os.path.abspath(__file__))
+dbf = os.path.join(tempfile.mkdtemp(prefix="cap-audit-procs-"), "audit.sqlite")
+SqliteAuditLog(dbf).append("setup", "start")
+worker = ("import sys; sys.path.insert(0, sys.argv[1]); from stasima.audit_log import SqliteAuditLog; "
+          "log = SqliteAuditLog(sys.argv[2]); "
+          "[log.append(sys.argv[3], 'entry_write', op_id=sys.argv[3] + '-' + str(n)) for n in range(300)]")
+procs = [sp.Popen([sys.executable, "-c", worker, here, dbf, who], stderr=sp.PIPE)
+         for who in ("service", "cockpit", "cli")]
+errors = [p.communicate()[1].decode("utf-8", "replace") for p in procs]
+print("  processes that failed:", sum(p.returncode != 0 for p in procs))
+assert all(p.returncode == 0 for p in procs), [e.strip().splitlines()[-1] for e in errors if e.strip()]
+shared_file = SqliteAuditLog(dbf)
+assert shared_file.count() == 901 and shared_file.verify() == (True, None), (shared_file.count(), shared_file.verify())
+
+print("\nOK -- chain, read-state, reconcile, git-anchored tamper-evidence, readers at once, and writers "
+      "in three processes all verified.")
