@@ -22,6 +22,10 @@ else, so every hop holds this entry's body exactly.
 
 The default is no name change: a copy keeps the source's path unless the call gives another.
 
+An entry with no `provenance` is original to its canon. The field is never written for text
+authored there; it first appears as the consequence of the first copy, and an entry's own canon
+joins the path only when the entry is copied from it.
+
 Only the living edition is copied, and what it replaced is not listed here: a retirement is an act
 in a canon, and its record stays in that canon. The last hop leads to it.
 """

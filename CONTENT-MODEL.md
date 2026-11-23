@@ -70,7 +70,7 @@ Every deferred analysis reduces to a query over it: "bad base idea vs. bad deriv
 
 ## Provenance — a copy from another canon
 
-An entry whose body was copied from another canon carries `provenance`. The server writes it; no call can supply it. It is the lineage that crosses a canon's edge, where `references` and `supersedes` cannot follow: they name paths, and a path belongs to one canon.
+An entry whose body was copied from another canon carries `provenance`. The server writes it; no call can supply it. An entry with no `provenance` is original to its canon: the field is never written for native text, and first appears as the consequence of the first copy. It is the lineage that crosses a canon's edge, where `references` and `supersedes` cannot follow: they name paths, and a path belongs to one canon.
 
 ```yaml
 # an entry copied from Third, which had it from Debut, which had it from Rehearsal

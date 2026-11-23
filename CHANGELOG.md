@@ -37,6 +37,9 @@
   and its record stays there, one read from the last hop. (A first form listed those editions
   too, with a depth and a relation on each item. A reader given no rule took every item as a
   statement about the entry itself. The path holds only hops, of which that is true.)
+- **No path means original.** An entry with no `provenance` was written in the canon that holds
+  it. The field appears as the consequence of the first copy, and a canon joins an entry's path
+  only when the entry is copied from it.
 - **The default is no name change.** With `copy_from`, an empty `domain` and `slug` keep the
   source's path, so a name never changes by a slip in retyping it. Giving both renames the copy,
   and the rename shows in the path when the entry is copied onward.
