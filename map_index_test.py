@@ -6,6 +6,7 @@ material, and the append-only IMP inbox/read-state — no server, no model, no g
 """
 import os
 import sys
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from stasima.map_index import SqliteMapIndex, StubEmbedder, index_entry
@@ -71,4 +72,32 @@ assert [r.authoring_instance for r in idx.cartography_of("practice/no-silent-los
 assert idx.inbox("research-2") == [], "sender is not a recipient"
 assert [r.path for r in idx.inbox("research-7")] == ["messages/look-here.md"], "recipient is addressed"
 assert len(idx.inbox("recto")) == 1, "other recipient also addressed"
-print("\nOK -- schema, scope, attribution, Q4 material, and inbox addressing verified (read-state in the audit log).")
+
+# ---- two readers at the same moment each get their own rows (one connection, many handler threads)
+many = SqliteMapIndex(":memory:")
+for n in range(200):
+    index_entry(many, emb, ref=persp(f"s{n % 4}"), path=f"messages/m{n}.md", is_canon=False, authoring_instance=f"s{n % 4}",
+                content_oid="oid", envelope={"type": "msg", "subject": f"note {n}", "recipients": [f"seat{n:03d}"]}, body=f"note {n}")
+wrong, gate = [], threading.Barrier(2)
+
+
+def reader(offset):
+    for n in range(100):
+        seat = f"seat{offset + n:03d}"
+        for _ in range(20):
+            gate.wait()
+            try:
+                got = [r.path for r in many.inbox(seat)]
+            except Exception as err:                 # noqa: BLE001 — any failure is the finding
+                wrong.append((seat, repr(err)))
+                continue
+            if got != [f"messages/m{offset + n}.md"]:
+                wrong.append((seat, got))
+
+
+pair = [threading.Thread(target=reader, args=(o,)) for o in (0, 100)]
+[th.start() for th in pair]
+[th.join() for th in pair]
+assert not wrong, (len(wrong), wrong[:3])
+print("\nOK -- schema, scope, attribution, Q4 material, inbox addressing, and readers at once verified "
+      "(read-state in the audit log).")

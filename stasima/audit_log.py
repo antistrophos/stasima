@@ -78,9 +78,12 @@ class SqliteAuditLog(AuditLog):
         # fleet-safety (the HTTP era serves every seat from ONE process): the connection is shared
         # across handler threads, and append is a read-modify-write chain (seq, prev_hash, INSERT)
         # — the lock keeps the hash chain linear; a race here would FORK the chain, which verify()
-        # would catch but never forgive
+        # would catch but never forgive. Readers ride unlocked, and `cached_statements=0` is what
+        # makes that safe: the module's statement cache is keyed by SQL text, so with it two
+        # threads asking the same question (`latest`, `is_read`) share ONE prepared statement and
+        # one can be handed the other's row — another seat's canon cursor (measured, before this).
         import threading
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False, cached_statements=0)
         self._lock = threading.Lock()
         self.conn.row_factory = sqlite3.Row
         _wal(self.conn, db_path)   # cross-process safety: the fleet service, cockpit, and CLI all
@@ -113,19 +116,28 @@ class SqliteAuditLog(AuditLog):
         # seq + prev_hash come from the SAME tail row — an O(1) PK-index lookup, not a COUNT(*)
         # walk. Derived from the DB (not an in-process counter) so it stays correct when another
         # instance shares the file (the cockpit, the admin CLI, a second stdio server).
-        tail = self.conn.execute(
-            "SELECT seq, hash FROM audit_events ORDER BY seq DESC LIMIT 1").fetchone()
-        ev = {"seq": (tail["seq"] + 1) if tail else 1,
-              "ts": datetime.now(timezone.utc).isoformat(),
-              "actor": actor, "op": op, "target_ref": target_ref, "target_path": target_path,
-              "op_id": op_id, "result_oid": result_oid, "outcome": outcome,
-              "detail": detail or {}, "prev_hash": tail["hash"] if tail else GENESIS}
-        ev["hash"] = _hash(ev)
-        self.conn.execute(
-            "INSERT INTO audit_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (ev["seq"], ev["ts"], ev["actor"], ev["op"], ev["target_ref"], ev["target_path"],
-             ev["op_id"], ev["result_oid"], ev["outcome"], json.dumps(ev["detail"]), ev["prev_hash"], ev["hash"]))
-        self.conn.commit()
+        # The tail read and the insert are ONE transaction that takes the write lock FIRST. The
+        # thread lock covers this process only; a second process (a land from the cockpit while the
+        # service writes) read the same tail, and the later insert failed on seq — an error on a
+        # write that had already reached git. BEGIN IMMEDIATE makes the second wait its turn.
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            tail = self.conn.execute(
+                "SELECT seq, hash FROM audit_events ORDER BY seq DESC LIMIT 1").fetchone()
+            ev = {"seq": (tail["seq"] + 1) if tail else 1,
+                  "ts": datetime.now(timezone.utc).isoformat(),
+                  "actor": actor, "op": op, "target_ref": target_ref, "target_path": target_path,
+                  "op_id": op_id, "result_oid": result_oid, "outcome": outcome,
+                  "detail": detail or {}, "prev_hash": tail["hash"] if tail else GENESIS}
+            ev["hash"] = _hash(ev)
+            self.conn.execute(
+                "INSERT INTO audit_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (ev["seq"], ev["ts"], ev["actor"], ev["op"], ev["target_ref"], ev["target_path"],
+                 ev["op_id"], ev["result_oid"], ev["outcome"], json.dumps(ev["detail"]), ev["prev_hash"], ev["hash"]))
+            self.conn.commit()
+        except BaseException:
+            self.conn.rollback()
+            raise
         return ev
 
     def head(self) -> str:

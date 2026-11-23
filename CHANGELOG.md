@@ -1,6 +1,73 @@
 ## Unreleased
 
-(nothing yet)
+### Fixed
+
+Defects in 0.3.0, found while reviewing the search work and then this fix. None was triggered on
+the live deployment; each is reproduced by a test (`land_resilience_test.py`, `audit_test.py`,
+`map_index_test.py`).
+
+**The land**
+
+- **A land that has moved canon is never reported as failed.** The land routine had no handler
+  after the merge. When a later step raised, canon had moved and the state tag was set, but no
+  audit anchor was written and the caller was told "not landed". Now everything before the merge
+  may refuse a land and nothing after it may: the audit row, the state tag, the index and the
+  anchor each run on their own, and a step that fails is named in `warnings` on the land's
+  result, in the cockpit, and on stderr. The store no longer raises while describing a merge it
+  has already made, and a closed stderr no longer turns a warning into an error. `OPERATIONS.md`
+  says what to do for each step.
+- **The audit row of a land is tried three times.** It is the one record of who approved a land,
+  and nothing rebuilds it from git.
+- **A missing state tag stops the next land instead of letting it rewrite history.** If the tag
+  step fails, canon's seq does not advance. The next proposal could then land at the same seq
+  and replace the earlier land's log entry. The validator now refuses a log entry at a path canon
+  already holds, and the warning carries the `git tag` command that repairs it.
+- **A diff that git could not make is a named failure of the index step**, not a land that
+  changed nothing.
+
+**The envelope**
+
+- **A title or a subject that begins `[` and ends `]`.** The parser read every bracketed value
+  back as a list, for any field. `[draft] A rule [v2]` was accepted at the write, made the land's
+  index step raise, and stopped every later `reindex` at that entry with the index already
+  cleared. Only the list fields (`entries.LIST_KEYS`) read back as lists now.
+- **A value that holds `---`.** The parser cut the front matter at the first `---` anywhere, so
+  a title `Before --- after` (or a slug `a---b` used as the title) lost every field after it,
+  the status among them, and the body began inside the envelope. The front matter now closes at
+  a line that is `---`. All 2,202 entries of the live deployment parse as before.
+
+**Paths**
+
+- **A path that holds a space.** The store split git's list of changed paths on whitespace, so
+  `technical/two words.md` became two paths that do not exist and the land's index step raised.
+- **A path outside ASCII.** git quotes such a path unless asked not to. A land indexed
+  `technical/café.md`, and the next `reindex` skipped it without a word. Every listing of paths
+  now reads git's NUL-separated form (`changed_paths`, `list_paths`, `list_tree`, the merge
+  preview's added and modified lists).
+- **A name that holds a newline put the blob reader out of step.** The reader keeps one
+  `git cat-file --batch` child and sends one request per line. A slug with a newline was two
+  requests for one answer, and every read after it returned the answer before it — another
+  entry's body — until the process restarted. Such a name no longer rides that child.
+
+**The index and the audit log**
+
+- **`reindex` sets one entry aside instead of stopping.** An entry the index cannot take is named
+  and every other entry is indexed; the command then exits non-zero. Before, the rebuild cleared
+  the index and stopped at the first such entry. It also asks the embedder one question before it
+  clears, so an embedder that is down leaves the index as it was.
+- **Two reads at the same moment could exchange rows.** The map index and the audit log each
+  share one SQLite connection across handler threads. Python's statement cache is keyed by SQL
+  text, so two threads asking the same question shared one prepared statement: one could be
+  handed the other's rows (in the audit log, another seat's canon cursor) or an error. Both
+  connections now open with `cached_statements=0`. Measured before the fix, with two threads
+  released together: 189 of 2,000 paired reads wrong or failed on the audit log, 2,815 of 4,000
+  on the inbox.
+- **Two processes appending to the audit log could take the same seq.** The service, the cockpit
+  and the admin CLI open one file; the tail read and the insert were not one transaction, so the
+  later insert failed (`UNIQUE constraint failed: audit_events.seq`) on a write that had already
+  reached git. An append is now one transaction that takes the write lock first.
+- **The cockpit's land line** prints the anchor's head, or `NOT anchored`; it printed the start
+  of a Python dict.
 
 ## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
 
