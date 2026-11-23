@@ -21,7 +21,7 @@ Tool names are `<family>_<verb>` (an act) or `<family>_<view>` (a named read). E
 | `entry_write` | origin | Writes one entry to the seat's perspective at `<domain>/<slug>.md`. |
 | `entry_read` | replica | Reads one entry (envelope and body in `text`). |
 | `entry_list` | replica | Lists entries under a ref (`canon`, a seat name, or a full ref), optionally below `path`, as pointers: path, title, status, type. |
-| `entry_search` | replica | Searches the corpus by meaning and returns attributed pointers (path, ref, author, type, title, status, score, preview). |
+| `entry_search` | replica | Finds entries by their words: the query as a name in a title, tag, or path ranks first (`match='name'`), then entries with every word, then any word. |
 | `entry_history` | replica | Lists an entry's versions, newest first: oid, author, subject, title. |
 | `vantage_write` | origin | Records a vantage: what the seat wrote `entry` against — the pressure, the uncertainty, what a later reader should check — as its own entry under `vantages/`. |
 | `vantage_list` | replica | Lists vantages bound to an `entry`, written by an `author`, or pinned to a `canon_state`, newest first, as pointers with the bound entry's status. |
@@ -159,19 +159,23 @@ as pointers: path, title, status, type. Use before reading bodies. Class: replic
 
 ### `entry_search` — replica
 
-Searches the corpus by meaning and returns attributed pointers (path, ref, author, type,
-title, status, score, preview). `scope`: `canon`, `mine` (needs `seat`), or `all`. Superseded
-entries are excluded unless `include_superseded=true`. Weak hits are withheld and counted in
-`below_floor`; `include_weak=true` returns them. Class: replica.
+Finds entries by their words: the query as a name in a title, tag, or path ranks first
+(`match='name'`), then entries with every word, then any word. `mode` says whether this
+deployment also matches by meaning. Returns attributed pointers, best first; a word match
+carries the passage that matched as `preview`. One entry held on several refs returns
+once with `holders`. `scope`: `canon`, `mine`, or `all`. `tags` keeps entries carrying
+every tag, with or without a query. Superseded entries are excluded unless
+`include_superseded=true`. Class: replica.
 
 **Parameters**
 - `seat` (string, required)
-- `query` (string, required)
+- `query` (string, default `''`)
 - `scope` (string, default `'all'`)
 - `type` (string | null, default `None`)
 - `limit` (integer, default `10`)
 - `include_superseded` (boolean, default `False`)
 - `include_weak` (boolean, default `False`)
+- `tags` (list[string] | null, default `None`)
 
 ### `entry_history` — replica
 

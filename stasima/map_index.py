@@ -21,14 +21,20 @@ import json
 import math
 import sqlite3
 from abc import ABC, abstractmethod
+from collections import namedtuple
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
+
+from . import lexical
 
 
 # ====================================================================== embeddings
 class Embedder(ABC):
     model_id: str
     dim: int
+    # True when the vectors carry meaning (a real model). False for the stub: its vectors are a
+    # worse word match than the word index, so search does not rank by them when that index exists.
+    semantic = True
 
     @abstractmethod
     def embed(self, texts: list[str]) -> list[list[float]]: ...   # documents (indexing side)
@@ -54,7 +60,12 @@ def cosine(a: Sequence[float], b: Sequence[float]) -> float:
 
 class StubEmbedder(Embedder):
     """Deterministic, offline bag-of-hashed-tokens embedding. For dev/tests without a model server.
-    It's essentially lexical similarity — enough to prove ranking/scope/index behavior reproducibly."""
+    It's essentially lexical similarity — enough to prove ranking/scope/index behavior reproducibly.
+    It is NOT a meaning model (`semantic = False`): with 64 buckets, no notion of a rare word, and
+    no weight for a title, it cannot find an entry by its own name (Repose's finding, 2026-11).
+    Entry search ranks by the word index (lexical.py) when the embedder is this one."""
+
+    semantic = False
 
     # Relevance floor for entry_search: 0.0 = OFF, deliberately. Calibrated on a live ~630-entry
     # corpus (2026-07): junk-query top scores (0.28-0.30) OVERLAP true-match top scores (0.23-0.36)
@@ -150,6 +161,46 @@ class MapRow:
     body_text: str = ""
     embedding: list[float] = field(default_factory=list)
     model_id: str = ""
+    body_hash: str = ""                                      # digest of the stripped body: one body on several refs is one result
+
+
+def body_digest(body: str) -> str:
+    """Identity of a body across refs. Strips what `parse_entry` and the immutability guard strip
+    (`str.strip()`: every Unicode space), so a row indexed from the write and the same entry
+    indexed from git carry one digest."""
+    return hashlib.sha1((body or "").strip().encode("utf-8")).hexdigest()
+
+
+def _dumps(value) -> str:
+    """A JSON column's text, in the value's own letters: the word index tokenizes the tags column,
+    and an escaped letter is not a word. A value SQLite cannot store as UTF-8 (a lone surrogate)
+    keeps the escaped form."""
+    text = json.dumps(value, ensure_ascii=False)
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return json.dumps(value)
+    return text
+
+
+def _json_like(token: str) -> str:
+    """A LIKE pattern (ESCAPE '!') that finds `token` as one quoted JSON string in a column,
+    whichever way the writer spelled it. A character JSON may store escaped (a non-ASCII letter, a
+    quote, a backslash, a control) becomes a wildcard, so the pattern admits at least every true
+    row; the caller's exact check in Python decides."""
+    body = "".join("%" if (not ch.isascii() or ch in '"\\' or ch < " ") else
+                   "!" + ch if ch in "!%_" else ch for ch in token)
+    return '%"' + body + '"%'
+
+
+# one row holding an entry: what search needs to choose the row that stands for a result
+Holder = namedtuple("Holder", "ref path is_canon author status title type tags")
+
+
+class Hits(list):
+    """A leg's hits, best first. `cut` is True when the limit stopped the leg: a larger limit may
+    return more."""
+    cut = False
 
 
 @dataclass
@@ -163,6 +214,9 @@ class Hit:
     score: float
     preview: str
     status: str = "active"   # rides every hit so a deliberately-included retired edition is apparent
+    match: str = ""          # how the hit was found: name | all-words | some-words | meaning | tag
+    body_hash: str = ""
+    holders: list = field(default_factory=list)   # every ref holding this body, when more than one
 
 
 # ====================================================================== index interface
@@ -213,11 +267,24 @@ class MapIndex(ABC):
     @abstractmethod
     def clear(self) -> None: ...   # for a full rebuild from git
 
+    # ---- the word leg (optional: a backend without one leaves these as they are, and entry search
+    # ranks by the embedder alone) ----
+    fts = False
+
+    def search_words(self, words, **filters) -> list: return []
+
+    def tagged(self, tags, **filters) -> list: return []
+
+    def holders_of(self, body_hash: str, path: str) -> list: return []
+
+    def fill_body_hashes(self) -> int: return 0
+
 
 # ====================================================================== sqlite backend
 _COLS = ["ref", "path", "is_canon", "authoring_instance", "content_oid", "type", "title",
          "status", "tags", "refs", "supersedes", "region_labels", "links", "salience", "recipients",
-         "subject", "vantage", "canon_state", "instance_depth", "tick", "thread", "body_text", "embedding", "model_id"]
+         "subject", "vantage", "canon_state", "instance_depth", "tick", "thread", "body_text", "embedding", "model_id",
+         "body_hash"]
 _JSON_COLS = {"tags", "refs", "supersedes", "region_labels", "links", "recipients", "embedding"}
 
 
@@ -237,6 +304,10 @@ class SqliteMapIndex(MapIndex):
         self.conn.row_factory = sqlite3.Row
         from .audit_log import _wal
         _wal(self.conn, db_path)   # cross-process safety (see audit_log._wal)
+        # REPLACE removes the old row without firing delete triggers unless this is on; the word
+        # index is kept by triggers, so a replaced entry would leave its old words behind
+        self.conn.execute("PRAGMA recursive_triggers = ON")
+        self.fts = False           # True once the word index exists (lexical.setup)
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -247,7 +318,7 @@ class SqliteMapIndex(MapIndex):
                 authoring_instance TEXT, content_oid TEXT, type TEXT, title TEXT, status TEXT,
                 tags TEXT, refs TEXT, supersedes TEXT, region_labels TEXT, links TEXT, salience REAL,
                 recipients TEXT, subject TEXT, vantage TEXT, canon_state TEXT, instance_depth INTEGER,
-                tick TEXT, thread TEXT, body_text TEXT, embedding TEXT, model_id TEXT,
+                tick TEXT, thread TEXT, body_text TEXT, embedding TEXT, model_id TEXT, body_hash TEXT,
                 PRIMARY KEY (ref, path)
             );
             CREATE INDEX IF NOT EXISTS ix_author ON map_entries(authoring_instance);
@@ -261,12 +332,56 @@ class SqliteMapIndex(MapIndex):
         # the new columns, or the index creation hits 'no such column' on a pre-VAP db.
         have = {r["name"] for r in self.conn.execute("PRAGMA table_info(map_entries)")}
         for col, sqltype in (("vantage", "TEXT"), ("canon_state", "TEXT"), ("instance_depth", "INTEGER"),
-                             ("supersedes", "TEXT"), ("tick", "TEXT"), ("thread", "TEXT")):
+                             ("supersedes", "TEXT"), ("tick", "TEXT"), ("thread", "TEXT"),
+                             ("body_hash", "TEXT")):
             if col not in have:
                 self.conn.execute(f"ALTER TABLE map_entries ADD COLUMN {col} {sqltype}")
         self.conn.execute("CREATE INDEX IF NOT EXISTS ix_cstate ON map_entries(canon_state)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS ix_idepth ON map_entries(instance_depth)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_bodyhash ON map_entries(body_hash)")
         self.conn.commit()
+        self.fill_body_hashes()    # rows written before the digest column get theirs now
+        self.fts = lexical.setup(self.conn)
+        self._level_tags()
+
+    def fill_body_hashes(self) -> int:
+        """Give a digest to every row that lacks one; returns how many. A process running older
+        code writes rows without it (its INSERT OR REPLACE names no such column), and a row
+        without a digest is invisible to the two rules search keeps by it. Runs at start and before
+        each search: when nothing is missing it is two index seeks."""
+        missing = "body_hash IS NULL OR body_hash = ''"
+        rows = self.conn.execute(f"SELECT rowid, body_text FROM map_entries WHERE {missing}").fetchall()
+        if not rows:
+            return 0
+        with self.write_lock:
+            try:
+                for r in rows:               # `body_text IS ?`: a row rewritten since the read is left alone
+                    self.conn.execute(
+                        f"UPDATE map_entries SET body_hash = ? WHERE rowid = ? AND body_text IS ? AND ({missing})",
+                        (body_digest(r["body_text"] or ""), r["rowid"], r["body_text"]))
+                self.conn.commit()
+            except sqlite3.OperationalError:     # another process holds the write: the next search fills
+                self.conn.rollback()
+                return 0
+        return len(rows)
+
+    def _level_tags(self) -> None:
+        """Rewrite tags stored with \\uXXXX escapes (older code's spelling) in their own letters, so
+        the word index reads a tag in any script as a word. Start-time only: the tags FILTER reads
+        either spelling at once (`_json_like`); only finding an entry BY such a tag waits for this."""
+        rows = self.conn.execute("SELECT rowid, tags FROM map_entries WHERE tags LIKE '%\\u%'").fetchall()
+        try:
+            for r in rows:
+                try:
+                    plain = _dumps(json.loads(r["tags"]))
+                except (TypeError, ValueError):
+                    continue
+                if plain != r["tags"]:
+                    self.conn.execute("UPDATE map_entries SET tags = ? WHERE rowid = ? AND tags = ?",
+                                      (plain, r["rowid"], r["tags"]))
+            self.conn.commit()
+        except sqlite3.OperationalError:         # another process holds the write: the next start levels
+            self.conn.rollback()
 
     def upsert(self, row: MapRow) -> None:
         vals = []
@@ -275,50 +390,110 @@ class SqliteMapIndex(MapIndex):
             if c == "is_canon":
                 v = 1 if v else 0
             elif c in _JSON_COLS:
-                v = json.dumps(v)
+                v = _dumps(v)
             vals.append(v)
         ph = ",".join("?" * len(_COLS))
         self.conn.execute(f"INSERT OR REPLACE INTO map_entries ({','.join(_COLS)}) VALUES ({ph})", vals)
         self.conn.commit()
 
-    def _row(self, r: sqlite3.Row) -> MapRow:
+    def _row(self, r: sqlite3.Row, vectors: bool = True) -> MapRow:
         d = {c: r[c] for c in _COLS}
+        if not vectors:
+            d["embedding"] = None               # the word leg never reads vectors: skip the decode
         d["is_canon"] = bool(d["is_canon"])
         d["instance_depth"] = int(d["instance_depth"] or 0)   # pre-pin rows carry NULL — 0 means unpinned
         d["tick"] = d["tick"] or ""                           # pre-field rows carry NULL — absence is normal
         d["thread"] = d["thread"] or ""
+        d["body_hash"] = d["body_hash"] or ""
         for c in _JSON_COLS:
             d[c] = json.loads(d[c]) if d[c] else ([] )
         return MapRow(**d)
 
-    def search(self, query_embedding, *, scope="all", seat=None, type=None, status="active", limit=10):
-        # universal search excludes the index-scoped types (messages, vantages); they surface only via
-        # their own scoped lookups (inbox / vantage_list). INVARIANT: any new universal-retrieval path (e.g. a
-        # future lexical/fusion ranker) MUST inherit this exclusion, or it re-admits the echo it must not.
-        where = ["type NOT IN ('msg', 'vap')"]
-        params: list = []
+    def _universal(self, *, scope="all", seat=None, type=None, status="active", tags=None, a=""):
+        """The WHERE clause every universal-retrieval path shares: (sql, params). INVARIANT: it
+        excludes the index-scoped types (messages, vantages), which surface only through their own
+        lookups (inbox / vantage_list). A new ranker that builds its own filter re-admits the echo
+        this exists to keep out. `a` is a table alias prefix such as "e."."""
+        where, params = [lexical.SEARCHABLE.format(a=a)], []
         if status:
-            where.append("status = ?"); params.append(status)
+            where.append(f"{a}status = ?"); params.append(status)
         if type:
-            where.append("type = ?"); params.append(type)
+            where.append(f"{a}type = ?"); params.append(type)
         if scope == "canon":
-            where.append("is_canon = 1")
+            where.append(f"{a}is_canon = 1")
         elif scope == "mine":
-            where.append("authoring_instance = ?"); params.append(seat or "")
-        sql = "SELECT * FROM map_entries WHERE " + " AND ".join(where)
+            where.append(f"{a}authoring_instance = ?"); params.append(seat or "")
+        for t in tags or []:
+            # the quoted JSON token narrows in SQL and never drops a true row; _has_tags decides
+            where.append(f"{a}tags LIKE ? ESCAPE '!'")
+            params.append(_json_like(t))
+        return " AND ".join(where), params
+
+    @staticmethod
+    def _has_tags(row: MapRow, tags) -> bool:
+        have = {t.lower() for t in row.tags}
+        return all(t.lower() in have for t in tags or [])
+
+    def _hit(self, row: MapRow, score: float, preview: str, match: str) -> Hit:
+        return Hit(path=row.path, ref=row.ref, authoring_instance=row.authoring_instance,
+                   is_canon=row.is_canon, type=row.type, title=row.title, score=round(score, 4),
+                   preview=preview, status=row.status, match=match, body_hash=row.body_hash)
+
+    def search(self, query_embedding, *, scope="all", seat=None, type=None, status="active", limit=10,
+               tags=None):
+        """The vector leg: every eligible row scored against the query embedding, best first."""
+        where, params = self._universal(scope=scope, seat=seat, type=type, status=status, tags=tags)
         scored = []
-        for r in self.conn.execute(sql, params).fetchall():
+        for r in self.conn.execute("SELECT * FROM map_entries WHERE " + where, params).fetchall():
             row = self._row(r)
-            if not row.embedding:
+            if not row.embedding or not self._has_tags(row, tags):
                 continue
             scored.append((cosine(query_embedding, row.embedding), row))
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [
-            Hit(path=row.path, ref=row.ref, authoring_instance=row.authoring_instance,
-                is_canon=row.is_canon, type=row.type, title=row.title,
-                score=round(s, 4), preview=row.body_text[:160], status=row.status)
-            for s, row in scored[:limit]
-        ]
+        out = Hits(self._hit(row, s, row.body_text[:160], "meaning") for s, row in scored[:limit])
+        out.cut = len(scored) > limit
+        return out
+
+    def search_words(self, words, *, scope="all", seat=None, type=None, status="active", limit=10,
+                     tags=None):
+        """The word leg: hits for the query's words, best first, each carrying how it matched
+        (`name`, `all-words`, `some-words`) and the passage that matched as its preview. Empty when
+        this SQLite build has no FTS5 (`self.fts` is False)."""
+        out = Hits()
+        if not self.fts:
+            return out
+        where, params = self._universal(scope=scope, seat=seat, type=type, status=status, tags=tags, a="e.")
+        found, out.cut = lexical.search(self.conn, words, where, params, limit)
+        for rank, (r, kind, passage) in enumerate(found):
+            row = self._row(r, vectors=False)
+            if self._has_tags(row, tags):
+                out.append(self._hit(row, 1.0 / (1 + rank), passage[:240] or row.body_text[:160], kind))
+        return out
+
+    def tagged(self, tags, *, scope="all", seat=None, type=None, status="active", limit=10):
+        """Entries carrying every one of `tags`, canon first then by title: the read path for tags
+        when there is no query."""
+        where, params = self._universal(scope=scope, seat=seat, type=type, status=status, tags=tags)
+        rows = [self._row(r, vectors=False) for r in self.conn.execute(
+            "SELECT * FROM map_entries WHERE " + where + " ORDER BY is_canon DESC, title, ref, path",
+            params).fetchall()]
+        carrying = [row for row in rows if self._has_tags(row, tags)]
+        out = Hits(self._hit(row, 0.0, row.body_text[:160], "tag") for row in carrying[:limit])
+        out.cut = len(carrying) > limit
+        return out
+
+    def holders_of(self, body_hash, path):
+        """Every searchable row holding this ENTRY (this body at this path), canon first, as
+        `Holder`s. The same body at another path is another entry and is not listed."""
+        if not body_hash:
+            return []
+        return [Holder(r["ref"], r["path"], bool(r["is_canon"]), r["authoring_instance"] or "",
+                       r["status"] or "", r["title"] or "", r["type"] or "",
+                       json.loads(r["tags"]) if r["tags"] else [])
+                for r in self.conn.execute(
+                    "SELECT ref, path, is_canon, authoring_instance, status, title, type, tags FROM map_entries "
+                    "WHERE body_hash = ? AND path = ? AND " + lexical.SEARCHABLE.format(a="") +
+                    " ORDER BY is_canon DESC, ref", (body_hash, path)).fetchall()]
 
     def cartography_of(self, target_path):
         rows = [self._row(r) for r in self.conn.execute("SELECT * FROM map_entries WHERE type='map'").fetchall()]
@@ -329,9 +504,9 @@ class SqliteMapIndex(MapIndex):
         # every seat) deserializes only THIS seat's messages, not every message once per seat. The
         # quoted form avoids substring false-matches ("al" vs "alice"); the Python membership check
         # stays authoritative. read-state lives in the audit log.
-        pat = f'%"{seat}"%'
         rows = [self._row(r) for r in self.conn.execute(
-            "SELECT * FROM map_entries WHERE type='msg' AND recipients LIKE ?", (pat,)).fetchall()]
+            "SELECT * FROM map_entries WHERE type='msg' AND recipients LIKE ? ESCAPE '!'",
+            (_json_like(seat),)).fetchall()]
         return [r for r in rows if seat in r.recipients]
 
     def vantages_for(self, *, entry=None, author=None, canon_state=None):
@@ -460,6 +635,8 @@ class SqliteMapIndex(MapIndex):
 
     def clear(self):
         self.conn.execute("DELETE FROM map_entries")
+        if self.fts:
+            lexical.clear(self.conn)
         self.conn.commit()
 
 
@@ -500,5 +677,5 @@ def _build_row(embedder: Embedder, *, ref: str, path: str, is_canon: bool,
         instance_depth=int(envelope.get("instance_depth", 0) or 0),   # str after a reindex's parse_entry
         tick=str(envelope.get("tick", "") or ""),                     # the mirror field, surfaced verbatim
         thread=str(envelope.get("thread", "") or ""),                 # the reserved associative tag
-        body_text=body, embedding=emb, model_id=embedder.model_id,
+        body_text=body, embedding=emb, model_id=embedder.model_id, body_hash=body_digest(body),
     )

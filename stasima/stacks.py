@@ -32,6 +32,8 @@ from dataclasses import dataclass, field
 from .local_capstore import (LocalCapStore, Identity, PathNotFound, RefNotFound, StaleRef,
                             CapStoreError, PERSP_PREFIX as PERSP, PROP_PREFIX as PROP)
 from .map_index import index_entry
+from .search import find_entries
+from . import lexical
 from .authz import Denied
 from .entries import compose_entry, parse_entry          # shared content-model serialization
 from .orientation import build_orientation               # practice-agnostic machinery + practice slots
@@ -801,24 +803,25 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
     # ---------------------------------------------------------------- MAP (needs an index) + IMP (needs an index + audit)
     if has_map:
         @op("replica")
-        def entry_search(seat: str, query: str, scope: str = "all",
+        def entry_search(seat: str, query: str = "", scope: str = "all",
                        type: str | None = None, limit: int = 10,
-                       include_superseded: bool = False, include_weak: bool = False) -> dict:
-            """Searches the corpus by meaning and returns attributed pointers (path, ref, author, type,
-            title, status, score, preview). `scope`: `canon`, `mine` (needs `seat`), or `all`. Superseded
-            entries are excluded unless `include_superseded=true`. Weak hits are withheld and counted in
-            `below_floor`; `include_weak=true` returns them. Class: replica."""
-            qv = embedder.embed_query([query])[0]
-            hits = index.search(qv, scope=scope, seat=seat, type=type, limit=limit,
-                                status=None if include_superseded else "active")
-            floor = getattr(embedder, "score_floor", 0.0) or 0.0
-            weak = [h for h in hits if h.score < floor]
-            if weak and not include_weak:
-                hits = [h for h in hits if h.score >= floor]
-            return {"results": [{"path": h.path, "ref": h.ref, "author": h.authoring_instance, "is_canon": h.is_canon,
-                     "type": h.type, "title": h.title, "status": h.status, "score": h.score,
-                     "preview": h.preview} for h in hits],
-                    "below_floor": 0 if include_weak else len(weak)}
+                       include_superseded: bool = False, include_weak: bool = False,
+                       tags: list[str] | None = None) -> dict:
+            """Finds entries by their words: the query as a name in a title, tag, or path ranks first
+            (`match='name'`), then entries with every word, then any word. `mode` says whether this
+            deployment also matches by meaning. Returns attributed pointers, best first; a word match
+            carries the passage that matched as `preview`. One entry held on several refs returns
+            once with `holders`. `scope`: `canon`, `mine`, or `all`. `tags` keeps entries carrying
+            every tag, with or without a query. Superseded entries are excluded unless
+            `include_superseded=true`. Class: replica."""
+            if scope not in ("all", "canon", "mine"):
+                raise Denied(f"scope must be 'all', 'canon', or 'mine', got {scope!r}")
+            if not lexical.words(query) and not [t for t in (tags or []) if t and t.strip()]:
+                raise Denied("entry_search needs something to look for — pass `query` (words), "
+                             "`tags` (entries carrying every tag), or both")
+            return find_entries(index, embedder, query, scope=scope, seat=seat, type=type, tags=tags,
+                                include_superseded=include_superseded, include_weak=include_weak,
+                                limit=limit)
 
         @op("replica")
         def thread_list(thread: str = "", limit: int = 16, offset: int = 0) -> dict:

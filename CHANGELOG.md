@@ -1,5 +1,47 @@
 ## Unreleased
 
+### Search
+
+- **Search finds an entry by its name.** `entry_search` gains a word leg: a full-text index (SQLite
+  FTS5, `stasima/lexical.py`) kept inside the map index. The query found as a phrase in a title, a
+  tag, or a path ranks first (`match: "name"`), then entries holding every word, then any word, each
+  ranked with a word in a name-bearing field above the same word in a body. From Repose's fresh-seat
+  finding (2026-11, Rehearsal ::21): under the stub embedder, none of seven name queries returned the
+  named entry. On a copy of that index the same queries now return it at ranks 1 to 4, in about
+  30 ms. The stub embedder no longer ranks when the word index exists; it was a 64-bucket word match
+  with no notion of a rare word.
+- **The meaning leg merges by rank.** With a real model configured (`embed_backend =
+  "local-server"`), hits from both legs are fused by reciprocal rank (`stasima/search.py`), so no
+  score floor has to separate them; a name match still leads. The floor (`search_score_floor`,
+  `below_floor`, `include_weak`) is now the meaning leg's alone. The response says which legs ran:
+  `mode` is `words`, `words+meaning`, `meaning`, or `approximate` (no FTS5 and no model).
+- **One entry is one result.** An entry is a body at a path. Held on several refs, it returns
+  once, canon's row standing for it, with `holders`. The same body at another path is another
+  entry and keeps its own name. An entry canon has retired no longer returns through an unflipped
+  copy on a perspective unless `include_superseded=true`; an entry moved by supersession is found
+  at its live path; and when every match was withheld this way, the answer's note says so.
+- **A full answer.** Copies and retired editions leave the answer after the legs return, so the
+  legs are asked again, for more, until the answer holds `limit` results or neither leg has more.
+- **Additive on the wire.** `entry_search` takes `tags` (entries carrying every tag; with no
+  `query`, a listing) and `query` becomes optional; an empty question and an unknown `scope` are
+  refused with the fix. Each result gains `match`, `holders` when more than one ref holds the
+  entry, and `similarity` when the meaning leg scored it. For a word match `preview` is the
+  passage that matched; for a meaning, tag, or approximate match it is the entry's opening.
+  `score` is now the fused rank value. The order of the list is the ranking (a name first);
+  `score` compares results of the same `match` in one list and means nothing across lists.
+- **The index keeps itself.** Three triggers on `map_entries` mirror every write into the word
+  index, so a process running older code still feeds it; every start levels the two tables. An
+  index from before this change fills on first open (0.6 s for 2,177 rows) with no `reindex`.
+  `map_entries` gains `body_hash`; a row written by older code lacks it, and the next search fills
+  it, so both entry rules hold without a restart.
+- **A tag in any script.** Tags are stored in their own letters, so a tag is a name whatever its
+  script, and the `tags` filter matches a tag that JSON would escape (a non-ASCII letter, a quote,
+  a backslash). Rows older code wrote with `\uXXXX` escapes filter at once and are rewritten at the
+  next start. A query is read as the tokenizer reads an entry: decomposed accents and a capital
+  such as `İ` no longer split a word.
+- Test: `search_test.py` (Repose's table as the fixture; the merge; a full answer; upkeep; two
+  searches at once; the wire). `audit_test.py` and `map_index_test.py` each run two readers at once.
+
 ### Fixed
 
 Defects in 0.3.0, found while reviewing the search work and then this fix. None was triggered on
@@ -66,6 +108,8 @@ the live deployment; each is reproduced by a test (`land_resilience_test.py`, `a
   and the admin CLI open one file; the tail read and the insert were not one transaction, so the
   later insert failed (`UNIQUE constraint failed: audit_events.seq`) on a write that had already
   reached git. An append is now one transaction that takes the write lock first.
+- **`message_inbox` for a seat whose name JSON escapes** (a non-ASCII letter, a quote). The
+  SQL prefilter looked for the raw name in the escaped column and never matched.
 - **The cockpit's land line** prints the anchor's head, or `NOT anchored`; it printed the start
   of a Python dict.
 

@@ -73,6 +73,18 @@ assert idx.inbox("research-2") == [], "sender is not a recipient"
 assert [r.path for r in idx.inbox("research-7")] == ["messages/look-here.md"], "recipient is addressed"
 assert len(idx.inbox("recto")) == 1, "other recipient also addressed"
 
+# ---- a recipient's name in any script reaches its inbox (the prefilter reads either JSON spelling)
+add(persp("research-2"), "messages/to-the-chorus.md", False, "research-2",
+    {"type": "msg", "subject": "for the chorus", "recipients": ["\u03a7\u03bf\u03c1\u03cc\u03c2", 'quo"te']}, "A note.")
+idx.conn.execute(                                    # the same message as a process running older code stored it
+    "INSERT INTO map_entries (ref, path, is_canon, authoring_instance, type, status, recipients, body_text, embedding) "
+    "VALUES (?,?,0,?,?,?,?,?,?)", (persp("research-7"), "messages/older.md", "research-7", "msg", "active",
+                                   '["\\u03a7\\u03bf\\u03c1\\u03cc\\u03c2"]', "An older note.", "[]"))
+idx.conn.commit()
+assert sorted(r.path for r in idx.inbox("\u03a7\u03bf\u03c1\u03cc\u03c2")) == ["messages/older.md", "messages/to-the-chorus.md"]
+assert [r.path for r in idx.inbox('quo"te')] == ["messages/to-the-chorus.md"]
+assert idx.inbox("\u03a7\u03bf\u03c1") == [] and len(idx.inbox("recto")) == 1, "a name is whole, never a prefix"
+
 # ---- two readers at the same moment each get their own rows (one connection, many handler threads)
 many = SqliteMapIndex(":memory:")
 for n in range(200):
@@ -99,5 +111,5 @@ pair = [threading.Thread(target=reader, args=(o,)) for o in (0, 100)]
 [th.start() for th in pair]
 [th.join() for th in pair]
 assert not wrong, (len(wrong), wrong[:3])
-print("\nOK -- schema, scope, attribution, Q4 material, inbox addressing, and readers at once verified "
+print("\nOK -- schema, scope, attribution, Q4 material, inbox addressing in any script, and readers at once verified "
       "(read-state in the audit log).")
