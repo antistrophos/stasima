@@ -13,7 +13,7 @@ so compose is the only direction that must round-trip for v1.
 # value as a list and such a title becomes one — the index then refuses the row, at a land after
 # canon has moved and at every rebuild after it. A new list field is added here when it is written.
 LIST_KEYS = frozenset({"tags", "references", "supersedes", "superseded_by", "recipients",
-                       "coordinates", "region_labels", "links"})
+                       "coordinates", "region_labels", "links", "provenance"})
 
 
 def _flat(v) -> str:

@@ -1,5 +1,44 @@
 ## Unreleased
 
+### Copy with lineage
+
+- **A write can copy a body from another canon.** `entry_write` and `proposal_append_entry` gain
+  `copy_from`: `<Source>:<path>` for a canon entry, `<Source>/<Seat>:<path>` for an entry on a
+  seat's perspective. The call sends `body=''`. The server reads the body from the source
+  repository, so the text does not pass through a seat and cannot change on the way. A deployment
+  names its sources in the config (`copy_sources = ["Rehearsal=C:/path/rehearsal.git"]`) and only
+  reads them. The title, type and tags come from the source entry when the call leaves them empty;
+  `references` and `thread` never do, because they name things in the source. No tool is added: the
+  wire stays 29 tools.
+- **Only a living entry is copied.** A retired entry is refused and the refusal names its living
+  edition. A message, a vantage or a reconcile report is refused: each is the server's record of
+  an act and stays where the act happened. A proposal's log entry is never a copy.
+- **`provenance`: a new envelope field that the server writes.** No call can supply it. Each item
+  is one ancestor of the entry, as `<depth> <relation> <address>`. The address is
+  `<Source>@<commit>:<path>` (or `<Source>/<Seat>@<commit>:<path>`), with the full commit id of the
+  source ref when the copy was made: a pin, never a range. The relation is `copy of` (the same
+  body, held there) or `supersedes` (the earlier edition it replaced there). The depth nests the
+  list: depth 1 is the entry's own source, and an item at depth n+1 describes the nearest item
+  above it at depth n. A copy of a copy keeps the whole list one level deeper, so the sourcing
+  holds through any number of copies. The envelope keeps one value per line.
+
+  ```
+  provenance: [1 copy of Rehearsal@9b9c767c…:technical/orientation/syntax-v4.md, 2 supersedes Rehearsal@9b9c767c…:technical/orientation/syntax-v3.md, 3 supersedes Rehearsal@9b9c767c…:technical/orientation/syntax-v2.md, 4 supersedes Rehearsal@9b9c767c…:technical/orientation/syntax.md]
+  ```
+
+  So a successor canon can hold only the finished text, at the path the first edition had, and
+  still show every edition that came before it. The earlier editions are found from either side
+  of a retirement pair: one pair in Rehearsal names its successor and is not named back.
+- **The true author travels with the text.** The server writes `origin_author` from the source's
+  record: the seat for a perspective, the seat on the commit that introduced the path for canon,
+  and for a copy of a copy the author the first copy recorded. Where the source names no author,
+  none is written. A seat's `origin_author` that contradicts the source is refused.
+- **A retirement keeps the lineage.** A re-write of a path builds its envelope again from the call.
+  When the path already holds a copy and the body is the same, the server keeps `provenance` and
+  `origin_author`. A copy can also be retired with `copy_from` again in place of the body.
+- **The source shows at the gate.** `proposal_preview` gives `copy_of` beside the names in
+  `attributions`; `canon_state` lists `copy_sources` when the deployment has any.
+
 ### Search
 
 - **Search finds an entry by its name.** `entry_search` gains a word leg: a full-text index (SQLite

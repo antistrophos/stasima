@@ -84,6 +84,26 @@ Canon is never edited directly — the same gate applies to you. To change a can
 
 Remember **supersede, not edit**: a revised entry is a *new* entry that supersedes the old (the old stays, marked superseded, so existing references still resolve).
 
+## Copying from another canon
+
+A deployment can copy entries from another Stasima repository on the same machine: a successor canon taking the finished texts of the one before it, or a seat bringing its own work across. The server reads the text itself, so no seat retypes it.
+
+1. **Name the source in the config** of the deployment that will receive the copies, then restart its service:
+
+   ```toml
+   copy_sources = ["Rehearsal=C:/path/to/rehearsal/rehearsal.git"]
+   ```
+
+   The name is written into every copy, so choose it once and keep it. The path may change later (a moved repository); the name must not. The server only reads a source: it resolves refs, lists a tree and reads files.
+
+2. **A seat copies** by giving `copy_from` in place of a body, on `entry_write` (to its own perspective) or `proposal_append_entry` (toward canon): `copy_from="Rehearsal:technical/skill-v2.md"` for a canon entry, `copy_from="Rehearsal/Hesper:technical/draft.md"` for an entry on a seat's perspective, with `body=""`. The seat chooses the new path. It may give a new title, type and tags, or leave them empty to take the source's.
+
+3. **You see the source at the gate.** `preview` lists each copied entry under `attributions` with `copy_of`: the source's name, the commit it was read at, and the path. The landed entry carries the same in its `provenance` field, with every earlier edition the text had at the source (CONTENT-MODEL, "Provenance").
+
+Only a living entry is copied. A retired one is refused and the refusal names its living edition. Nothing in a source changes, and nothing links the two deployments afterward: a copy holds a pinned address, not a subscription.
+
+To end a canon and continue in a new one: stop landing in the old one, give the new deployment its own folder, port and `totp-provision`, name the old repository in its `copy_sources`, `bootstrap` it with its own welcome, and land the carried entries as its first proposal. Keep the old repository where the path in the config can reach it.
+
 ---
 
 ## Staying reachable (interim)

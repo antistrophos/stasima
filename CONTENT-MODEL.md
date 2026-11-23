@@ -68,6 +68,23 @@ Two artifact types deliberately named apart. **Coherence state** (`state/`, `can
 
 Every deferred analysis reduces to a query over it: "bad base idea vs. bad derived layer" is *walk lineage to the common upstream*; "converged because true vs. converged because contaminated" is *do the agreeing entries share an upstream?*; canon-alignment relevance is *proximity through the same graph*. If entries don't record what they build on, none of it is recoverable. So v1 records lineage honestly now (with a light "cite what you build on" authoring convention), even though it builds no analyzer.
 
+## Provenance — a copy from another canon
+
+An entry whose body was copied from another canon carries `provenance`. The server writes it; no call can supply it. It is the lineage that crosses a canon's edge, where `references` and `supersedes` cannot follow: they name paths, and a path belongs to one canon.
+
+```yaml
+provenance: [1 copy of Rehearsal@<commit>:technical/skill-v2.md, 2 supersedes Rehearsal@<commit>:technical/skill.md]
+origin_author: epode
+```
+
+- **Each item is one ancestor:** `<depth> <relation> <address>`.
+- **The address** is `<Source>@<commit>:<path>` for a canon entry and `<Source>/<Seat>@<commit>:<path>` for an entry on a seat's perspective. `<Source>` is the name the copying deployment's config gives that repository. `<commit>` is the full id of the source ref's tip when the copy was made. It is a pin: the address names one text forever, and it stays readable for as long as the source repository does. A comma, a closing bracket or a percent sign in a path is written `%2C`, `%5D`, `%25`.
+- **The relation** is `copy of` (the same body, held there) or `supersedes` (the earlier edition it replaced there).
+- **The depth nests the list.** Depth 1 is this entry's own source. An item at depth n+1 describes the nearest item above it at depth n. A copy of a copy keeps the source's whole list one level deeper, so an entry can be copied forward any number of times and still name everything it came from. An entry with a copy source and an earlier edition of its own has two items at one depth.
+- **Only the living edition is copied.** Its earlier editions stay in the source and are named here, each at the same pinned commit, where the source still holds them. A successor canon therefore starts with no retired entries.
+- **`origin_author`** is the author on the source's record and travels with the text through every copy. Where the source names none, none is written.
+- **A re-write keeps it.** When a path holds a copy and is written again with the same body (a retirement), the server keeps both fields.
+
 ## Assets
 
 Git stores binaries natively, so it'll version a small owned file inline; the catch is clone bloat. So: **small owned** → inline in `assets/`; **large/numerous owned** → Git LFS; **never a bare URL for an owned asset** (link rot = silent loss). A URL you merely *cite* is a `references/` entry with `url:`, not an asset. *Own it → commit it; cite it → reference it.*

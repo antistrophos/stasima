@@ -38,6 +38,7 @@ from .authz import Denied
 from .entries import compose_entry, parse_entry          # shared content-model serialization
 from .orientation import build_orientation               # practice-agnostic machinery + practice slots
 from .canon import LOG_DIR, CHAT_ERA_FREEZE, canon_seq, seq_display, proposal_statuses, close_proposal
+from .provenance import CopySources                      # copy_from: a body read from another canon
 
 
 @dataclass(frozen=True)
@@ -119,11 +120,13 @@ class Stacks:
 def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, authz=None, airlock=None, *,
                  orientation_text: str = None, orientation_base: str = "technical/orientation",
                  seq_origin: int = CHAT_ERA_FREEZE, deployment_name: str = "",
-                 pull_logs_in_full: int = 8, join_gate: bool = True) -> Stacks:
+                 pull_logs_in_full: int = 8, join_gate: bool = True,
+                 copy_sources: dict | None = None) -> Stacks:
     """Assemble the back end over its components. The body below is the operational law of the
     practice — every helper and every op, registered by name as it is defined."""
     ops = {}
     classes = {}
+    copies = CopySources(copy_sources, own_name=deployment_name, git_timeout=store.git_timeout)
 
     def op(cls):
         """Register an op under its function name with its CLASS — the async-tolerance axis the wire
@@ -161,6 +164,49 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             env["superseded_by"] = superseded_by
         env.update({k: v for k, v in extra.items() if v})
         return env
+
+    def _copy(seat, op, copy_from, body, path):
+        """The body and the lineage for a write that gives `copy_from`: read from the source by the
+        server, so the text cannot change in a seat's hands. A body in the same call is a second
+        text and is refused."""
+        if body.strip():
+            raise Denied("give copy_from or body, not both: with copy_from the server reads the body from "
+                         "the source. Send body='' to copy, or drop copy_from to write your own text.")
+        try:
+            return copies.read(copy_from)
+        except Denied as e:
+            _log(seat, op, target_path=path, outcome="denied",
+                 detail={"reason": "copy_from refused", "copy_from": copy_from, "msg": str(e)[:300]})
+            raise
+
+    def _copy_defaults(copied, title, type, tags):
+        # the seat authors the new envelope; what it leaves empty is read from the source entry, so a
+        # long title is not retyped. References and the thread are never taken: they name things in
+        # the source, not here.
+        src = copied.envelope
+        if not title:
+            title = src.get("title") or ""
+        if type == "kno" and src.get("type") and src["type"] != "log":
+            type = src["type"]
+        if tags is None and isinstance(src.get("tags"), list):
+            tags = list(src["tags"])
+        return title, type, tags
+
+    def _keep_provenance(envelope, tip, path, body):
+        """A re-write of a path builds its envelope again from the call (a retirement is one), and
+        `provenance` is not something a call can give. So when the path already holds a copy and the
+        body is the same, the lineage it carries is kept. A body that differs is no longer that copy."""
+        if "provenance" in envelope:
+            return
+        old = _blob_at(tip, path)
+        if old is None:
+            return
+        old_env, old_body = parse_entry(old.decode("utf-8", "replace"))
+        if isinstance(old_env.get("provenance"), list) and old_env["provenance"] \
+                and old_body.strip() == body.strip():
+            if old_env.get("origin_author") and "origin_author" not in envelope:
+                envelope["origin_author"] = old_env["origin_author"]
+            envelope["provenance"] = old_env["provenance"]
 
     _THREAD_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789-")
 
@@ -420,11 +466,13 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                    supersedes: list[str] | None = None, status: str = "active",
                    superseded_by: list[str] | None = None,
                    vantage: str = "", vantage_title: str = "", tick: str = "",
-                   thread: str = "") -> dict:
+                   thread: str = "", copy_from: str = "") -> dict:
         """Writes one entry to the seat's perspective at `<domain>/<slug>.md`. Never rewrite a path's
         body — refused; revise with a new entry carrying `supersedes`, then re-write the old one
         unchanged with `status='superseded'` and `superseded_by`. `vantage` records what the entry
         was written against, same commit. `tick` (under `state/` only) declares the seat's state label.
+        `copy_from` ('<Source>:<path>', or '<Source>/<Seat>:<path>' for a perspective) copies a living
+        entry from another canon: send `body=''`; the server reads the body and writes `provenance`.
         A seat's first write is its ::1 state update; other writes are refused until then. Class: origin."""
         seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = persp_ref(seat)
@@ -445,9 +493,15 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         _join_gate(seat, "entry_write", domain=domain, tick=tick)
         if thread:
             _check_thread(thread)
+        copied = _copy(seat, "entry_write", copy_from, body, path) if copy_from else None
+        if copied:
+            body = copied.body
+            title, type, tags = _copy_defaults(copied, title, type, tags)
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
                                       supersedes=supersedes, superseded_by=superseded_by, tick=tick,
-                                      thread=thread or None)
+                                      thread=thread or None,
+                                      origin_author=copied.origin_author if copied else None,
+                                      provenance=copied.provenance if copied else None)
         if _binding_stamp:
             envelope.update(_binding_stamp)
         vap_path = f"vantages/{op_id}-vap.md" if vantage else None
@@ -456,6 +510,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         def build(btip):
             # per-tip work, re-run on a CAS retry: guard + pins + composition all keyed to `btip`
             _check_immutable(seat, btip, path, body)
+            _keep_provenance(envelope, btip, path, body)
             _pin(envelope, seat, btip)
             changes = {path: compose_entry(envelope, body)}
             if vantage:
@@ -499,6 +554,10 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             return out
         _index(ref, path, False, seat, r.oid, envelope, body)            # git-first ...
         detail = {"folded": vap_path} if vap_path else None
+        if copied:
+            detail = dict(detail or {}, copy_of=copied.address)
+            out["copy_of"] = copied.address
+            out["provenance"] = copied.provenance
         _log(seat, "entry_write", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid,
              detail=detail)                                                     # ... then audit
         if vap_path:
@@ -598,12 +657,14 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 tags: list[str] | None = None, references: list[str] | None = None,
                 supersedes: list[str] | None = None, status: str = "active",
                 superseded_by: list[str] | None = None, origin_author: str = "",
-                thread: str = "") -> dict:
+                thread: str = "", copy_from: str = "") -> dict:
         """Appends one entry to a proposal at `<domain>/<slug>.md`, creating the proposal if
         `proposal_id` is new. Reconcile first — refused otherwise. Exactly one log entry per proposal:
         `domain='meta/log'`, `slug=<seq>`, `type='log'`, `seq` = canon's `next_seq`. Another seat's
-        work needs `origin_author` — refused otherwise. Refused before the seat's ::1 state update. Only
-        the practitioner lands. Class: origin."""
+        work needs `origin_author` — refused otherwise. `copy_from` ('<Source>:<path>', or
+        '<Source>/<Seat>:<path>' for a perspective) copies a living entry from another canon: send
+        `body=''`; the server reads the body and writes `provenance` and `origin_author`. Refused
+        before the seat's ::1 state update. Only the practitioner lands. Class: origin."""
         seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = prop_ref(proposal_id)
         if domain != domain.strip("/") or "//" in f"{domain}/{slug}":
@@ -634,7 +695,21 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 # exactly the practitioner-as-error-relay the fail-fast exists to prevent
                 raise Denied(f"log slug {slug!r} must equal its lowercase-hex seq {s!r} (the entry "
                              f"lands at meta/log/{s}.md; uppercase or display '::' forms fail at land)")
-        if index is not None:
+            if copy_from:
+                raise Denied("a proposal's log entry is the account of THIS land and is written for it; "
+                             "copy_from is refused on meta/log. Copy an old narrative to another path.")
+        copied = _copy(seat, "proposal_append_entry", copy_from, body, path) if copy_from else None
+        if copied:
+            body = copied.body
+            title, type, tags = _copy_defaults(copied, title, type, tags)
+            if copied.origin_author:
+                # the source's record names the author; a seat's word cannot contradict it
+                if origin_author and origin_author != copied.origin_author:
+                    raise Denied(f"origin_author={origin_author!r} contradicts the source: {copied.address} "
+                                 f"was written by {copied.origin_author!r}. Leave origin_author out with "
+                                 f"copy_from; the server writes it.")
+                origin_author = copied.origin_author
+        if index is not None and not (copied and copied.origin_author):
             # the cross-propose attribution guard: carrying another seat's work toward canon is a
             # legitimate flow (curation) — carrying it SILENTLY is not. Two axes, both facts: the
             # path already under another name, or the verbatim body anywhere. Refusing silence is
@@ -664,11 +739,13 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                                       supersedes=supersedes, superseded_by=superseded_by,
                                       seq=seq.lower() if seq else None,
                                       origin_author=origin_author or None,
-                                      thread=thread or None)
+                                      thread=thread or None,
+                                      provenance=copied.provenance if copied else None)
         if _binding_stamp:
             envelope.update(_binding_stamp)
 
         def build(btip):
+            _keep_provenance(envelope, btip, path, body)
             _pin(envelope, seat, btip)
             return {path: compose_entry(envelope, body)}
         try:
@@ -679,8 +756,13 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             _log(seat, "proposal_append_entry", target_ref=ref, target_path=path, op_id=op_id,
                  outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
             raise
-        _log(seat, "proposal_append_entry", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid)
-        return {"proposal_id": proposal_id, "oid": r.oid, "path": path, "author": seat}
+        _log(seat, "proposal_append_entry", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid,
+             detail={"copy_of": copied.address} if copied else None)
+        out = {"proposal_id": proposal_id, "oid": r.oid, "path": path, "author": seat}
+        if copied:
+            out["copy_of"] = copied.address
+            out["provenance"] = copied.provenance
+        return out
 
     @op("origin")
     def proposal_retract_path(principal, proposal_id: str, path: str, op_id: str) -> dict:
@@ -727,7 +809,8 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
     @op("replica")
     def proposal_preview(proposal_id: str) -> dict:
         """Reports whether a proposal would land cleanly on current canon: `adds`, `modifies`,
-        `removes`, conflicts, and `attributions` (entries carried for another seat). If `removes` is
+        `removes`, conflicts, and `attributions` (entries carried for another seat, and copies from
+        another canon with their source). If `removes` is
         non-empty, re-author before asking to land — a land that removes a canon path is refused.
         Class: replica."""
         summary = store.preview_merge(prop_ref(proposal_id))
@@ -738,10 +821,15 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 env, _ = parse_entry(store.read_blob(pref, p).decode("utf-8", "replace"))
             except (PathNotFound, RefNotFound):
                 continue
-            if env.get("origin_author"):
+            prov = env.get("provenance")
+            copy_of = (str(prov[0])[len("1 copy of "):] if isinstance(prov, list) and prov
+                       and str(prov[0]).startswith("1 copy of ") else "")
+            if env.get("origin_author") or copy_of:
                 hist = store.history(pref, p)
-                attributions[p] = {"authored": env["origin_author"],
+                attributions[p] = {"authored": env.get("origin_author", ""),
                                    "proposed": hist[0]["author"] if hist else ""}
+                if copy_of:   # a copy from another canon: the practitioner sees its source beside the names
+                    attributions[p]["copy_of"] = copy_of
         conflicted = bool(summary.conflicts)
         return {"conflicts": conflicted, "conflict_detail": summary.conflicts,
                 "changed_paths": summary.changed_paths,
@@ -1162,10 +1250,13 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             n = canon_seq(store, seq_origin)
             lands = [{"oid": e["result_oid"], "ts": e["ts"], "by": e["actor"], "seq": e["detail"].get("seq")}
                      for e in audit.events(op="land_merge")]
-            return {"canon_tip": tip, "seq": format(n, "x"), "display": seq_display(n),
-                    "next_seq": format(n + 1, "x"),
-                    "practitioner_attention": _attention(),
-                    "entries": store.list_paths(store.canon_ref) if tip else [], "lands": lands[-10:]}
+            out = {"canon_tip": tip, "seq": format(n, "x"), "display": seq_display(n),
+                   "next_seq": format(n + 1, "x"),
+                   "practitioner_attention": _attention(),
+                   "entries": store.list_paths(store.canon_ref) if tip else [], "lands": lands[-10:]}
+            if copies.names():   # the canons this deployment may copy from (`copy_from` on a write)
+                out["copy_sources"] = copies.names()
+            return out
 
         if airlock is not None:
             @op("relay")
