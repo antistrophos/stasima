@@ -8,21 +8,22 @@ never passes through the seat and cannot change on the way. The server reads; it
 source.
 
 The copy carries `provenance`: a list the server writes and no seat can supply. It is a path, read
-like an AS path: every place this same text has been held, the nearest first, the origin last.
+like an AS path: the canon where the text began, then each canon it was copied from in turn.
 
-    provenance: [Debut@4f1d…:technical/orientation/syntax.md, Rehearsal@9b9c…:technical/orientation/syntax-v4.md]
+    provenance: [Rehearsal@9b9c…:technical/orientation/syntax-v4.md, Debut@4f1d…:technical/orientation/syntax.md, Third@77aa…]
 
-Each item is one address: `<Source>@<commit>:<path>` for a canon entry, `<Source>/<Seat>@<commit>:<path>`
-for an entry on a seat's perspective. The commit is the full object id of the source ref's tip when
-the copy was made: a pin, never a range. A copy puts the address it read at the front of the list
-its source carried, and changes nothing else. So every address in the list holds this entry's body
-exactly, and there is nothing to read between the items: no depth, no relation, no rule.
+Each item is one hop: `<Source>@<commit>` for a canon, `<Source>/<Seat>@<commit>` for a seat's
+perspective. The commit is the full object id of that ref's tip when the copy was made from it: a
+pin, never a range. The first hop, the origin, always carries the entry's path there. A later hop
+carries a path only when the entry's name changed there; with none, the name is the one before it.
+The example reads: it began in Rehearsal as `syntax-v4.md`, was `syntax.md` in Debut, and kept that
+name in Third. A copy adds one hop to the end of the path its source carried and changes nothing
+else, so every hop holds this entry's body exactly.
 
-A name change shows in the path: the entry above is `syntax.md` now and was `syntax-v4.md` where it
-came from. The path is written at every hop, changed or not, so that each address resolves alone.
+The default is no name change: a copy keeps the source's path unless the call gives another.
 
 Only the living edition is copied, and what it replaced is not listed here: a retirement is an act
-in a canon, and its record stays in that canon. The first address leads to it.
+in a canon, and its record stays in that canon. The last hop leads to it.
 """
 from __future__ import annotations
 
@@ -35,7 +36,7 @@ from .local_capstore import CapStoreError, LocalCapStore, PathNotFound, PERSP_PR
 # The kinds of entry the server writes as the record of an act. They stay where the act happened.
 SERVER_KINDS = {"msg": "a message", "vap": "a vantage", "reconciliation": "a reconcile report"}
 
-_ADDRESS = re.compile(r"(?P<source>[^/@]+)(?:/(?P<seat>[^@]+))?@(?P<commit>[0-9a-f]{40}):(?P<path>.+)\Z", re.S)
+_HOP = re.compile(r"(?P<source>[^/@]+)(?:/(?P<seat>[^@]+))?@(?P<commit>[0-9a-f]{40})(?::(?P<path>.+))?\Z", re.S)
 _HOPS = 64   # a retirement chain longer than this is followed no further (and a cycle ends there)
 
 
@@ -48,7 +49,7 @@ def _paths(value) -> list:
 
 
 def _quote(name: str) -> str:
-    # an address is one item of a bracketed list: a comma or a closing bracket in a path or in a seat's
+    # a hop is one item of a bracketed list: a comma or a closing bracket in a path or in a seat's
     # name would split or end the list when it is read back
     return name.replace("%", "%25").replace(",", "%2C").replace("]", "%5D")
 
@@ -57,8 +58,33 @@ def _unquote(name: str) -> str:
     return name.replace("%2C", ",").replace("%5D", "]").replace("%25", "%")
 
 
-def address(source: str, seat, commit: str, path: str) -> str:
-    return f"{source}{'/' + _quote(seat) if seat else ''}@{commit}:{_quote(path)}"
+def address(source: str, seat, commit: str, path: str | None) -> str:
+    """One hop as it is written. `path=None` writes the hop with no name: the name did not change."""
+    return (f"{source}{'/' + _quote(seat) if seat else ''}@{commit}"
+            + (f":{_quote(path)}" if path is not None else ""))
+
+
+def read_provenance(items) -> list:
+    """The path as rows, origin first: [{source, seat, commit, path, named}]. `path` is the entry's
+    name at that hop, filled from the hop before it when the hop wrote none; `named` says whether the
+    hop wrote one. An item that is not a hop is kept as {"raw": item}: a reader drops nothing."""
+    rows, name = [], None
+    for item in items or []:
+        m = _HOP.match(str(item).strip())
+        if not m:
+            rows.append({"raw": str(item)})
+            continue
+        named = m.group("path") is not None
+        name = _unquote(m.group("path")) if named else name
+        rows.append({"source": m.group("source"), "seat": _unquote(m.group("seat")) if m.group("seat") else None,
+                     "commit": m.group("commit"), "path": name, "named": named})
+    return rows
+
+
+def last_address(items) -> str:
+    """The full address of the last hop — where this entry itself was copied from — or ''."""
+    hops = [r for r in read_provenance(items) if "commit" in r and r["path"]]
+    return address(hops[-1]["source"], hops[-1]["seat"], hops[-1]["commit"], hops[-1]["path"]) if hops else ""
 
 
 def _decode(raw: bytes, *, strict: bool) -> str:
@@ -90,6 +116,16 @@ def parse_copy_from(text: str):
                      f"'<Source>/<Seat>:<path>' for an entry on a seat's perspective, with the path as "
                      f"the source lists it (the server pins the commit; give none)")
     return source.strip(), (seat.strip() or None) if slash else None, _md(path)
+
+
+def source_name(copy_from: str):
+    """(domain, slug) of the entry `copy_from` names: the name a copy keeps when the call gives none."""
+    _, _, path = parse_copy_from(copy_from)
+    domain, sep, slug = path[:-3].rpartition("/")
+    if not sep or not domain or not slug:
+        raise Denied(f"the source's path {path!r} has no domain, so the copy cannot keep it: give `domain` "
+                     f"and `slug` for the copy")
+    return domain, slug
 
 
 class _SourceStore(LocalCapStore):
@@ -223,6 +259,10 @@ class CopySources:
             # the path the source's entry carries: where the text was held before it was held there
             carried = [str(x).strip() for x in env.get("provenance") or [] if str(x).strip()] \
                 if isinstance(env.get("provenance"), list) else []
+            # The new hop carries the entry's name there when it is the origin, or when the name is
+            # not the one the path already ends on. Otherwise the hop is the source alone.
+            before = [r for r in read_provenance(carried) if r.get("path")]
+            hop = address(source, seat, commit, path if not before or before[-1]["path"] != path else None)
             # The true author, from the source's own record. An entry that is itself a copy keeps the
             # author it recorded, and an unknown one stays unknown: the seat that made that copy did
             # not write the text. Otherwise a perspective's entry is its seat's, and a canon entry is
@@ -237,25 +277,10 @@ class CopySources:
                         author = self._first_writer(store, commit, path, body)
                     except CapStoreError:
                         author = ""
-            here = address(source, seat, commit, path)
         except PathNotFound as e:
             raise Denied(f"{where} could not be read at {path}: {e}")
         except (CapStoreError, OSError) as e:
             raise Denied(f"the source {source} cannot be read ({e.__class__.__name__}: {e}). Its repository "
                          f"is {self._dirs[source]!r} in the config's copy_sources; nothing was written.")
-        return Copied(body=body, envelope=env, provenance=[here] + carried, origin_author=author, address=here,
-                      source=where, commit=commit, path=path)
-
-
-def read_provenance(items) -> list:
-    """The path as rows, nearest first: [{source, seat, commit, path}]. An item that is not an address
-    is kept as {"raw": item}: nothing recorded is dropped by a reader."""
-    rows = []
-    for item in items or []:
-        m = _ADDRESS.match(str(item).strip())
-        if not m:
-            rows.append({"raw": str(item)})
-            continue
-        rows.append({"source": m.group("source"), "seat": _unquote(m.group("seat")) if m.group("seat") else None,
-                     "commit": m.group("commit"), "path": _unquote(m.group("path"))})
-    return rows
+        return Copied(body=body, envelope=env, provenance=carried + [hop], origin_author=author,
+                      address=address(source, seat, commit, path), source=where, commit=commit, path=path)

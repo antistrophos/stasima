@@ -19,8 +19,10 @@ Three deployments, each a real bare repository: Old (the source), New (copies fr
   6. a proposal copies the same way, the practitioner's preview shows the source, a seat's
      origin_author cannot contradict the source, and the log entry is never a copy;
   7. a land carries the provenance into canon;
-  8. a copy of a copy puts its own source in front of the path it carried, so every address in
-     the path holds the same text; a text first written here starts a new path;
+  8. a copy of a copy adds one hop to the end of the path it carried: the origin first, with its
+     name; a later hop with a name only where the name changed; every hop holds the same text; a
+     text first written here starts a new path; and the default is no name change (an empty
+     domain and slug keep the source's path);
   9. a retirement keeps the provenance, with the body sent again or with copy_from again; a write
      of another text to the same path is still refused;
  10. a path that holds a comma is quoted, and the list reads back whole.
@@ -206,7 +208,7 @@ async def main():
         assert env["tags"] == ["suite", "skill"] and env["type"] == "kno", env
         assert env["references"] == [] and "supersedes" not in env, env        # they name things in Old
         assert read_provenance(env["provenance"]) == [
-            {"source": "Old", "seat": None, "commit": OLD_TIP, "path": "technical/skill-v2.md"}]
+            {"source": "Old", "seat": None, "commit": OLD_TIP, "path": "technical/skill-v2.md", "named": True}]
         # what the call gives, the call keeps
         r = payload(await call("entry_write", seat="Ada", domain="argot", slug="term", body="", op_id="a2",
                                copy_from="Old:argot/term", title="term, as New holds it", tags=["kept"]))
@@ -337,13 +339,18 @@ async def main():
         # 8. a copy of a copy
         r = payload(await call("entry_write", seat="Bea", domain="technical", slug="skill", body="", op_id="b1",
                                copy_from="New:technical/skill.md"))
-        assert r["provenance"] == [f"New@{NEW_TIP}:technical/skill.md", f"Old@{OLD_TIP}:technical/skill-v2.md"], r
+        # the origin first, with its name; then New, where the name changed
+        assert r["provenance"] == [f"Old@{OLD_TIP}:technical/skill-v2.md", f"New@{NEW_TIP}:technical/skill.md"], r
+        assert r["copy_of"] == f"New@{NEW_TIP}:technical/skill.md", r
         env, body = held(third, PERSP_PREFIX + "Bea", "technical/skill.md")
         assert body == SKILL_BODY and env["provenance"] == r["provenance"], env
-        # every address in the path holds this same text, each read from its own repository
         stores = {"Old": old, "New": new}
-        for hop in read_provenance(env["provenance"]):
-            assert hop["seat"] is None and held(stores[hop["source"]], hop["commit"], hop["path"])[1] == body, hop
+
+        def every_hop_holds(provenance, text):
+            # each hop, its name filled in, read from its own repository at its pinned commit
+            for hop in read_provenance(provenance):
+                assert held(stores[hop["source"]], hop["commit"], hop["path"])[1] == text, hop
+        every_hop_holds(env["provenance"], body)
         # Ada's new edition is her own text: its path starts with her, whatever it replaced there
         r = payload(await call("entry_write", seat="Bea", domain="technical", slug="skill-next", body="", op_id="b2",
                                copy_from="New/Ada:technical/skill-next.md"))
@@ -352,13 +359,25 @@ async def main():
         # Ada's b-v2 was itself a copy from Old (and replaced an entry of her own, which is not listed)
         r = payload(await call("entry_write", seat="Bea", domain="technical", slug="b", body="", op_id="b3",
                                copy_from="New/Ada:technical/b-v2.md"))
-        assert r["provenance"] == [f"New/Ada@{ADA_TIP}:technical/b-v2.md", f"Old@{OLD_TIP}:argot/term.md"], r
+        assert r["provenance"] == [f"Old@{OLD_TIP}:argot/term.md", f"New/Ada@{ADA_TIP}:technical/b-v2.md"], r
+        every_hop_holds(r["provenance"], held(old, OLD_TIP, "argot/term.md")[1])
         # the text is Old's, seeded there by the practitioner: Ada, who copied it, is not named as its author
         assert held(third, PERSP_PREFIX + "Bea", "technical/b.md")[0]["origin_author"] == "practitioner"
-        r = payload(await call("entry_write", seat="Bea", domain="technical", slug="criterion", body="", op_id="b4",
+        # the default is no name change: an empty domain and slug keep the source's path, and a hop
+        # where the name did not change is the source alone
+        r = payload(await call("entry_write", seat="Bea", domain="", slug="", body="", op_id="b4",
                                copy_from="New:technical/criterion.md"))
+        assert r["path"] == "technical/criterion.md", r
+        assert r["provenance"] == [f"Old@{OLD_TIP}:technical/criterion.md", f"New@{NEW_TIP}"], r
+        assert r["copy_of"] == f"New@{NEW_TIP}:technical/criterion.md", r
+        rows = read_provenance(r["provenance"])
+        assert [x["named"] for x in rows] == [True, False] and rows[1]["path"] == "technical/criterion.md", rows
+        every_hop_holds(r["provenance"], "The criterion, by Hesper.")
         assert held(third, PERSP_PREFIX + "Bea", "technical/criterion.md")[0]["origin_author"] == "Hesper"
-        print("8. a copy of a copy: its source in front of the path it carried; every address holds the text")
+        res = await call("entry_write", seat="Bea", domain="argot", slug="", body="", op_id="b5",
+                         copy_from="New/Ada:argot/term.md")
+        assert is_err(res) and "give both" in err_text(res), err_text(res)
+        print("8. a copy of a copy: one hop added at the end; a name only where it changed; default: no name change")
 
     # the sources were only read
     assert old.resolve_ref(CANON) == OLD_TIP and old.resolve_ref(wren) == WREN_TIP
@@ -406,8 +425,8 @@ async def after_review():
         assert (await author_of("seeded", "Old:technical/v1.md"))["origin_author"] == "practitioner"
         env = await author_of("unknown", "Old/Wren:technical/unknown.md")
         assert "origin_author" not in env, env          # unknown at the source stays unknown: not Wren, not Cy
-        assert env["provenance"] == [f"Old/Wren@{WREN_TIP}:technical/unknown.md",
-                                     "Elsewhere@" + "0" * 40 + ":x.md"], env
+        assert env["provenance"] == ["Elsewhere@" + "0" * 40 + ":x.md",
+                                     f"Old/Wren@{WREN_TIP}:technical/unknown.md"], env
         env = await author_of("ab", "Old/A,B:technical/x.md")
         assert env["provenance"] == [f"Old/A%2CB@{AB_TIP}:technical/x.md"] and env["origin_author"] == "A,B", env
         assert read_provenance(env["provenance"])[0]["seat"] == "A,B"
@@ -454,16 +473,21 @@ async def after_review():
         r = await ok("proposal_append_entry", seat="Dee", proposal_id="p3", domain="technical", slug="own",
                      body="Dee's own text.", op_id="p3-c")
         assert "provenance" not in r and "provenance" not in held(new, "refs/cap/proposals/p3", "technical/own.md")[0]
+        # a proposal keeps the source's path by default too
+        r = await ok("proposal_append_entry", seat="Dee", proposal_id="p3", domain="", slug="", body="", op_id="p3-d",
+                     copy_from="Old:technical/v1.md")
+        assert r["path"] == "technical/v1.md" and r["provenance"] == [f"Old@{OLD_TIP}:technical/v1.md"], r
         print("14. the lineage follows the text: the body sent again, by its copier or another seat, is still a copy")
 
         # 15. the practitioner's console preview shows the source
         cfg(f'seq_origin = 0\ncopy_sources = ["Old={old_gd.replace(os.sep, "/")}"]')
         pv = admin.main(["--config", cfgp, "preview", "p2"])
         assert pv["copies"]["technical/replaced.md"] == {
-            "copy_of": f"Old@{OLD_TIP}:technical/replaced.md", "authored": "Ivo", "before_that": []}, pv
+            "copy_of": f"Old@{OLD_TIP}:technical/replaced.md", "authored": "Ivo",
+            "path": [f"Old@{OLD_TIP}:technical/replaced.md"]}, pv
         assert pv["copies"]["practice/unknown.md"] == {
             "copy_of": f"Old/Wren@{WREN_TIP}:technical/unknown.md", "authored": "",
-            "before_that": ["Elsewhere@" + "0" * 40 + ":x.md"]}, pv
+            "path": ["Elsewhere@" + "0" * 40 + ":x.md", f"Old/Wren@{WREN_TIP}:technical/unknown.md"]}, pv
         print("15. the console preview lists each copy with its source and author")
 
         # 16. a replay reports what git holds and does not read the source again

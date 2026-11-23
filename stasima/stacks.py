@@ -38,7 +38,7 @@ from .authz import Denied
 from .entries import compose_entry, parse_entry          # shared content-model serialization
 from .orientation import build_orientation               # practice-agnostic machinery + practice slots
 from .canon import LOG_DIR, CHAT_ERA_FREEZE, canon_seq, seq_display, proposal_statuses, close_proposal
-from .provenance import CopySources                      # copy_from: a body read from another canon
+from .provenance import CopySources, last_address, source_name   # copy_from: a body read from another canon
 
 
 @dataclass(frozen=True)
@@ -212,8 +212,19 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         return None
 
     def _copy_of(prov):
-        # the address an entry was copied from: the first hop of its provenance path
-        return str(prov[0]) if isinstance(prov, list) and prov else ""
+        # the address an entry was copied from: the last hop of its provenance path, its name filled in
+        return last_address(prov) if isinstance(prov, list) else ""
+
+    def _copy_name(copy_from, domain, slug):
+        """The default is no name change: with `copy_from`, an empty `domain` and `slug` keep the
+        source's path, so a name is never changed by a slip in retyping it. Giving both renames the
+        copy. Giving one is a mistake the seat can fix."""
+        if not domain and not slug:
+            return source_name(copy_from)
+        if not (domain and slug):
+            raise Denied("give both `domain` and `slug` to rename the copy, or leave both empty to keep the "
+                         "source's path")
+        return domain, slug
 
     def _keep_provenance(envelope, tip, path, body):
         """A re-write of a path builds its envelope again from the call (a retirement is one), and
@@ -521,9 +532,12 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         was written against, same commit. `tick` (under `state/` only) declares the seat's state label.
         `copy_from` ('<Source>:<path>', or '<Source>/<Seat>:<path>' for a perspective) copies a living
         entry from another canon: send `body=''`; the server reads the body and writes `provenance`.
+        With it, an empty `domain` and `slug` keep the source's path; give both to rename the copy.
         A seat's first write is its ::1 state update; other writes are refused until then. Class: origin."""
         seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = persp_ref(seat)
+        if copy_from:
+            domain, slug = _copy_name(copy_from, domain, slug)
         path = f"{domain}/{slug}.md"
         _authz(seat, "entry_write", ref, path)
         _binding_stamp = principal.stamp
@@ -724,10 +738,13 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         `domain='meta/log'`, `slug=<seq>`, `type='log'`, `seq` = canon's `next_seq`. Another seat's
         work needs `origin_author` — refused otherwise. `copy_from` ('<Source>:<path>', or
         '<Source>/<Seat>:<path>' for a perspective) copies a living entry from another canon: send
-        `body=''`; the server reads the body and writes `provenance` and `origin_author`. Refused
+        `body=''`; the server reads the body and writes `provenance` and `origin_author`. With it, an
+        empty `domain` and `slug` keep the source's path; give both to rename the copy. Refused
         before the seat's ::1 state update. Only the practitioner lands. Class: origin."""
         seat = principal.name   # the desk resolved WHO; the record carries the name
         ref = prop_ref(proposal_id)
+        if copy_from:
+            domain, slug = _copy_name(copy_from, domain, slug)
         if domain != domain.strip("/") or "//" in f"{domain}/{slug}":
             # a trailing/leading slash builds meta/log//<seq>.md — passes propose, fails at land on
             # the stem mismatch; reject the malformed coordinate here where the seat can fix it

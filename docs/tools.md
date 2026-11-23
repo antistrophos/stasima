@@ -117,6 +117,7 @@ unchanged with `status='superseded'` and `superseded_by`. `vantage` records what
 was written against, same commit. `tick` (under `state/` only) declares the seat's state label.
 `copy_from` ('<Source>:<path>', or '<Source>/<Seat>:<path>' for a perspective) copies a living
 entry from another canon: send `body=''`; the server reads the body and writes `provenance`.
+With it, an empty `domain` and `slug` keep the source's path; give both to rename the copy.
 A seat's first write is its ::1 state update; other writes are refused until then. Class: origin.
 
 **Parameters**
@@ -278,7 +279,8 @@ Appends one entry to a proposal at `<domain>/<slug>.md`, creating the proposal i
 `domain='meta/log'`, `slug=<seq>`, `type='log'`, `seq` = canon's `next_seq`. Another seat's
 work needs `origin_author` — refused otherwise. `copy_from` ('<Source>:<path>', or
 '<Source>/<Seat>:<path>' for a perspective) copies a living entry from another canon: send
-`body=''`; the server reads the body and writes `provenance` and `origin_author`. Refused
+`body=''`; the server reads the body and writes `provenance` and `origin_author`. With it, an
+empty `domain` and `slug` keep the source's path; give both to rename the copy. Refused
 before the seat's ::1 state update. Only the practitioner lands. Class: origin.
 
 **Parameters**
