@@ -7,12 +7,18 @@
   seat's perspective. The call sends `body=''`. The server reads the body from the source
   repository, so the text does not pass through a seat and cannot change on the way. A deployment
   names its sources in the config (`copy_sources = ["Rehearsal=C:/path/rehearsal.git"]`) and only
-  reads them. The title, type and tags come from the source entry when the call leaves them empty;
-  `references` and `thread` never do, because they name things in the source. No tool is added: the
-  wire stays 29 tools.
+  reads them. The title and tags come from the source entry when the call leaves them empty, and
+  the type when the call leaves it at its default; `references` and `thread` never do, because
+  they name things in the source. No tool is added: the wire stays 29 tools. A source's canon is
+  read at `refs/heads/main`.
 - **Only a living entry is copied.** A retired entry is refused and the refusal names its living
   edition. A message, a vantage or a reconcile report is refused: each is the server's record of
-  an act and stays where the act happened. A proposal's log entry is never a copy.
+  an act and stays where the act happened. A proposal's log entry is never a copy, and neither is
+  a state update (`copy_from` is refused under `state/`): each is a statement made for its moment.
+- **The body is the source's body exactly.** The first line's indentation is kept (an ordinary
+  read strips it, and an indented first line is a code block). A source file that is not valid
+  UTF-8 is refused, not altered. A byte-order mark does not hide the envelope, and a file with no
+  envelope is refused.
 - **`provenance`: a new envelope field that the server writes.** No call can supply it. Each item
   is one ancestor of the entry, as `<depth> <relation> <address>`. The address is
   `<Source>@<commit>:<path>` (or `<Source>/<Seat>@<commit>:<path>`), with the full commit id of the
@@ -27,17 +33,26 @@
   ```
 
   So a successor canon can hold only the finished text, at the path the first edition had, and
-  still show every edition that came before it. The earlier editions are found from either side
-  of a retirement pair: one pair in Rehearsal names its successor and is not named back.
+  still show the editions that came before it. The earlier editions are found from either side
+  of a retirement pair: one pair in Rehearsal names its successor and is not named back. A chain
+  is listed to 64 editions deep; the last address listed leads to the rest.
 - **The true author travels with the text.** The server writes `origin_author` from the source's
-  record: the seat for a perspective, the seat on the commit that introduced the path for canon,
-  and for a copy of a copy the author the first copy recorded. Where the source names no author,
-  none is written. A seat's `origin_author` that contradicts the source is refused.
-- **A retirement keeps the lineage.** A re-write of a path builds its envelope again from the call.
-  When the path already holds a copy and the body is the same, the server keeps `provenance` and
-  `origin_author`. A copy can also be retired with `copy_from` again in place of the body.
-- **The source shows at the gate.** `proposal_preview` gives `copy_of` beside the names in
-  `attributions`; `canon_state` lists `copy_sources` when the deployment has any.
+  record: the seat for a perspective; for canon, the seat on the commit that first wrote that body
+  at that path (git's author field; an entry seeded at the bootstrap is the practitioner's); and
+  for a copy of a copy, the author the first copy recorded. Where the source names no author,
+  none is written. No call can set the author of a copy: an `origin_author` that differs from the
+  record is refused.
+- **Inside a deployment the lineage follows the text.** A body the deployment already holds as a
+  copy keeps that copy's `provenance` and `origin_author` when it is written again without
+  `copy_from`: a retirement at the same path (a re-write builds its envelope again from the call),
+  or a seat proposing what it first copied to its own perspective. A copy can also be retired with
+  `copy_from` again in place of the body.
+- **A replay reports the first write.** A call repeated with the same `op_id` returns what git
+  holds and does not read the source again, which may have moved or retired the entry since.
+- **The source shows at the gate.** The practitioner's `preview` (the admin CLI and the cockpit)
+  lists each copied entry with its source and author under `copies`. `proposal_preview` gives
+  `copy_of` beside the names in `attributions`; `canon_state` lists `copy_sources` when the
+  deployment has any.
 
 ### Search
 
@@ -151,6 +166,19 @@ the live deployment; each is reproduced by a test (`land_resilience_test.py`, `a
   SQL prefilter looked for the raw name in the escaped column and never matched.
 - **The cockpit's land line** prints the anchor's head, or `NOT anchored`; it printed the start
   of a Python dict.
+
+**Found beside the copy work, by its review**
+
+- **A commit's trailers could be written by a caller.** An `op_id` that held a line break put
+  lines of the caller's choosing into the commit message, an `instance-id` naming another seat
+  among them, and the trailer reader returned the first match. An `op_id` must now be one line,
+  and a trailer is read from the end of the message, where the server writes its own.
+- **A path was read as a pattern in an entry's history.** The history of `technical/v[12].md`
+  also carried the commits of `technical/v1.md`, so the index could credit one entry to the
+  author of another. The path is now taken literally.
+- **The proposal's log checks were keyed on `domain`.** `domain='meta'` with `slug='log/1'` is
+  the same path as `domain='meta/log'` with `slug='1'` and skipped the seq and slug checks until
+  the land. They are keyed on the path.
 
 ## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
 

@@ -133,6 +133,12 @@ def _print_preview(pid, pv):
         print(RED(f"  conflicts: {pv['conflicts']}"))
     if pv.get("authors"):
         print(DIM(f"  authors: {', '.join(pv['authors'])}"))
+    for p, c in sorted((pv.get("copies") or {}).items()):
+        # a copy from another canon: its source, with the commit shortened for the eye
+        import re as _re
+        src = _re.sub(r"@([0-9a-f]{12})[0-9a-f]{28}:", r"@\1:", c["copy_of"])
+        who = f"  written by {c['authored']}" if c.get("authored") else ""
+        print(DIM(f"  copy: {p}  ←  {src}{who}"))
 
 
 def _proposals(config):

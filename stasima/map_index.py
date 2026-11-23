@@ -277,6 +277,8 @@ class MapIndex(ABC):
 
     def holders_of(self, body_hash: str, path: str) -> list: return []
 
+    def refs_of_body(self, body: str) -> list: return []   # [(ref, path)] for a verbatim body, canon first
+
     def fill_body_hashes(self) -> int: return 0
 
 
@@ -494,6 +496,13 @@ class SqliteMapIndex(MapIndex):
                     "SELECT ref, path, is_canon, authoring_instance, status, title, type, tags FROM map_entries "
                     "WHERE body_hash = ? AND path = ? AND " + lexical.SEARCHABLE.format(a="") +
                     " ORDER BY is_canon DESC, ref", (body_hash, path)).fetchall()]
+
+    def refs_of_body(self, body):
+        """Every (ref, path) that holds this VERBATIM body (stripped), canon first. The caller reads
+        the entry from git: the index says where to look, never what the entry says."""
+        return [(r["ref"], r["path"]) for r in self.conn.execute(
+            "SELECT ref, path FROM map_entries WHERE body_hash = ? ORDER BY is_canon DESC, ref, path",
+            (body_digest(body),)).fetchall()]
 
     def cartography_of(self, target_path):
         rows = [self._row(r) for r in self.conn.execute("SELECT * FROM map_entries WHERE type='map'").fetchall()]

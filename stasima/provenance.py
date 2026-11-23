@@ -51,14 +51,33 @@ def _paths(value) -> list:
     return [_md(x) for x in value if isinstance(x, str) and x] if isinstance(value, list) else []
 
 
-def _quote(path: str) -> str:
-    # an address is one item of a bracketed list: a comma or a closing bracket in a path would split
-    # or end the list when it is read back
-    return path.replace("%", "%25").replace(",", "%2C").replace("]", "%5D")
+def _quote(name: str) -> str:
+    # an address is one item of a bracketed list: a comma or a closing bracket in a path or in a seat's
+    # name would split or end the list when it is read back
+    return name.replace("%", "%25").replace(",", "%2C").replace("]", "%5D")
 
 
 def address(source: str, seat, commit: str, path: str) -> str:
-    return f"{source}{'/' + seat if seat else ''}@{commit}:{_quote(path)}"
+    return f"{source}{'/' + _quote(seat) if seat else ''}@{commit}:{_quote(path)}"
+
+
+def _decode(raw: bytes, *, strict: bool) -> str:
+    """A source file as text. A byte-order mark is not part of the entry: with it the first line is
+    not `---`, the envelope reads as empty, and every rule that rests on the envelope is skipped."""
+    text = raw.decode("utf-8") if strict else raw.decode("utf-8", "replace")
+    return text[1:] if text.startswith("\ufeff") else text
+
+
+def exact_body(text: str) -> str:
+    """The body as the file holds it, without the frame `compose_entry` adds (the blank line after the
+    envelope, the trailing whitespace). `parse_entry` strips more: the first line's indentation,
+    which is content — an indented first line is a code block."""
+    lines = text.split("\n")
+    if lines and lines[0].strip() == "---":
+        end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+        if end is not None:
+            text = "\n".join(lines[end + 1:])
+    return text.lstrip("\r\n").rstrip()
 
 
 def parse_copy_from(text: str):
@@ -71,6 +90,12 @@ def parse_copy_from(text: str):
                      f"'<Source>/<Seat>:<path>' for an entry on a seat's perspective, with the path as "
                      f"the source lists it (the server pins the commit; give none)")
     return source.strip(), (seat.strip() or None) if slash else None, _md(path)
+
+
+class _SourceStore(LocalCapStore):
+    # A source is another deployment's repository and may move under this process. The pin written
+    # into a copy is the tip the body was read at, so the tip is asked of git each time, not of a memo.
+    REF_MEMO_TTL = 0.0
 
 
 class Copied:
@@ -100,8 +125,8 @@ class CopySources:
         with self._lock:
             s = self._stores.get(source)
             if s is None:
-                s = self._stores[source] = LocalCapStore(self._dirs[source], approvers=set(),
-                                                         git_timeout=self._timeout)
+                s = self._stores[source] = _SourceStore(self._dirs[source], approvers=set(),
+                                                        git_timeout=self._timeout)
             return s
 
     def _tree(self, source: str, store: LocalCapStore, commit: str) -> dict:
@@ -116,7 +141,7 @@ class CopySources:
         for path in store.list_paths(commit):
             if not path.endswith(".md"):
                 continue
-            env, _ = parse_entry(store.read_blob_at(commit, path).decode("utf-8", "replace"))
+            env, _ = parse_entry(_decode(store.read_blob_at(commit, path), strict=False))
             tree[path] = {"status": env.get("status", ""),
                           "supersedes": _paths(env.get("supersedes")),
                           "superseded_by": _paths(env.get("superseded_by")),
@@ -139,7 +164,26 @@ class CopySources:
         return tree
 
     @staticmethod
+    def _first_writer(store: LocalCapStore, commit: str, path: str, body: str) -> str:
+        """The seat on the commit that first wrote THIS body at this path, in the history that leads
+        to `commit`. Not the path's introducer: a proposal can replace a path's body before it lands,
+        and the text is then the second seat's. A commit the server made in its own name (author and
+        committer the same: a bootstrap) names no seat."""
+        author, want = "", body.strip()
+        for row in store.history(commit, path):          # newest first
+            try:
+                held = exact_body(_decode(store.read_blob_at(row["oid"], path), strict=False)).strip()
+            except CapStoreError:
+                break
+            if held != want:
+                break
+            author = "" if row["author"] == row.get("committer") else row["author"]
+        return author
+
+    @staticmethod
     def _living(tree: dict, path: str) -> str:
+        """The end of the retirement chain from `path`. The caller checks that it is living: a chain
+        can end on a retired entry whose successor is not in the tree, or turn back on itself."""
         seen = {path}
         for _ in range(_HOPS):
             e = tree.get(path)
@@ -188,13 +232,23 @@ class CopySources:
                                     if near else ". Seat names are exact, case included."))
             commit = store.resolve_ref(ref)
             if commit is None:
-                raise Denied(f"the source {source} has no canon at {store.canon_ref} — check its path in the "
-                             f"config's copy_sources")
+                raise Denied(f"the source {source} has no canon at {store.canon_ref}. A source's canon is read "
+                             f"at that ref; check the path in the config's copy_sources, and that the "
+                             f"source keeps its canon there.")
             tree = self._tree(source, store, commit)
             if path not in tree:
                 raise Denied(f"{where} holds no entry at {path} (at {commit[:12]}). Give the path exactly as "
                              f"the source lists it.")
-            env, body = parse_entry(store.read_blob_at(commit, path).decode("utf-8", "replace"))
+            try:
+                text = _decode(store.read_blob_at(commit, path), strict=True)
+            except UnicodeDecodeError:
+                raise Denied(f"{where}:{path} is not valid UTF-8 at the source, so a copy would change its "
+                             f"text. Nothing was written.")
+            env, _ = parse_entry(text)
+            if not env:
+                raise Denied(f"{where}:{path} has no envelope the server can read (the file does not open "
+                             f"with front matter). copy_from carries entries.")
+            body = exact_body(text)
             kind = SERVER_KINDS.get(env.get("type", ""))
             if kind:
                 raise Denied(f"{where}:{path} is {kind}: the server's record of an act, which stays where "
@@ -202,7 +256,9 @@ class CopySources:
             if env.get("status") == "superseded":
                 living = self._living(tree, path)
                 fix = (f"its living edition there is {where}:{living} — copy that one; its provenance "
-                       f"will name this one" if living != path else
+                       f"will name this one" if tree[living]["status"] != "superseded" else
+                       f"its chain ends at {where}:{living}, which is retired too and names no living "
+                       f"edition in the source's tree, so there is no finished text to copy" if living != path else
                        "it names no living edition in the source's tree, so there is no finished text to copy")
                 raise Denied(f"{where}:{path} is retired at the source; {fix}.")
             if not body.strip():
@@ -210,15 +266,15 @@ class CopySources:
             # The true author, from the source's own record. An entry that is itself a copy keeps the
             # author it recorded, and an unknown one stays unknown: the seat that made that copy did
             # not write the text. Otherwise a perspective's entry is its seat's, and a canon entry is
-            # the seat named on the commit that introduced the path (a bootstrap commit names none).
+            # the seat on the commit that first wrote this body (git's author field, which a seat's
+            # arguments cannot set; a bootstrap commit names none).
             author = env.get("origin_author") or ""
             if not author and not env.get("provenance"):
                 if seat:
                     author = seat
                 else:
                     try:
-                        hist = store.history(commit, path)
-                        author = (store._trailer(hist[-1]["oid"], "instance-id") or "") if hist else ""
+                        author = self._first_writer(store, commit, path, body)
                     except CapStoreError:
                         author = ""
             here = address(source, seat, commit, path)

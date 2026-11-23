@@ -192,21 +192,70 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             tags = list(src["tags"])
         return title, type, tags
 
+    def _set_lineage(envelope, provenance, author):
+        # The two fields travel together and only the server sets them. The author is the one the
+        # source's record names; where it names none the envelope carries none, whatever the call said.
+        envelope["provenance"] = list(provenance)
+        if author:
+            envelope["origin_author"] = author
+        else:
+            envelope.pop("origin_author", None)
+
+    def _lineage_at(blob, body):
+        # (provenance, author) when this blob is a copy and holds this same body; else None
+        if blob is None:
+            return None
+        env, held = parse_entry(blob.decode("utf-8", "replace"))
+        prov = env.get("provenance")
+        if isinstance(prov, list) and prov and held.strip() == body.strip():
+            return prov, env.get("origin_author") or ""
+        return None
+
+    def _copy_of(prov):
+        # the address of an entry's own source, from its provenance
+        first = str(prov[0]) if isinstance(prov, list) and prov else ""
+        return first[len("1 copy of "):] if first.startswith("1 copy of ") else ""
+
     def _keep_provenance(envelope, tip, path, body):
         """A re-write of a path builds its envelope again from the call (a retirement is one), and
         `provenance` is not something a call can give. So when the path already holds a copy and the
-        body is the same, the lineage it carries is kept. A body that differs is no longer that copy."""
+        body is the same, the lineage it carries is kept, its author with it. A body that differs is
+        no longer that copy. Keyed to the CAS attempt's tip, like the other guards."""
         if "provenance" in envelope:
             return
-        old = _blob_at(tip, path)
-        if old is None:
-            return
-        old_env, old_body = parse_entry(old.decode("utf-8", "replace"))
-        if isinstance(old_env.get("provenance"), list) and old_env["provenance"] \
-                and old_body.strip() == body.strip():
-            if old_env.get("origin_author") and "origin_author" not in envelope:
-                envelope["origin_author"] = old_env["origin_author"]
-            envelope["provenance"] = old_env["provenance"]
+        kept = _lineage_at(_blob_at(tip, path), body)
+        if kept:
+            _set_lineage(envelope, *kept)
+
+    def _held_lineage(seat, tip, path, body):
+        """The lineage this deployment already holds for a body that arrives without `copy_from`:
+        at this path on the target ref (a retirement), else wherever the same body is held as a copy
+        (the seat's own perspective first, then canon). Inside a deployment the lineage follows the
+        text: a seat that copied an entry to its perspective and proposes it with the body sent
+        again still proposes a copy. The index says where to look; git says what is there."""
+        kept = _lineage_at(_blob_at(tip, path), body)
+        if kept or index is None or not body.strip():
+            return kept
+        own = persp_ref(seat)
+        rows = sorted(index.refs_of_body(body)[:32], key=lambda rp: (rp[0] != own, rp[0] != store.canon_ref))
+        for ref, p in rows:
+            try:
+                kept = _lineage_at(store.read_blob(ref, p), body)
+            except (PathNotFound, RefNotFound):
+                continue
+            if kept:
+                return kept
+        return None
+
+    def _replayed(ref, path, op_id):
+        """(envelope, body) that git holds at `path` when the ref's tip is this same op: the call is a
+        replay, nothing will be written, and the answer is what was written the first time. The
+        source is not read again: it may have moved, or retired the entry, since."""
+        tip = store.resolve_ref(ref)
+        if tip is None or store.commit_op_id(tip) != op_id:
+            return None
+        blob = _blob_at(tip, path)
+        return parse_entry(blob.decode("utf-8", "replace")) if blob is not None else None
 
     _THREAD_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789-")
 
@@ -493,15 +542,24 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         _join_gate(seat, "entry_write", domain=domain, tick=tick)
         if thread:
             _check_thread(thread)
-        copied = _copy(seat, "entry_write", copy_from, body, path) if copy_from else None
-        if copied:
+        if copy_from and path.startswith("state/"):
+            raise Denied("a state update is your own statement of where you stand; copy_from is refused "
+                         "under state/. Write it yourself, and name the old one in its body if it matters.")
+        replay = _replayed(ref, path, op_id) if copy_from else None
+        copied = None
+        if replay is not None:
+            body = replay[1]
+        elif copy_from:
+            copied = _copy(seat, "entry_write", copy_from, body, path)
             body = copied.body
             title, type, tags = _copy_defaults(copied, title, type, tags)
+        lineage = ((copied.provenance, copied.origin_author) if copied else
+                   _held_lineage(seat, store.resolve_ref(ref), path, body))
         envelope = _authored_envelope(type, title, slug, status=status, tags=tags, references=references,
                                       supersedes=supersedes, superseded_by=superseded_by, tick=tick,
-                                      thread=thread or None,
-                                      origin_author=copied.origin_author if copied else None,
-                                      provenance=copied.provenance if copied else None)
+                                      thread=thread or None)
+        if lineage:
+            _set_lineage(envelope, *lineage)
         if _binding_stamp:
             envelope.update(_binding_stamp)
         vap_path = f"vantages/{op_id}-vap.md" if vantage else None
@@ -545,6 +603,9 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             _log(seat, "entry_write", target_ref=ref, target_path=path, op_id=op_id,
                  result_oid=r.oid, detail={"replayed": True})
             out["replayed"] = True
+            if replay is not None and _copy_of(replay[0].get("provenance")):
+                out["copy_of"] = _copy_of(replay[0]["provenance"])
+                out["provenance"] = replay[0]["provenance"]
             if vap_path:
                 if _exists(ref, vap_path):
                     out["folded"] = {"path": vap_path, "kind": "confirmed", "replayed": True}
@@ -554,10 +615,11 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             return out
         _index(ref, path, False, seat, r.oid, envelope, body)            # git-first ...
         detail = {"folded": vap_path} if vap_path else None
-        if copied:
-            detail = dict(detail or {}, copy_of=copied.address)
-            out["copy_of"] = copied.address
-            out["provenance"] = copied.provenance
+        if envelope.get("provenance"):
+            if copied:
+                detail = dict(detail or {}, copy_of=copied.address)
+            out["copy_of"] = _copy_of(envelope["provenance"])
+            out["provenance"] = envelope["provenance"]
         _log(seat, "entry_write", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid,
              detail=detail)                                                     # ... then audit
         if vap_path:
@@ -679,7 +741,8 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
         _check_not_staged(proposal_id)
         _check_not_closed(proposal_id)
         _require_reconciled(seat)
-        if domain == "meta/log":
+        if path.startswith(LOG_DIR):
+            # keyed on the path, not on `domain`: domain='meta' with slug='log/1' is the same entry
             # fail-fast at the seat that can fix it: without this, a malformed log entry sails
             # through propose and the guard fires at LAND — making the practitioner the error-relay
             # for a defect only the proposer can repair (Lintel's soak finding)
@@ -698,18 +761,27 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             if copy_from:
                 raise Denied("a proposal's log entry is the account of THIS land and is written for it; "
                              "copy_from is refused on meta/log. Copy an old narrative to another path.")
-        copied = _copy(seat, "proposal_append_entry", copy_from, body, path) if copy_from else None
-        if copied:
+        replay = _replayed(ref, path, op_id) if copy_from else None
+        copied = None
+        if replay is not None:
+            body = replay[1]
+        elif copy_from:
+            copied = _copy(seat, "proposal_append_entry", copy_from, body, path)
             body = copied.body
             title, type, tags = _copy_defaults(copied, title, type, tags)
-            if copied.origin_author:
-                # the source's record names the author; a seat's word cannot contradict it
-                if origin_author and origin_author != copied.origin_author:
-                    raise Denied(f"origin_author={origin_author!r} contradicts the source: {copied.address} "
-                                 f"was written by {copied.origin_author!r}. Leave origin_author out with "
-                                 f"copy_from; the server writes it.")
-                origin_author = copied.origin_author
-        if index is not None and not (copied and copied.origin_author):
+        # The lineage the server holds for this text: the copy just read, or a copy of this same body
+        # already in this deployment. With it the author is the source's record and no seat's word:
+        # a different origin_author is refused, and where the source names none, none is written.
+        lineage = ((copied.provenance, copied.origin_author) if copied else
+                   _held_lineage(seat, store.resolve_ref(ref) or store.resolve_ref(store.canon_ref), path, body))
+        if lineage:
+            if origin_author and origin_author != lineage[1]:
+                raise Denied(f"origin_author={origin_author!r} contradicts the record: this text is a copy of "
+                             f"{_copy_of(lineage[0]) or 'another canon\'s entry'}, "
+                             + (f"written by {lineage[1]!r}" if lineage[1] else "and its source names no author")
+                             + ". Leave origin_author out; the server writes what the source records.")
+            origin_author = lineage[1]
+        if index is not None and not lineage:
             # the cross-propose attribution guard: carrying another seat's work toward canon is a
             # legitimate flow (curation) — carrying it SILENTLY is not. Two axes, both facts: the
             # path already under another name, or the verbatim body anywhere. Refusing silence is
@@ -739,8 +811,9 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                                       supersedes=supersedes, superseded_by=superseded_by,
                                       seq=seq.lower() if seq else None,
                                       origin_author=origin_author or None,
-                                      thread=thread or None,
-                                      provenance=copied.provenance if copied else None)
+                                      thread=thread or None)
+        if lineage:
+            _set_lineage(envelope, *lineage)
         if _binding_stamp:
             envelope.update(_binding_stamp)
 
@@ -756,12 +829,22 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
             _log(seat, "proposal_append_entry", target_ref=ref, target_path=path, op_id=op_id,
                  outcome=f"error:{e.__class__.__name__}", detail={"msg": str(e)})
             raise
+        out = {"proposal_id": proposal_id, "oid": r.oid, "path": path, "author": seat}
+        if r.replayed:
+            # nothing was written this call: report what git holds, not what this call composed
+            _log(seat, "proposal_append_entry", target_ref=ref, target_path=path, op_id=op_id,
+                 result_oid=r.oid, detail={"replayed": True})
+            out["replayed"] = True
+            held = _blob_at(r.oid, path)
+            prov = parse_entry(held.decode("utf-8", "replace"))[0].get("provenance") if held is not None else None
+            if _copy_of(prov):
+                out["copy_of"], out["provenance"] = _copy_of(prov), prov
+            return out
         _log(seat, "proposal_append_entry", target_ref=ref, target_path=path, op_id=op_id, result_oid=r.oid,
              detail={"copy_of": copied.address} if copied else None)
-        out = {"proposal_id": proposal_id, "oid": r.oid, "path": path, "author": seat}
-        if copied:
-            out["copy_of"] = copied.address
-            out["provenance"] = copied.provenance
+        if envelope.get("provenance"):
+            out["copy_of"] = _copy_of(envelope["provenance"])
+            out["provenance"] = envelope["provenance"]
         return out
 
     @op("origin")
@@ -821,9 +904,7 @@ def build_stacks(store: LocalCapStore, index=None, embedder=None, audit=None, au
                 env, _ = parse_entry(store.read_blob(pref, p).decode("utf-8", "replace"))
             except (PathNotFound, RefNotFound):
                 continue
-            prov = env.get("provenance")
-            copy_of = (str(prov[0])[len("1 copy of "):] if isinstance(prov, list) and prov
-                       and str(prov[0]).startswith("1 copy of ") else "")
+            copy_of = _copy_of(env.get("provenance"))
             if env.get("origin_author") or copy_of:
                 hist = store.history(pref, p)
                 attributions[p] = {"authored": env.get("origin_author", ""),

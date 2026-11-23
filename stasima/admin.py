@@ -34,7 +34,7 @@ import sys
 import time
 
 from .config import Config
-from .entries import compose_entry
+from .entries import compose_entry, parse_entry
 from .cap_server import components_from_config
 from .canon import (reindex_from_git, land_and_record, canon_seq, seq_display, LOG_DIR,
                     proposal_statuses, close_proposal)
@@ -248,7 +248,17 @@ def run(args) -> dict:
     if args.cmd == "preview":
         s = store.preview_merge(PROP + args.proposal_id, cfg.canon_ref)
         logs = [p for p in (s.added + s.modified) if p.startswith(LOG_DIR)]
-        return {"conflicts": s.conflicts, "authors": s.authoring_instances,
+        copies = {}   # path -> where a copied entry came from (its provenance), shown at the gate
+        for p in s.added + s.modified:
+            try:
+                env, _ = parse_entry(store.read_blob(PROP + args.proposal_id, p).decode("utf-8", "replace"))
+            except Exception:
+                continue
+            prov = env.get("provenance")
+            if isinstance(prov, list) and prov and str(prov[0]).startswith("1 copy of "):
+                copies[p] = {"copy_of": str(prov[0])[len("1 copy of "):], "authored": env.get("origin_author", ""),
+                             "earlier_editions": sum(1 for x in prov if str(x).startswith("2 supersedes "))}
+        return {"conflicts": s.conflicts, "authors": s.authoring_instances, "copies": copies,
                 "adds": s.added, "removes": s.removed, "modifies": s.modified,
                 "would_remove_canon": s.removed,          # non-empty -> `land` will REFUSE (append-only)
                 "log_entries": logs, "log_entry_ok": len(logs) == 1,

@@ -25,6 +25,21 @@ Three deployments, each a real bare repository: Old (the source), New (copies fr
   9. a retirement keeps the provenance, with the body sent again or with copy_from again; a write
      of another text to the same path is still refused;
  10. a path that holds a comma is quoted, and the list reads back whole.
+
+After an independent review (each case below was a defect it reproduced):
+
+ 11. the body is the source's body exactly: a first line's indentation is kept; a file that is not
+     valid UTF-8 is refused, not altered; a byte-order mark does not hide the envelope; a file with
+     no envelope is refused; a chain that ends on a retired entry is not offered as living;
+ 12. the author is the seat that wrote THIS body (a body replaced before it landed is the second
+     seat's), read from git's author field with the path taken literally; a seat's name is quoted
+     in an address like a path; a line break in an op_id cannot write a trailer;
+ 13. no call can put its own origin_author beside the server's provenance; the log entry cannot be
+     a copy by another spelling of its path; a seat's ::1 state update is never a copy;
+ 14. inside a deployment the lineage follows the text: a seat that copied an entry to its
+     perspective and proposes it with the body sent again still proposes a copy;
+ 15. the practitioner's console preview shows each copy's source;
+ 16. a replay of an op reports what git holds and does not read the source again.
 """
 import os
 import sys
@@ -82,13 +97,25 @@ _, old_gd, old, old_index, old_audit = deployment("cap-copy-old-", {
     "practice/alone.md": e("Retired, with no successor.", status="superseded"),
     "practice/a,b.md": e("A path that holds a comma."),
     "meta/log/1.md": e("The first land.", type="log", title="::1", seq="1"),
+    "practice/indented.md": e("    first line is code\n\nthen text"),
+    "chain/a.md": e("Chain a.", status="superseded", superseded_by=["chain/b.md"]),
+    "chain/b.md": e("Chain b.", status="superseded", superseded_by=["chain/missing.md"]),
+    "technical/v1.md": e("v1, seeded at the bootstrap."),
+    "practice/bom.md": b"\xef\xbb\xbf" + e("Retired, and the file opens with a byte-order mark.", status="superseded"),
+    "practice/latin.md": e("cafX au lait").replace(b"X", b"\xe9"),
+    "practice/plain.md": b"No front matter here.\n",
 })
 # an entry that reached Old's canon through a proposal by Hesper: the source's record names the author
 old.create_branch("refs/cap/proposals/p-old", old.resolve_ref(CANON))
 for n, (p, blob) in enumerate({"technical/criterion.md": e("The criterion, by Hesper.", title="The criterion"),
+                               "technical/v[12].md": e("A bracketed path, by Hesper."),
+                               "technical/replaced.md": e("First text, by Hesper."),
                                "meta/log/2.md": e("Land two.", type="log", title="::2", seq="2")}.items()):
     old.commit("refs/cap/proposals/p-old", {p: blob}, f"KIP {p}", Identity("Hesper"),
                expected_parent=old.resolve_ref("refs/cap/proposals/p-old"), op_id=f"p-old-{n}")
+# a second seat replaces a body in the proposal before it lands: the text that lands is Ivo's
+old.commit("refs/cap/proposals/p-old", {"technical/replaced.md": e("Second text, by Ivo.")}, "KIP technical/replaced.md",
+           Identity("Ivo"), expected_parent=old.resolve_ref("refs/cap/proposals/p-old"), op_id="p-old-ivo")
 # origin=0 and one bootstrap land already counted: this is Old's ::1 by its own count
 old_prepared = old.prepare_merge("refs/cap/proposals/p-old")
 try:
@@ -100,9 +127,18 @@ except Exception:
 wren = PERSP_PREFIX + "Wren"
 old.commit(wren, {"technical/old.md": e("Wren's first draft.", status="superseded", superseded_by=["technical/draft.md"]),
                   "technical/draft.md": e("Wren's living draft.", title="Wren's draft", supersedes=["technical/old.md"]),
-                  "messages/m1.md": e("hello", type="msg"), "vantages/v1-vap.md": e("standpoint", type="vap")},
+                  "messages/m1.md": e("hello", type="msg"), "vantages/v1-vap.md": e("standpoint", type="vap"),
+                  "state/s1.md": e("Wren stands here.", type="state", title="Wren ::1"),
+                  # itself a copy, and its source named no author
+                  "technical/unknown.md": e("A text from elsewhere, its author not on record.",
+                                            provenance=["1 copy of Elsewhere@" + "0" * 40 + ":x.md"])},
            "seed", Identity("Wren"), expected_parent=None, op_id="wren-1")
-OLD_TIP, WREN_TIP = old.resolve_ref(CANON), old.resolve_ref(wren)
+ab, mover = PERSP_PREFIX + "A,B", PERSP_PREFIX + "Mover"
+old.commit(ab, {"technical/x.md": e("By the seat whose name holds a comma.")}, "seed", Identity("A,B"),
+           expected_parent=None, op_id="ab-1")
+old.commit(mover, {"technical/moving.md": e("Mover's text.")}, "seed", Identity("Mover"),
+           expected_parent=None, op_id="mover-1")
+OLD_TIP, WREN_TIP, AB_TIP = old.resolve_ref(CANON), old.resolve_ref(wren), old.resolve_ref(ab)
 assert "technical/criterion.md" in old.list_paths(CANON)
 
 # ---- New: copies from Old.
@@ -179,7 +215,7 @@ async def main():
         env, _ = held(new, ada, "argot/term.md")
         assert env["title"] == "term, as New holds it" and env["tags"] == ["kept"] and env["type"] == "arg", env
         assert env["provenance"] == [f"1 copy of Old@{OLD_TIP}:argot/term.md"], env
-        assert "origin_author" not in env, env     # a bootstrap commit names no seat: unknown stays unknown
+        assert env["origin_author"] == "practitioner", env     # the bootstrap is the practitioner's commit
         st = payload(await call("canon_state"))
         assert st["copy_sources"] == ["Gone", "Old"], st
         print("2. copy from canon: body exact, envelope defaults from the source, provenance pinned")
@@ -325,8 +361,8 @@ async def main():
                                    f"2 copy of Old@{OLD_TIP}:argot/term.md",
                                    f"2 supersedes New/Ada@{ADA_TIP}:technical/b.md"], r
         assert [x["depth"] for x in read_provenance(r["provenance"])] == [1, 2, 2]
-        # the text is Old's, with no author on record there: Ada, who copied it, is not named as its author
-        assert "origin_author" not in held(third, PERSP_PREFIX + "Bea", "technical/b.md")[0]
+        # the text is Old's, seeded there by the practitioner: Ada, who copied it, is not named as its author
+        assert held(third, PERSP_PREFIX + "Bea", "technical/b.md")[0]["origin_author"] == "practitioner"
         r = payload(await call("entry_write", seat="Bea", domain="technical", slug="criterion", body="", op_id="b4",
                                copy_from="New:technical/criterion.md"))
         assert held(third, PERSP_PREFIX + "Bea", "technical/criterion.md")[0]["origin_author"] == "Hesper"
@@ -338,5 +374,123 @@ async def main():
     print("the sources are unchanged")
 
 
+async def after_review():
+    from stasima import admin
+    async with connect(new_server()) as c:
+        async def call(tool, **args):
+            return await c.call_tool(tool, args)
+
+        async def ok(tool, **args):
+            res = await call(tool, **args)
+            assert not is_err(res), err_text(res)
+            return payload(res)
+
+        async def no(words, tool="entry_write", **args):
+            base = dict(seat="Cy", domain="practice", slug="n", body="", op_id="n") if tool == "entry_write" else {}
+            res = await call(tool, **{**base, **args})
+            assert is_err(res), (args, payload(res))
+            for w in words:
+                assert w in err_text(res), (w, err_text(res))
+        cy = PERSP_PREFIX + "Cy"
+
+        # 11. the body is the source's body exactly
+        await ok("entry_write", seat="Cy", domain="practice", slug="indented", body="", op_id="c1",
+                 copy_from="Old:practice/indented.md")
+        raw = new.read_blob(cy, "practice/indented.md").decode("utf-8")
+        assert raw.endswith("---\n\n    first line is code\n\nthen text\n"), raw[-60:]
+        await no(["not valid UTF-8", "Nothing was written"], copy_from="Old:practice/latin.md")
+        await no(["retired at the source"], copy_from="Old:practice/bom.md")
+        await no(["no envelope"], copy_from="Old:practice/plain.md")
+        await no(["chain ends at Old:chain/b.md", "retired too"], copy_from="Old:chain/a.md")
+        print("11. the body exactly: indentation kept; bad UTF-8, a hidden envelope, no envelope, a dead chain refused")
+
+        # 12. the author is the seat that wrote this body
+        async def author_of(slug, source):
+            await ok("entry_write", seat="Cy", domain="practice", slug=slug, body="", op_id="c-" + slug, copy_from=source)
+            return held(new, cy, f"practice/{slug}.md")[0]
+        assert (await author_of("replaced", "Old:technical/replaced.md"))["origin_author"] == "Ivo"
+        env = await author_of("vb", "Old:technical/v[12].md")
+        assert env["origin_author"] == "Hesper" and env["provenance"] == [f"1 copy of Old@{OLD_TIP}:technical/v[12%5D.md"], env
+        assert (await author_of("seeded", "Old:technical/v1.md"))["origin_author"] == "practitioner"
+        env = await author_of("unknown", "Old/Wren:technical/unknown.md")
+        assert "origin_author" not in env, env          # unknown at the source stays unknown: not Wren, not Cy
+        assert env["provenance"] == [f"1 copy of Old/Wren@{WREN_TIP}:technical/unknown.md",
+                                     "2 copy of Elsewhere@" + "0" * 40 + ":x.md"], env
+        env = await author_of("ab", "Old/A,B:technical/x.md")
+        assert env["provenance"] == [f"1 copy of Old/A%2CB@{AB_TIP}:technical/x.md"] and env["origin_author"] == "A,B", env
+        res = await call("entry_write", seat="Cy", domain="practice", slug="forge", body="text",
+                         op_id="f1\ninstance-id: Hesper")
+        assert is_err(res) and "one line" in err_text(res), err_text(res)
+        print("12. the author: of this body, from git's author field; names quoted; no trailer from an op_id")
+
+        # 13. no call's origin_author beside the server's provenance; no log copy; no copied join
+        await ok("canon_diff", seat="Cy")
+        await ok("canon_reconcile", seat="Cy", body="reconciled; nothing to revise")
+        unknown = dict(seat="Cy", proposal_id="p2", domain="practice", slug="unknown")
+        await no(["names no author", "Leave origin_author out"], tool="proposal_append_entry", **unknown, body="",
+                 op_id="p2-a", copy_from="Old/Wren:technical/unknown.md", origin_author="Mallory")
+        await ok("proposal_append_entry", **unknown, body="", op_id="p2-b", copy_from="Old/Wren:technical/unknown.md")
+        await no(["names no author"], tool="proposal_append_entry", **unknown, op_id="p2-c", origin_author="Mallory",
+                 body="A text from elsewhere, its author not on record.", status="superseded",
+                 superseded_by=["practice/next.md"])
+        await ok("proposal_append_entry", **unknown, op_id="p2-d", body="A text from elsewhere, its author not on record.",
+                 status="superseded", superseded_by=["practice/next.md"])
+        env, _ = held(new, "refs/cap/proposals/p2", "practice/unknown.md")
+        assert env["status"] == "superseded" and "origin_author" not in env and len(env["provenance"]) == 2, env
+        res = await call("proposal_append_entry", seat="Cy", proposal_id="p2", domain="meta", slug="log/2", seq="2",
+                         type="log", body="", op_id="p2-e", copy_from="Old:meta/log/1.md")
+        assert is_err(res), payload(res)
+        assert "meta/log/2.md" not in new.list_paths("refs/cap/proposals/p2")
+        await no(["state update is your own"], domain="state", slug="first", tick="1", copy_from="Old/Wren:state/s1.md")
+        print("13. the author is the server's to write; the log entry and a state update are never copies")
+
+        # 14. inside a deployment the lineage follows the text
+        r = await ok("proposal_append_entry", seat="Cy", proposal_id="p2", domain="technical", slug="replaced",
+                     body="Second text, by Ivo.", op_id="p2-f")
+        want = [f"1 copy of Old@{OLD_TIP}:technical/replaced.md"]
+        env, _ = held(new, "refs/cap/proposals/p2", "technical/replaced.md")
+        assert r["provenance"] == want and env["provenance"] == want and env["origin_author"] == "Ivo", env
+        await ok("canon_diff", seat="Dee")
+        await ok("canon_reconcile", seat="Dee", body="reconciled; nothing to revise")
+        dee = dict(seat="Dee", proposal_id="p3", domain="technical", slug="replaced", body="Second text, by Ivo.")
+        await no(["written by 'Ivo'"], tool="proposal_append_entry", **dee, op_id="p3-a", origin_author="Cy")
+        await ok("proposal_append_entry", **dee, op_id="p3-b", origin_author="Ivo")
+        env, _ = held(new, "refs/cap/proposals/p3", "technical/replaced.md")
+        assert env["provenance"] == want and env["origin_author"] == "Ivo", env
+        # a body the deployment does not hold as a copy gets no lineage
+        r = await ok("proposal_append_entry", seat="Dee", proposal_id="p3", domain="technical", slug="own",
+                     body="Dee's own text.", op_id="p3-c")
+        assert "provenance" not in r and "provenance" not in held(new, "refs/cap/proposals/p3", "technical/own.md")[0]
+        print("14. the lineage follows the text: the body sent again, by its copier or another seat, is still a copy")
+
+        # 15. the practitioner's console preview shows the source
+        cfg(f'seq_origin = 0\ncopy_sources = ["Old={old_gd.replace(os.sep, "/")}"]')
+        pv = admin.main(["--config", cfgp, "preview", "p2"])
+        assert pv["copies"]["technical/replaced.md"] == {
+            "copy_of": f"Old@{OLD_TIP}:technical/replaced.md", "authored": "Ivo", "earlier_editions": 0}, pv
+        assert pv["copies"]["practice/unknown.md"]["authored"] == "", pv
+        print("15. the console preview lists each copy with its source and author")
+
+        # 16. a replay reports what git holds and does not read the source again
+        first = dict(seat="Cy", domain="practice", slug="moving", body="", op_id="m1",
+                     copy_from="Old/Mover:technical/moving.md")
+        r1 = await ok("entry_write", **first)
+        old.commit(mover, {"technical/moving.md": e("Mover's text.", status="superseded", superseded_by=["technical/moved.md"]),
+                           "technical/moved.md": e("Mover's next text.")}, "move", Identity("Mover"),
+                   expected_parent=old.resolve_ref(mover), op_id="mover-2")
+        r2 = await ok("entry_write", **first)             # the source has retired the entry since
+        assert r2["replayed"] is True and r2["oid"] == r1["oid"] and r2["provenance"] == r1["provenance"], r2
+        second = dict(seat="Cy", proposal_id="p4", domain="practice", slug="moved", body="", op_id="p4-a",
+                      copy_from="Old/Mover:technical/moved.md")
+        p1 = await ok("proposal_append_entry", **second)
+        old.commit(mover, {"technical/other.md": e("Unrelated.")}, "more", Identity("Mover"),
+                   expected_parent=old.resolve_ref(mover), op_id="mover-3")
+        p2 = await ok("proposal_append_entry", **second)   # the source's tip has moved since
+        assert p2["replayed"] is True and p2["oid"] == p1["oid"] and p2["provenance"] == p1["provenance"], p2
+        assert held(new, "refs/cap/proposals/p4", "practice/moved.md")[0]["provenance"] == p1["provenance"]
+        print("16. replay: the first write's provenance, with the source moved or the entry retired since")
+
+
 anyio.run(main)
+anyio.run(after_review)
 print("\ncopy with lineage: ALL PASS")

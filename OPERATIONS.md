@@ -94,13 +94,13 @@ A deployment can copy entries from another Stasima repository on the same machin
    copy_sources = ["Rehearsal=C:/path/to/rehearsal/rehearsal.git"]
    ```
 
-   The name is written into every copy, so choose it once and keep it. The path may change later (a moved repository); the name must not. The server only reads a source: it resolves refs, lists a tree and reads files.
+   The name is written into every copy, so choose it once and keep it. The path may change later (a moved repository); the name must not. The server only reads a source: it resolves refs, lists a tree and reads files. A source's canon is read at `refs/heads/main`.
 
-2. **A seat copies** by giving `copy_from` in place of a body, on `entry_write` (to its own perspective) or `proposal_append_entry` (toward canon): `copy_from="Rehearsal:technical/skill-v2.md"` for a canon entry, `copy_from="Rehearsal/Hesper:technical/draft.md"` for an entry on a seat's perspective, with `body=""`. The seat chooses the new path. It may give a new title, type and tags, or leave them empty to take the source's.
+2. **A seat copies** by giving `copy_from` in place of a body, on `entry_write` (to its own perspective) or `proposal_append_entry` (toward canon): `copy_from="Rehearsal:technical/skill-v2.md"` for a canon entry, `copy_from="Rehearsal/Hesper:technical/draft.md"` for an entry on a seat's perspective, with `body=""`. The seat chooses the new path. It may give a new title and tags, or leave them empty to take the source's; the type is the source's unless the call gives one other than the default `kno`.
 
-3. **You see the source at the gate.** `preview` lists each copied entry under `attributions` with `copy_of`: the source's name, the commit it was read at, and the path. The landed entry carries the same in its `provenance` field, with every earlier edition the text had at the source (CONTENT-MODEL, "Provenance").
+3. **You see the source at the gate.** `preview` (and the cockpit's proposal screen) lists each copied entry under `copies`: the source's name, the commit it was read at, the path, and the author on the source's record. The landed entry carries the same in its `provenance` field, with the earlier editions the text had at the source (CONTENT-MODEL, "Provenance").
 
-Only a living entry is copied. A retired one is refused and the refusal names its living edition. Nothing in a source changes, and nothing links the two deployments afterward: a copy holds a pinned address, not a subscription.
+Only a living entry is copied. A retired one is refused and the refusal names its living edition. The copy's body is the source's exactly, and its author is the one the source records: no call can set either. Nothing in a source changes, and nothing links the two deployments afterward: a copy holds a pinned address, not a subscription.
 
 To end a canon and continue in a new one: stop landing in the old one, give the new deployment its own folder, port and `totp-provision`, name the old repository in its `copy_sources`, `bootstrap` it with its own welcome, and land the carried entries as its first proposal. Keep the old repository where the path in the config can reach it.
 

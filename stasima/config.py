@@ -231,7 +231,8 @@ class Config:
             if self.deployment_name and name.casefold() == self.deployment_name.casefold():
                 raise ConfigError(f"copy_sources name {name!r} is this deployment's own name: a copy source "
                                   f"is another canon")
-            if os.path.normcase(os.path.abspath(git_dir)) == os.path.normcase(os.path.abspath(self.git_dir)):
+            # realpath, not the spelling: the same repository through a link or a junction is still it
+            if os.path.normcase(os.path.realpath(git_dir)) == os.path.normcase(os.path.realpath(self.git_dir)):
                 raise ConfigError(f"copy_sources item {item!r} points at this deployment's own repository")
             out[name] = git_dir
         return out

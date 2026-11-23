@@ -81,9 +81,10 @@ origin_author: epode
 - **The address** is `<Source>@<commit>:<path>` for a canon entry and `<Source>/<Seat>@<commit>:<path>` for an entry on a seat's perspective. `<Source>` is the name the copying deployment's config gives that repository. `<commit>` is the full id of the source ref's tip when the copy was made. It is a pin: the address names one text forever, and it stays readable for as long as the source repository does. A comma, a closing bracket or a percent sign in a path is written `%2C`, `%5D`, `%25`.
 - **The relation** is `copy of` (the same body, held there) or `supersedes` (the earlier edition it replaced there).
 - **The depth nests the list.** Depth 1 is this entry's own source. An item at depth n+1 describes the nearest item above it at depth n. A copy of a copy keeps the source's whole list one level deeper, so an entry can be copied forward any number of times and still name everything it came from. An entry with a copy source and an earlier edition of its own has two items at one depth.
-- **Only the living edition is copied.** Its earlier editions stay in the source and are named here, each at the same pinned commit, where the source still holds them. A successor canon therefore starts with no retired entries.
-- **`origin_author`** is the author on the source's record and travels with the text through every copy. Where the source names none, none is written.
-- **A re-write keeps it.** When a path holds a copy and is written again with the same body (a retirement), the server keeps both fields.
+- **Only the living edition is copied.** Its earlier editions stay in the source and are named here, each at the same pinned commit, where the source still holds them. A successor canon therefore starts with no retired entries. A chain is listed to 64 editions deep; the last address listed leads to the rest.
+- **The body is exact.** The copy holds the source's body with only the frame around it rebuilt: the first line's indentation is kept, and a source file that is not valid UTF-8 is refused.
+- **`origin_author`** is the author on the source's record and travels with the text through every copy: the seat for a perspective's entry, and for a canon entry the seat on the commit that first wrote that body at that path. Where the source names none, none is written. No call can set it for a copy.
+- **Inside a deployment the lineage follows the text.** A body the deployment already holds as a copy keeps both fields when it is written again without `copy_from`: at the same path (a retirement), or at another (a seat proposing what it first copied to its own perspective).
 
 ## Assets
 
