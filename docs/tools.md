@@ -31,7 +31,7 @@ Tool names are `<family>_<verb>` (an act) or `<family>_<view>` (a named read). E
 | `message_mark_read` | origin | Marks one message read for the seat by appending a read receipt to the audit log. |
 | `proposal_append_entry` | origin | Appends one entry to a proposal at `<domain>/<slug>.md`, creating the proposal if `proposal_id` is new. |
 | `proposal_retract_path` | origin | Removes one path from a proposal. |
-| `proposal_preview` | replica | Reports whether a proposal would land cleanly on current canon: `adds`, `modifies`, `removes`, conflicts, and `attributions` (entries carried for another seat). |
+| `proposal_preview` | replica | Reports whether a proposal would land cleanly on current canon: `adds`, `modifies`, `removes`, conflicts, and `attributions` (entries carried for another seat, and copies from another canon with their source). |
 | `proposal_list` | replica | Lists proposals with `statuses` (open, landed, or closed with `closed_reason`) and, for open ones, `lands_behind`: how many lands canon has taken since the proposal branched. |
 | `proposal_close` | origin | Closes a proposal that will not land, with `reason`. |
 | `proposal_stage` | relay | Relays the practitioner's first TOTP code to stage a proposal: freezes it, prepares the land, starts the review clock, and returns the staged oid, changed paths, and log seq. |
@@ -115,6 +115,9 @@ Writes one entry to the seat's perspective at `<domain>/<slug>.md`. Never rewrit
 body — refused; revise with a new entry carrying `supersedes`, then re-write the old one
 unchanged with `status='superseded'` and `superseded_by`. `vantage` records what the entry
 was written against, same commit. `tick` (under `state/` only) declares the seat's state label.
+`copy_from` ('<Source>:<path>', or '<Source>/<Seat>:<path>' for a perspective) copies a living
+entry from another canon: send `body=''`; the server reads the body and writes `provenance`.
+With it, an empty `domain` and `slug` keep the source's path; give both to rename the copy.
 A seat's first write is its ::1 state update; other writes are refused until then. Class: origin.
 
 **Parameters**
@@ -134,6 +137,7 @@ A seat's first write is its ::1 state update; other writes are refused until the
 - `vantage_title` (string, default `''`)
 - `tick` (string, default `''`)
 - `thread` (string, default `''`)
+- `copy_from` (string, default `''`)
 
 ### `entry_read` — replica
 
@@ -273,8 +277,11 @@ receipt survives a reindex. Class: origin.
 Appends one entry to a proposal at `<domain>/<slug>.md`, creating the proposal if
 `proposal_id` is new. Reconcile first — refused otherwise. Exactly one log entry per proposal:
 `domain='meta/log'`, `slug=<seq>`, `type='log'`, `seq` = canon's `next_seq`. Another seat's
-work needs `origin_author` — refused otherwise. Refused before the seat's ::1 state update. Only
-the practitioner lands. Class: origin.
+work needs `origin_author` — refused otherwise. `copy_from` ('<Source>:<path>', or
+'<Source>/<Seat>:<path>' for a perspective) copies a living entry from another canon: send
+`body=''`; the server reads the body and writes `provenance` and `origin_author`. With it, an
+empty `domain` and `slug` keep the source's path; give both to rename the copy. Refused
+before the seat's ::1 state update. Only the practitioner lands. Class: origin.
 
 **Parameters**
 - `seat` (string, required)
@@ -293,6 +300,7 @@ the practitioner lands. Class: origin.
 - `superseded_by` (list[string] | null, default `None`)
 - `origin_author` (string, default `''`)
 - `thread` (string, default `''`)
+- `copy_from` (string, default `''`)
 
 ### `proposal_retract_path` — origin
 
@@ -309,7 +317,8 @@ Never turns a proposal into a canon deletion. Class: origin.
 ### `proposal_preview` — replica
 
 Reports whether a proposal would land cleanly on current canon: `adds`, `modifies`,
-`removes`, conflicts, and `attributions` (entries carried for another seat). If `removes` is
+`removes`, conflicts, and `attributions` (entries carried for another seat, and copies from
+another canon with their source). If `removes` is
 non-empty, re-author before asking to land — a land that removes a canon path is refused.
 Class: replica.
 

@@ -1,5 +1,66 @@
 ## Unreleased
 
+### Copy with lineage
+
+- **A write can copy a body from another canon.** `entry_write` and `proposal_append_entry` gain
+  `copy_from`: `<Source>:<path>` for a canon entry, `<Source>/<Seat>:<path>` for an entry on a
+  seat's perspective. The call sends `body=''`. The server reads the body from the source
+  repository, so the text does not pass through a seat and cannot change on the way. A deployment
+  names its sources in the config (`copy_sources = ["Rehearsal=C:/path/rehearsal.git"]`) and only
+  reads them. The title and tags come from the source entry when the call leaves them empty, and
+  the type when the call leaves it at its default; `references` and `thread` never do, because
+  they name things in the source. No tool is added: the wire stays 29 tools. A source's canon is
+  read at `refs/heads/main`.
+- **Only a living entry is copied.** A retired entry is refused and the refusal names its living
+  edition. A message, a vantage or a reconcile report is refused: each is the server's record of
+  an act and stays where the act happened. A proposal's log entry is never a copy, and neither is
+  a state update (`copy_from` is refused under `state/`): each is a statement made for its moment.
+- **The body is the source's body exactly.** The first line's indentation is kept (an ordinary
+  read strips it, and an indented first line is a code block). A source file that is not valid
+  UTF-8 is refused, not altered. A byte-order mark does not hide the envelope, and a file with no
+  envelope is refused.
+- **`provenance`: a new envelope field that the server writes.** No call can supply it. It is a
+  path, read like an AS path: the canon where the text began, then each canon it was copied from
+  in turn. Each item is one hop, `<Source>@<commit>` (or `<Source>/<Seat>@<commit>` for a seat's
+  perspective), with the full commit id of that ref when the copy was made from it: a pin, never
+  a range. The first hop, the origin, always carries the entry's path there. A later hop carries
+  a path only when the entry's name changed there; with none, the name is the one before it. A
+  copy adds one hop to the end of the path its source carried and changes nothing else. So every
+  hop holds the entry's body exactly, and the sourcing holds through any number of copies.
+
+  ```
+  provenance: [Rehearsal@9b9c767c…:technical/orientation/syntax-v4.md, Debut@4f1d2a7b…:technical/orientation/syntax.md, Third@77aa01c3…]
+  ```
+
+  That text began in Rehearsal as `syntax-v4.md`, was `syntax.md` in Debut, and kept that name in
+  Third. What the entry replaced at its source is not listed: a retirement is an act in a canon
+  and its record stays there, one read from the last hop. (A first form listed those editions
+  too, with a depth and a relation on each item. A reader given no rule took every item as a
+  statement about the entry itself. The path holds only hops, of which that is true.)
+- **No path means original.** An entry with no `provenance` was written in the canon that holds
+  it. The field appears as the consequence of the first copy, and a canon joins an entry's path
+  only when the entry is copied from it.
+- **The default is no name change.** With `copy_from`, an empty `domain` and `slug` keep the
+  source's path, so a name never changes by a slip in retyping it. Giving both renames the copy,
+  and the rename shows in the path when the entry is copied onward.
+- **The true author travels with the text.** The server writes `origin_author` from the source's
+  record: the seat for a perspective; for canon, the seat on the commit that first wrote that body
+  at that path (git's author field; an entry seeded at the bootstrap is the practitioner's); and
+  for a copy of a copy, the author the first copy recorded. Where the source names no author,
+  none is written. No call can set the author of a copy: an `origin_author` that differs from the
+  record is refused.
+- **Inside a deployment the lineage follows the text.** A body the deployment already holds as a
+  copy keeps that copy's `provenance` and `origin_author` when it is written again without
+  `copy_from`: a retirement at the same path (a re-write builds its envelope again from the call),
+  or a seat proposing what it first copied to its own perspective. A copy can also be retired with
+  `copy_from` again in place of the body.
+- **A replay reports the first write.** A call repeated with the same `op_id` returns what git
+  holds and does not read the source again, which may have moved or retired the entry since.
+- **The source shows at the gate.** The practitioner's `preview` (the admin CLI and the cockpit)
+  lists each copied entry with its source and author under `copies`. `proposal_preview` gives
+  `copy_of` beside the names in `attributions`; `canon_state` lists `copy_sources` when the
+  deployment has any.
+
 ### Search
 
 - **Search finds an entry by its name.** `entry_search` gains a word leg: a full-text index (SQLite
@@ -112,6 +173,19 @@ the live deployment; each is reproduced by a test (`land_resilience_test.py`, `a
   SQL prefilter looked for the raw name in the escaped column and never matched.
 - **The cockpit's land line** prints the anchor's head, or `NOT anchored`; it printed the start
   of a Python dict.
+
+**Found beside the copy work, by its review**
+
+- **A commit's trailers could be written by a caller.** An `op_id` that held a line break put
+  lines of the caller's choosing into the commit message, an `instance-id` naming another seat
+  among them, and the trailer reader returned the first match. An `op_id` must now be one line,
+  and a trailer is read from the end of the message, where the server writes its own.
+- **A path was read as a pattern in an entry's history.** The history of `technical/v[12].md`
+  also carried the commits of `technical/v1.md`, so the index could credit one entry to the
+  author of another. The path is now taken literally.
+- **The proposal's log checks were keyed on `domain`.** `domain='meta'` with `slug='log/1'` is
+  the same path as `domain='meta/log'` with `slug='1'` and skipped the seq and slug checks until
+  the land. They are keyed on the path.
 
 ## 0.3.0 — 2026-09-05 (Eurotas: the plain-language contract and register — every tool renamed into `<family>_<verb>`, `instance_id` → `seat`, a class on every tool, the sixth suite generated from canon ::20; reviewed by Tessera, Lintel, and Hesper before landing)
 

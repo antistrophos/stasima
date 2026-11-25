@@ -422,14 +422,16 @@ class LocalCapStore:
         return out.decode().strip() if rc == 0 else ""
 
     def history(self, ref: str, path: str) -> list[dict]:
-        """Commit trail touching `path`, newest first: oid, author (instance), subject."""
-        rc, out, err = self._run("log", "--format=%H%x09%an%x09%s", ref, "--", path)
+        """Commit trail touching `path`, newest first: oid, author (instance), committer, subject.
+        The path is taken literally. Read as a pattern, `technical/v[12].md` also matches
+        `technical/v1.md`, and the trail of one entry carries the commits of another."""
+        rc, out, err = self._run("log", "--format=%H%x09%an%x09%cn%x09%s", ref, "--", ":(literal)" + path)
         if rc != 0:
             raise RefNotFound(f"{ref}: {err.strip()}")
         rows = []
-        for line in out.decode().splitlines():
-            h, an, s = line.split("\t", 2)
-            rows.append({"oid": h, "author": an, "subject": s})
+        for line in out.decode("utf-8", "replace").splitlines():
+            h, an, cn, s = line.split("\t", 3)
+            rows.append({"oid": h, "author": an, "committer": cn, "subject": s})
         return rows
 
     def is_ancestor(self, maybe_ancestor: Oid, descendant: Oid) -> bool:
@@ -537,8 +539,11 @@ class LocalCapStore:
 
     # ---- trailer / result helpers ----
     def _trailer(self, commit: Oid, key: str) -> Optional[str]:
-        body = self._git("show", "-s", "--format=%b", commit).decode()
-        for line in body.splitlines():
+        # The LAST line that carries the key. The server appends its trailers after everything a
+        # caller supplied, so a line a caller got into the message (through a path or an op_id that
+        # holds a line break) comes earlier and cannot stand in for the server's own.
+        body = self._git("show", "-s", "--format=%b", commit).decode("utf-8", "replace")
+        for line in reversed(body.splitlines()):
             if line.lower().startswith(key.lower() + ":"):
                 return line.split(":", 1)[1].strip()
         return None
@@ -600,6 +605,10 @@ class LocalCapStore:
                append_only: bool = True) -> CommitResult:
         if ref == self.canon_ref:
             raise ProtectedRef(f"{ref} advances only via land_merge")
+        if len(str(op_id).splitlines()) != 1 or not str(op_id).strip():
+            # the op_id becomes a trailer line of the commit: more than one line would write trailers
+            # of the caller's choosing (another seat's instance-id among them)
+            raise CapStoreError(f"op_id must be one line of text, got {op_id!r}")
 
         tip = self.resolve_ref(ref)
 

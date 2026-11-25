@@ -69,6 +69,12 @@ http_port  = 8787
 # states the split (logs_in_full / logs_as_pointers). 0 = all pointers.
 # pull_logs_in_full = 8
 
+# Other Stasima repositories this deployment may copy entries from, each "Name=path/to/repo.git".
+# A seat then gives copy_from="Name:<path>" in place of a body and the server reads the text itself.
+# The name is written into every copy's provenance: choose it once and keep it. The server only
+# reads a source. (OPERATIONS, "Copying from another canon".)
+# copy_sources = ["Rehearsal=C:/path/to/rehearsal/rehearsal.git"]
+
 # The join gate. A seat's first write to its perspective must be its ::1 state update; every other
 # write is refused with the join call in the refusal until then (reads and the reconcile stay open).
 # Seats with entries from before the gate are never gated. Set false only for a scratch server.

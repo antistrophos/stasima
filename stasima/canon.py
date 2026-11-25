@@ -93,7 +93,9 @@ def reindex_from_git(store: LocalCapStore, index, embedder, *, clear: bool = Tru
                     # path's introducer. The introducer heuristic answers "who PROPOSED" wearing the
                     # label "who authored" — a cross-proposed entry (carried toward canon by another
                     # seat, with origin_author stamped by the propose guard) keeps its true author here.
-                    hist = store.history(ref, path)
+                    # A copy from another canon (`provenance`) whose source names no author has none:
+                    # the seat that proposed it did not write it.
+                    hist = [] if envelope.get("provenance") else store.history(ref, path)
                     author = envelope.get("origin_author") or (hist[-1]["author"] if hist else "")
                     # canon rows carry canon's own coordinates — the envelope keeps the authoring ones
                     envelope = dict(envelope)
@@ -234,9 +236,9 @@ def index_land(store, index, embedder, landed_oid: str, failed: list | None = No
             continue
         try:
             envelope, body = parse_entry(store.read_blob_at(landed_oid, path).decode("utf-8", "replace"))
-            author = envelope.get("origin_author")
-            if not author:                                # the introducer, as reindex derives it
-                hist = store.history(store.canon_ref, path)
+            author = envelope.get("origin_author") or ""
+            if not author and not envelope.get("provenance"):   # the introducer, as reindex derives it
+                hist = store.history(store.canon_ref, path)     # (a copy with no author on record has none)
                 author = hist[-1]["author"] if hist else ""
             env2 = dict(envelope)
             env2["instance_depth"] = spine_pos

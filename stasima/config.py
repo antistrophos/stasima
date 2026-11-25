@@ -114,6 +114,12 @@ class Config:
     # embedder's own calibrated default (stub: 0.0 = off — its scores don't separate true from junk).
     # Set only after measuring where YOUR model's true/junk scores separate on YOUR corpus.
     search_score_floor: float | None = None
+    # Other Stasima repositories this deployment may COPY entries from, each as "Name=path/to/repo.git"
+    # (TOML: copy_sources = ["Rehearsal=C:/path/rehearsal.git"]). A write that gives `copy_from` has the
+    # server read the body from the source, so the text never passes through a seat; the copy's
+    # envelope records the source by this name and by the commit it was read at. The server only reads
+    # a source. The name is written into every copy's provenance: keep it for the source's whole life.
+    copy_sources: list = field(default_factory=list)
 
     @classmethod
     def load(cls, path: str | None = None, env: dict | None = None) -> "Config":
@@ -198,10 +204,38 @@ class Config:
                                   f"({u.hostname!r}) — the connector rides TLS; got scheme {u.scheme!r}")
             if u.hostname not in self.http_allowed_hosts:
                 self.http_allowed_hosts = list(self.http_allowed_hosts) + [u.hostname]
+        self.resolved_copy_sources()
         if self.git_timeout < 0:
             raise ConfigError("git_timeout must be >= 0 (0 = auto by transport: 2s stdio / 20s http)")
         if self.git_network_timeout <= 0:
             raise ConfigError("git_network_timeout must be > 0 (seconds; the bound for backup/mirror/sync git ops)")
+
+    def resolved_copy_sources(self) -> dict:
+        """`copy_sources` as {name: git_dir}, checked: each item "Name=path", names plain and distinct,
+        none of them this deployment's own name or its own repository."""
+        if not isinstance(self.copy_sources, list):
+            raise ConfigError('copy_sources must be a list of "Name=path/to/repo.git" strings')
+        out = {}
+        for item in self.copy_sources:
+            name, sep, git_dir = str(item).partition("=")
+            name, git_dir = name.strip(), git_dir.strip()
+            if not sep or not name or not git_dir:
+                raise ConfigError(f'copy_sources item {item!r} must be "Name=path/to/repo.git"')
+            if not (name[0].isalnum() and len(name) <= 64 and name.isascii()
+                    and all(c.isalnum() or c in "-_" for c in name)):
+                raise ConfigError(f"copy_sources name {name!r} must be ASCII letters, digits, '-' or '_', "
+                                  f"starting with a letter or digit, at most 64 characters (it is written "
+                                  f"into every copy's provenance)")
+            if name.casefold() in {n.casefold() for n in out}:
+                raise ConfigError(f"copy_sources names {name!r} twice")
+            if self.deployment_name and name.casefold() == self.deployment_name.casefold():
+                raise ConfigError(f"copy_sources name {name!r} is this deployment's own name: a copy source "
+                                  f"is another canon")
+            # realpath, not the spelling: the same repository through a link or a junction is still it
+            if os.path.normcase(os.path.realpath(git_dir)) == os.path.normcase(os.path.realpath(self.git_dir)):
+                raise ConfigError(f"copy_sources item {item!r} points at this deployment's own repository")
+            out[name] = git_dir
+        return out
 
     def resolved_git_timeout(self) -> float:
         if self.git_timeout > 0:

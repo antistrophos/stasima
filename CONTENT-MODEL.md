@@ -68,6 +68,25 @@ Two artifact types deliberately named apart. **Coherence state** (`state/`, `can
 
 Every deferred analysis reduces to a query over it: "bad base idea vs. bad derived layer" is *walk lineage to the common upstream*; "converged because true vs. converged because contaminated" is *do the agreeing entries share an upstream?*; canon-alignment relevance is *proximity through the same graph*. If entries don't record what they build on, none of it is recoverable. So v1 records lineage honestly now (with a light "cite what you build on" authoring convention), even though it builds no analyzer.
 
+## Provenance — a copy from another canon
+
+An entry whose body was copied from another canon carries `provenance`. The server writes it; no call can supply it. An entry with no `provenance` is original to its canon: the field is never written for native text, and first appears as the consequence of the first copy. It is the lineage that crosses a canon's edge, where `references` and `supersedes` cannot follow: they name paths, and a path belongs to one canon.
+
+```yaml
+# an entry copied from Third, which had it from Debut, which had it from Rehearsal
+provenance: [Rehearsal@<commit>:technical/orientation/syntax-v4.md, Debut@<commit>:technical/orientation/syntax.md, Third@<commit>]
+origin_author: epode
+```
+
+- **It is a path, read like an AS path:** the canon where the text began, then each canon it was copied from in turn. A copy adds one hop to the end of the path its source carried. Nothing else is ever added, so every hop holds this entry's body exactly, and an entry can be copied forward any number of times and still name everywhere it has been.
+- **Each item is one hop:** `<Source>@<commit>` for a canon, `<Source>/<Seat>@<commit>` for a seat's perspective. `<Source>` is the name the copying deployment's config gives that repository. `<commit>` is the full id of that ref's tip when the copy was made from it. It is a pin: the hop names one text forever, and it stays readable for as long as the source repository does.
+- **The name rides the hop only where it changed.** The first hop, the origin, always carries the entry's path there. A later hop carries a path only when the entry's name changed at that canon; with none, the name is the one before it. In the example the text was `syntax-v4.md` in Rehearsal, `syntax.md` in Debut, and kept that name in Third. A comma, a closing bracket or a percent sign in a path or in a seat's name is written `%2C`, `%5D`, `%25`.
+- **The default is no name change.** A copy keeps the source's path unless the call gives another. The entry's own canon is not in its own path: its name there is its path, and that canon joins the path, pinned, when the entry is copied from it.
+- **Only the living edition is copied, and what it replaced is not listed.** A retirement is an act in a canon; its record stays in that canon, and the last hop leads to it. A successor canon therefore starts with no retired entries.
+- **The body is exact.** The copy holds the source's body with only the frame around it rebuilt: the first line's indentation is kept, and a source file that is not valid UTF-8 is refused.
+- **`origin_author`** is the author on the source's record and travels with the text through every copy: the seat for a perspective's entry, and for a canon entry the seat on the commit that first wrote that body at that path. Where the source names none, none is written. No call can set it for a copy.
+- **Inside a deployment the lineage follows the text.** A body the deployment already holds as a copy keeps both fields when it is written again without `copy_from`: at the same path (a retirement), or at another (a seat proposing what it first copied to its own perspective).
+
 ## Assets
 
 Git stores binaries natively, so it'll version a small owned file inline; the catch is clone bloat. So: **small owned** → inline in `assets/`; **large/numerous owned** → Git LFS; **never a bare URL for an owned asset** (link rot = silent loss). A URL you merely *cite* is a `references/` entry with `url:`, not an asset. *Own it → commit it; cite it → reference it.*
